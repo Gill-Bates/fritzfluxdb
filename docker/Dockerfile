@@ -1,4 +1,4 @@
-FROM python:3.13-slim-bookworm AS base
+FROM python:3.13-slim-trixie AS base
 SHELL ["/bin/sh", "-eux", "-c"]
 
 # --- Build-time metadata (populated from the CI build args) -----------------
