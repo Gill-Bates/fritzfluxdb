@@ -1,0 +1,33 @@
+# Python directories and files
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+full_codebase*
+.env
+
+# Virtual environment
+.venv/
+venv/
+ENV/
+env/
+BUILD_INFO
+my-fritzfluxdb.xml
+
+# IDEs and editors
+.idea/
+.vscode/
+*.swp
+*.swo
+.DS_Store
+
+# Pytest and coverage
+.pytest_cache/
+.coverage
+htmlcov/
+
+# User backups and temp files
+*.backup
+*.log
+*.tmp
+.ruff_cache/

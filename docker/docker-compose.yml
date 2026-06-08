@@ -1,0 +1,40 @@
+
+services:
+  fritzfluxdb:
+    image: giiibates/fritzfluxdb:latest
+    container_name: fritzfluxdb
+    restart: unless-stopped
+    stop_grace_period: 20s
+    env_file:
+      - ./.env
+    environment:
+      TZ: ${TZ:-Europe/Berlin}
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+      FRITZBOX_HOSTNAME: ${FRITZBOX_HOSTNAME:-192.168.178.1}
+      FRITZBOX_USERNAME: ${FRITZBOX_USERNAME}
+      FRITZBOX_PASSWORD: ${FRITZBOX_PASSWORD}
+      INFLUXDB_VERSION: ${INFLUXDB_VERSION:-2}
+      INFLUXDB_HOSTNAME: ${INFLUXDB_HOSTNAME}
+      INFLUXDB_PORT: ${INFLUXDB_PORT:-8086}
+      INFLUXDB_ORGANISATION: ${INFLUXDB_ORGANISATION:-}
+      INFLUXDB_BUCKET: ${INFLUXDB_BUCKET:-fritzflux}
+      INFLUXDB_TOKEN: ${INFLUXDB_TOKEN:-}
+      INFLUXDB_TLS_ENABLED: ${INFLUXDB_TLS_ENABLED:-false}
+      WATCHDOG_RESTART_DELAY: ${WATCHDOG_RESTART_DELAY:-10}
+      WATCHDOG_MAX_RESTART_DELAY: ${WATCHDOG_MAX_RESTART_DELAY:-300}
+
+    logging:
+      driver: json-file
+      options:
+        max-size: "50m"
+        max-file: "5"
+
+    security_opt:
+      - no-new-privileges:true
+
+    healthcheck:
+      test: ["CMD-SHELL", "pgrep -f 'run.py' >/dev/null || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 15s

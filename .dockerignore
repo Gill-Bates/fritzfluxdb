@@ -1,0 +1,69 @@
+# =============================================================================
+# fritzFlux - Docker build context excludes
+# =============================================================================
+# The image only needs: requirements.txt, run.py, fritzFlux/ and
+# docker/entrypoint.sh (see docker/Dockerfile). Everything else is excluded to
+# keep the build context small and to avoid leaking secrets (.env) into it.
+# =============================================================================
+
+# --- Secrets / local runtime config (must NEVER enter the build context) ---
+.env
+.env.*
+*.env
+
+# --- Version control & CI ---------------------------------------------------
+.git
+.gitignore
+.gitattributes
+.github
+
+# --- Python caches / virtualenvs / build artifacts -------------------------
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.venv/
+venv/
+ENV/
+env/
+.pytest_cache/
+.coverage
+htmlcov/
+*.egg-info/
+build/
+dist/
+full_codebase*
+my-fritzfluxdb.xml
+.ruff_cache/
+
+# --- Docker files not needed inside the image ------------------------------
+# (docker/entrypoint.sh IS copied by the Dockerfile, so it is NOT ignored)
+.dockerignore
+docker/Dockerfile
+docker/docker-compose.yml
+docker/docker-compose.yml.example
+docker/build.sh
+grafana/
+
+# --- Project assets unrelated to the runtime -------------------------------
+grafana/
+*.xml
+README.md
+*.md
+LICENSE
+setup.conf
+VERSION
+# NOTE: BUILD_INFO is intentionally NOT ignored - it is copied into the image
+# so the startup banner / version.py can read version, git sha and build date.
+
+# --- Editors / OS cruft -----------------------------------------------------
+.idea/
+.vscode/
+*.swp
+*.swo
+.DS_Store
+
+# --- Logs / temp / backups --------------------------------------------------
+*.log
+*.tmp
+*.backup

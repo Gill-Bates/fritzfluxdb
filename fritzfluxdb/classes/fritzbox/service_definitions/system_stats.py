@@ -1,0 +1,91 @@
+#!/usr/bin/env python3
+#
+# fritzfluxdb/classes/fritzbox/service_definitions/system_stats.py
+# Copyright (C) 2026 Gill-Bates http://github.com/Gill-Bates
+#
+
+from fritzfluxdb.classes.fritzbox.service_definitions import lua_services
+
+read_interval = 150
+
+
+def prepare_json_response_data(response):
+    """
+    handler to prepare returned json data for parsing
+    """
+
+    return response.json()
+
+
+lua_services.append(
+    {
+        "name": "System Stats",
+        "os_min_versions": "7.29",
+        "method": "POST",
+        "params": {
+            "page": "ecoStat",
+            "lang": "de"
+        },
+        "response_parser": prepare_json_response_data,
+        "interval": read_interval,
+        "value_instances": {
+            "cpu_temp": {
+                "data_path": "data.cputemp.series.0.-1",
+                "type": int,
+                # Cable FritzBox with FritzOS 8.00 got these stats removed
+                "exclude_filter_function": lambda data: "cputemp" not in data.get("data", {}).keys()
+            },
+            "cpu_utilization": {
+                "data_path": "data.cpuutil.series.0.-1",
+                "type": int,
+                # Cable FritzBox with FritzOS 8.00 got these stats removed
+                "exclude_filter_function": lambda data: "cpuutil" not in data.get("data", {}).keys()
+            },
+            "ram_usage_fixed": {
+                "data_path": "data.ramusage.series.0.-1",
+                "type": int,
+                # Cable FritzBox with FritzOS 8.00 got these stats removed
+                "exclude_filter_function": lambda data: "ramusage" not in data.get("data", {}).keys()
+            },
+            "ram_usage_dynamic": {
+                "data_path": "data.ramusage.series.1.-1",
+                "type": int,
+                # Cable FritzBox with FritzOS 8.00 got these stats removed
+                "exclude_filter_function": lambda data: "ramusage" not in data.get("data", {}).keys()
+            },
+            "ram_usage_free": {
+                "data_path": "data.ramusage.series.2.-1",
+                "type": int,
+                # Cable FritzBox with FritzOS 8.00 got these stats removed
+                "exclude_filter_function": lambda data: "ramusage" not in data.get("data", {}).keys()
+            }
+        }
+    })
+
+lua_services.append(
+    {
+        "name": "Energy Stats",
+        "os_min_versions": "7.29",
+        "method": "POST",
+        "params": {
+            "page": "energy",
+            "lang": "de"
+        },
+        "response_parser": prepare_json_response_data,
+        "interval": read_interval,
+        "value_instances": {
+            "energy_consumption": {
+                "data_path": "data.drain",
+                "type": list,
+                "next": {
+                    # data struct type: dict
+                    "type": int,
+                    "tags_function": lambda data: {"name": data.get("name")},
+                    "value_function": lambda data: data.get("actPerc"),
+                    "exclude_filter_function": lambda data: "lan" in data.keys()
+                },
+                # Cable FritzBox with FritzOS 8.00 got these stats removed
+                "exclude_filter_function": lambda data: "drain" not in data.get("data", {}).keys()
+            }
+        }
+    })
