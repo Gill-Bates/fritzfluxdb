@@ -15,7 +15,8 @@
 .git
 .gitignore
 .gitattributes
-.github
+.github/
+.claude/
 
 # --- Python caches / virtualenvs / build artifacts -------------------------
 __pycache__/

@@ -58,17 +58,17 @@ export APP_VERSION GIT_SHA BUILD_DATE
 # for a different registry. Defaults to the private registry used for deploys.
 IMAGE="${IMAGE:-giiibates/fritzfluxdb}"
 
-echo "Building ${IMAGE}:${APP_VERSION} (+ :latest)" >&2
+echo "Building ${IMAGE}:testing" >&2
 echo "  APP_VERSION=${APP_VERSION} GIT_SHA=${GIT_SHA} BUILD_DATE=${BUILD_DATE}" >&2
 
 # "--build-arg NAME" (without =value) forwards NAME from the environment.
 docker build \
+    --pull \
     --build-arg APP_VERSION \
     --build-arg GIT_SHA \
     --build-arg BUILD_DATE \
     -f "${SCRIPT_DIR}/Dockerfile" \
-    -t "${IMAGE}:${APP_VERSION}" \
-    -t "${IMAGE}:latest" \
+    -t "${IMAGE}:testing" \
     "$@" \
     "${REPO_ROOT}"
 
@@ -78,8 +78,7 @@ case "${PUSH:-1}" in
         echo "Skipping registry push (PUSH=${PUSH:-})." >&2
         ;;
     *)
-        echo "Pushing ${IMAGE}:${APP_VERSION} and ${IMAGE}:latest ..." >&2
-        docker push "${IMAGE}:${APP_VERSION}"
-        docker push "${IMAGE}:latest"
+        echo "Pushing ${IMAGE}:testing ..." >&2
+        docker push "${IMAGE}:testing"
         ;;
 esac

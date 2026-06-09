@@ -90,6 +90,7 @@ class FritzBoxHandler(FritzBoxHandlerBase):
 
         super().__init__(config)
 
+        self.session = None
         self.add_services(FritzBoxTR069Service, service_definitions.tr069_services)
 
     def connect(self):
@@ -99,19 +100,49 @@ class FritzBoxHandler(FritzBoxHandlerBase):
 
         log.debug(f"Initiating new {self.name} session")
 
-        try:
-            self.session = FritzConnection(
+        auto_detect = (self.config.tls_enabled is None)
+        use_tls = True if auto_detect else bool(self.config.tls_enabled)
+
+        # For auto-detect, probe the TLS port (default 49000 + 443 = 49443)
+        default_port = FritzBoxConfig.port["default"]
+        port = self.config.port
+        if auto_detect and port == default_port:
+            port = default_port + 443
+
+        def _create_session(use_tls_flag, port_num):
+            return FritzConnection(
                 address=self.config.hostname,
-                port=self.config.port,
+                port=port_num,
                 user=self.config.username,
                 password=self.config.password,
                 timeout=(self.config.connect_timeout, self.config.connect_timeout * 4),
-                use_tls=self.config.tls_enabled
+                use_tls=use_tls_flag
             )
+
+        try:
+            self.session = _create_session(use_tls, port)
             self.version = self.session.system_version
+            if auto_detect:
+                self.config.tls_enabled = use_tls
         except FritzConnectionException as exc:
-            log.error(f"Failed to connect to FritzBox via TR-069 '{exc}'")
-            return
+            if auto_detect and use_tls:
+                log.warning(
+                    "FritzBox '%s' TR-069 HTTPS unavailable (%s); falling back to plain HTTP",
+                    self.config.hostname, exc,
+                )
+                self.config.tls_enabled = False
+                try:
+                    self.session = _create_session(False, self.config.port)
+                    self.version = self.session.system_version
+                except FritzConnectionException as exc2:
+                    log.error(f"Failed to connect to FritzBox via TR-069 '{exc2}'")
+                    return
+                except Exception:
+                    log.exception("Unexpected error while creating FritzBox TR-069 session")
+                    return
+            else:
+                log.error(f"Failed to connect to FritzBox via TR-069 '{exc}'")
+                return
         except Exception:
             log.exception("Unexpected error while creating FritzBox TR-069 session")
             return
@@ -127,13 +158,14 @@ class FritzBoxHandler(FritzBoxHandlerBase):
                 log.error(f"Failed to connect to {self.name} '{self.config.hostname}': {e}")
 
             return
-        except BaseException as e:
+        except Exception as e:
             log.error(f"Failed to connect to {self.name} '{self.config.hostname}': {e}")
             return
 
         if isinstance(device_info, dict):
             self.config.model = device_info.get("NewModelName")
             self.config.fw_version = device_info.get("NewSoftwareVersion")
+            self.config.serial_number = device_info.get("NewSerialNumber") or None
 
         # get link type
         try:
@@ -145,7 +177,8 @@ class FritzBoxHandler(FritzBoxHandlerBase):
         except Exception:
             pass
 
-        log.info(f"Successfully established {self.name} session")
+        proto = "HTTPS" if self.config.tls_enabled else "HTTP"
+        log.info(f"Successfully established {self.name} session ({proto})")
 
         self.init_successful = True
 
@@ -275,17 +308,8 @@ class FritzBoxLuaHandler(FritzBoxHandlerBase):
     def __init__(self, config):
         super().__init__(config)
 
-        self.url = None
+        self.url = None  # built lazily in connect() after TR-069 auto-detect resolves tls_enabled
         self.sid = None
-
-        if self.config.tls_enabled and not self.config.verify_tls:
-            log.warning(f"TLS certificate verification is disabled for FritzBox '{self.config.hostname}'")
-
-        proto = "http"
-        if self.config.tls_enabled is True:
-            proto = "https"
-
-        self.url = f"{proto}://{self.config.hostname}"
 
         self.session = requests.Session()
         self.session.verify = self.config.verify_tls
@@ -297,6 +321,20 @@ class FritzBoxLuaHandler(FritzBoxHandlerBase):
         if self.sid is not None:
             return
 
+        # Build URL now — TR-069 connect() may have resolved tls_enabled from None to True/False
+        use_tls = bool(self.config.tls_enabled) if self.config.tls_enabled is not None else True
+
+        # In auto-detect mode use HTTPS without cert verification: FritzBox always has a
+        # self-signed certificate, so SSLError would be a false negative. Only a
+        # ConnectionError (port unreachable) is a real signal to fall back to HTTP.
+        if self.config.tls_auto and use_tls:
+            self.session.verify = False
+        elif self.config.tls_enabled is True and not self.config.verify_tls:
+            self.session.verify = False
+            log.warning(f"TLS certificate verification is disabled for FritzBox '{self.config.hostname}'")
+
+        self.url = f"{'https' if use_tls else 'http'}://{self.config.hostname}"
+
         login_url = f"{self.url}/login_sid.lua"
 
         log.debug(f"Initiating new {self.name} session")
@@ -307,12 +345,38 @@ class FritzBoxLuaHandler(FritzBoxHandlerBase):
             dom = ET.fromstring(response.content)
             sid = dom.findtext('./SID')
             challenge = dom.findtext('./Challenge')
+        except requests.exceptions.ConnectionError as exc:
+            if self.config.tls_auto and use_tls:
+                # HTTPS port unreachable — fall back to HTTP
+                log.warning(
+                    "FritzBox '%s' Lua HTTPS unreachable; falling back to plain HTTP.",
+                    self.config.hostname,
+                )
+                self.config.tls_enabled = False
+                self.session.verify = True
+                self.url = f"http://{self.config.hostname}"
+                login_url = f"{self.url}/login_sid.lua"
+                try:
+                    response = self.session.get(login_url, timeout=(self.config.connect_timeout, self.config.connect_timeout*4))
+                    dom = ET.fromstring(response.content)
+                    sid = dom.findtext('./SID')
+                    challenge = dom.findtext('./Challenge')
+                except (requests.RequestException, ET.ParseError) as exc2:
+                    log.error(f"Unable to parse {self.name} login response after HTTP fallback: {exc2}")
+                    return
+            else:
+                log.error(f"Unable to parse {self.name} login response: {exc}")
+                return
         except (requests.RequestException, ET.ParseError) as exc:
             log.error(f"Unable to parse {self.name} login response: {exc}")
             return
 
         if sid != "0" * 16:
             log.error(f"Unexpected {self.name} session id: {sid}")
+            return
+
+        if not challenge:
+            log.error(f"Missing {self.name} login challenge")
             return
 
         md5 = hashlib.md5()
@@ -344,7 +408,8 @@ class FritzBoxLuaHandler(FritzBoxHandlerBase):
                       "Check username and password!")
             return
 
-        log.info(f"Successfully established {self.name} session")
+        proto = "HTTPS" if self.config.tls_enabled else "HTTP"
+        log.info(f"Successfully established {self.name} session ({proto})")
 
         self.sid = sid
         self.init_successful = True
@@ -383,32 +448,30 @@ class FritzBoxLuaHandler(FritzBoxHandlerBase):
             log.error(f"Unable to perform request to '{data_url}': {exc}")
             return None
 
-        # check for invalid session
+        # invalidate session on auth-related status codes before parsing
+        if response.status_code in [303, 401, 403]:
+            self.sid = None
+            if retry_on_auth:
+                return self.request(service_to_request, additional_params, retry_on_auth=False)
+            return None
+
+        # check for HTML response indicating an expired/invalid session
         if response.content[:100].lstrip().lower().startswith(b"<html"):
             self.sid = None
             if retry_on_auth:
                 return self.request(service_to_request, additional_params, retry_on_auth=False)
             return None
 
-        # noinspection PyBroadException
         try:
             result = service_to_request.response_parser(response)
         except Exception as e:
             log.error(f"{self.name} request parsing for '{service_to_request.name}' failed: {e}")
-            return
+            return None
 
-        # Debugging purposes
-        # log.debug(f"Response: {response.content}")
-
-        if response.status_code == 200 and result is not None:
+        if response.status_code == 200:
             log.debug(f"{self.name} request successful")
-
         else:
             log.error(f"{self.name} request '{service_to_request.name}' returned {response.status_code}: {response.reason}")
-
-            # invalidate session
-            if response.status_code in [303, 403]:
-                self.sid = None
 
         return result
 
@@ -432,6 +495,8 @@ class FritzBoxLuaHandler(FritzBoxHandlerBase):
             if normalized in {"false", "f", "0", "no", "off"}:
                 return False
 
+        raise ValueError(f"invalid boolean value: {value!r}")
+
 
     def extract_value(self, service, data, metric_name, metric_params):
 
@@ -450,12 +515,13 @@ class FritzBoxLuaHandler(FritzBoxHandlerBase):
         timestamp = None
         metric_tags = dict()
 
-        # noinspection PyBroadException
-        try:
-            if exclude_filter_function(data) is True:
+        if callable(exclude_filter_function):
+            try:
+                if exclude_filter_function(data) is True:
+                    return
+            except Exception as exc:
+                log.error(f"Exclude filter for metric '{metric_name}' failed: {exc}")
                 return
-        except Exception:
-            pass
 
         if data_path is not None and value_function is not None:
             log.error("Attributes 'data_path' and 'value_function' cant be defined for the same entry"
@@ -464,35 +530,39 @@ class FritzBoxLuaHandler(FritzBoxHandlerBase):
 
         # first we try to use the value_function
         if value_function is not None:
-            # noinspection PyBroadException
             try:
                 metric_value = value_function(data)
-            except Exception:
-                pass
+            except Exception as exc:
+                log.error(f"Value function for metric '{metric_name}' failed: {exc}")
+                return
 
         elif data_path is not None:
             metric_value = grab(data, data_path, fallback="" if data_type is str else None)
 
-        # try to add tags
-        if isinstance(data_tags, dict):
-            metric_tags = metric_params.get("tags", dict())
-            if callable(tags_function):
-                try:
-                    metric_tags = {**metric_tags, **tags_function(data)}
-                except ValueError as exc:
-                    log.error(f"Invalid tags for metric '{metric_name}': {exc}")
-                    return
+        # always apply tags_function when present, regardless of static tags
+        metric_tags = dict(data_tags or {})
+        if callable(tags_function):
+            try:
+                generated_tags = tags_function(data)
+            except ValueError as exc:
+                log.error(f"Invalid tags for metric '{metric_name}': {exc}")
+                return
+            if not isinstance(generated_tags, dict):
+                log.error(f"tags_function for metric '{metric_name}' did not return a dict")
+                return
+            metric_tags.update(generated_tags)
 
-        # noinspection PyBroadException
-        try:
-            timestamp = timestamp_function(data)
+        if callable(timestamp_function):
+            try:
+                timestamp = timestamp_function(data)
 
-            # make timestamp time zone aware if time zone is missing
-            if timestamp.tzinfo is None or timestamp.tzinfo.utcoffset(timestamp) is None:
-                timestamp = timestamp.replace(tzinfo=self.config.timezone)
+                # make timestamp time zone aware if time zone is missing
+                if timestamp.tzinfo is None or timestamp.tzinfo.utcoffset(timestamp) is None:
+                    timestamp = timestamp.replace(tzinfo=self.config.timezone)
 
-        except Exception:
-            pass
+            except Exception as exc:
+                log.error(f"Timestamp function for metric '{metric_name}' failed: {exc}")
+                return
 
         if metric_value is None:
             log.error(f"Unable to extract '{metric_name}' form '{data}', got '{type(metric_value)}'")

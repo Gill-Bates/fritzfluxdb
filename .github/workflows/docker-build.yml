@@ -591,7 +591,8 @@ jobs:
             const runUrl = `https://github.com/${context.repo.owner}/${context.repo.repo}/actions/runs/${runId}`;
 
             function normalizeVersion(value) {
-              const main = value.split('-', 1)[0];
+              const stripped = value.startsWith('v') ? value.slice(1) : value;
+              const main = stripped.split('-', 1)[0];
               const parts = main.split('.');
               while (parts.length < 3) {
                 parts.push('0');

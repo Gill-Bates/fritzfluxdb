@@ -5,6 +5,7 @@
 #
 
 import asyncio
+import time
 from datetime import UTC, datetime
 from logging import LogRecord
 
@@ -27,18 +28,25 @@ class InfluxHandler:
     retry_interval = 5
     max_retry_interval = 120
     retention_warning_interval = 300
+    _retryable_status_codes = {408, 425, 429, 500, 502, 503, 504}
+
+    connection_warning_interval = 60
 
     def __init__(self, config, user_agent: str | None = None):
         self.config = InfluxDBConfig(config)
         self.version = int(self.config.version)
+        if self.version not in {1, 2}:
+            raise ValueError(f"Unsupported InfluxDB version: {self.version}")
         self.client: httpx.AsyncClient | None = None
         self.init_successful = False
         self.connection_lost = False
+        self.last_connection_warning: datetime | None = None
         self.out_of_retention_period_range = False
         self.last_retention_warning = None
         self.buffer = list()
         self.current_retry_interval = self.retry_interval
         self.last_write_retry = None
+        self.retention_buffer_sorted = False
         self.current_max_measurements_buffer_warning = self.max_measurements_buffer_warning
         self.current_measurements_per_write = self.max_measurements_per_write
         self.user_agent = user_agent
@@ -46,9 +54,17 @@ class InfluxHandler:
         proto = "https" if self.config.tls_enabled else "http"
         self.base_url = f"{proto}://{self.config.hostname}:{self.config.port}"
 
-    def connect(self):
-        # We handle async initialization inside task_loop now
-        self.init_successful = True
+    def connect(self) -> None:
+        # Async initialization happens inside task_loop via _init_client()
+        pass
+
+    def append_measurement(self, measurement: FritzMeasurement) -> None:
+        if len(self.buffer) >= self.max_measurements_buffer_size:
+            del self.buffer[0]
+            log.warning("InfluxDB measurement buffer is full; dropping oldest measurement")
+        self.buffer.append(measurement)
+        if self.out_of_retention_period_range:
+            self.retention_buffer_sorted = False
 
     async def close(self) -> None:
         if self.client is not None:
@@ -78,8 +94,26 @@ class InfluxHandler:
             else:
                 resp = await self.client.get("/ping")
                 resp.raise_for_status()
-        except httpx.HTTPError:
-            log.exception("Failed to connect to InfluxDB")
+        except httpx.HTTPError as exc:
+            now = datetime.now(UTC)
+            if not self.connection_lost:
+                log.error(
+                    "InfluxDB '%s' unreachable: %s — buffering data until connection is restored",
+                    self.config.hostname, exc,
+                )
+                self.last_connection_warning = now
+            elif (
+                self.last_connection_warning is None
+                or (now - self.last_connection_warning).total_seconds() >= self.connection_warning_interval
+            ):
+                log.warning(
+                    "InfluxDB '%s' still unreachable — %s measurement(s) buffered, retrying...",
+                    self.config.hostname, len(self.buffer),
+                )
+                self.last_connection_warning = now
+            else:
+                log.debug("InfluxDB '%s' still unreachable, retrying...", self.config.hostname)
+            self.connection_lost = True
             self.init_successful = False
             await self.client.aclose()
             self.client = None
@@ -108,9 +142,21 @@ class InfluxHandler:
             or "beyond retention policy" in msg
         )
 
+    @staticmethod
+    def _is_non_retryable_write_error(status_code: int, message: str) -> bool:
+        msg = (message or "").lower()
+        return (
+            status_code == 400
+            and (
+                "field type conflict" in msg
+                or "unable to parse" in msg
+                or "partial write" in msg
+            )
+        )
+
     def convert_measurement(self, measurement: FritzMeasurement) -> str:
         if not isinstance(measurement, FritzMeasurement):
-            log.error(f"Measurement needs to be a 'FritzMeasurement' but got '{type(measurement)}'")
+            log.error("Measurement needs to be a 'FritzMeasurement' but got '%s'", type(measurement))
             return ""
         return measurement.to_line_protocol(self.config.measurement_name)
 
@@ -123,28 +169,60 @@ class InfluxHandler:
             return True
         return False
 
-    async def write_data(self):
-        if not self.permitted_to_write_data():
+    async def _flush_buffer_before_close(self, timeout: float = 10.0) -> None:
+        if not self.buffer:
+            return
+        try:
+            async with asyncio.timeout(timeout):
+                while self.buffer:
+                    before = len(self.buffer)
+                    await self.write_data(force=True)
+                    if len(self.buffer) >= before:
+                        break
+        except TimeoutError:
+            log.warning(
+                "Timed out while flushing %s buffered InfluxDB measurement(s) before shutdown",
+                len(self.buffer),
+            )
+
+    async def write_data(self, *, force: bool = False):
+        if self.client is None:
+            if not await self._init_client():
+                return
+        if not force and not self.permitted_to_write_data():
             return
         if len(self.buffer) == 0:
             return
 
-        if self.out_of_retention_period_range:
-            self.buffer = sorted(self.buffer, key=lambda m: m.timestamp, reverse=True)
+        if self.out_of_retention_period_range and not self.retention_buffer_sorted:
+            self.buffer.sort(key=lambda m: m.timestamp, reverse=True)
+            self.retention_buffer_sorted = True
 
         local_buffer = self.buffer[:self.current_measurements_per_write]
-        data_lines = [self.convert_measurement(x) for x in local_buffer]
-        data_lines = [x for x in data_lines if x]
-        
+
+        data_lines: list[str] = []
+        valid_measurements: list[FritzMeasurement] = []
+        invalid_count = 0
+        for measurement in local_buffer:
+            line = self.convert_measurement(measurement)
+            if line:
+                data_lines.append(line)
+                valid_measurements.append(measurement)
+            else:
+                invalid_count += 1
+        if invalid_count:
+            log.error("Dropping %s invalid InfluxDB measurement(s) from current batch", invalid_count)
+            # Remove invalid entries from the buffer immediately so they are not
+            # retried on the next write attempt after a retryable failure.
+            self.buffer[:len(local_buffer)] = valid_measurements
+            local_buffer = valid_measurements
+
         if not data_lines:
-            log.error("Dropping %s invalid InfluxDB measurements", len(local_buffer))
-            del self.buffer[:len(local_buffer)]
             return
 
         payload = "\n".join(data_lines)
         write_successful = False
         self.last_write_retry = datetime.now(UTC)
-        auth = None
 
         try:
             if self.version == 1:
@@ -154,7 +232,7 @@ class InfluxHandler:
             else:
                 params = {"org": self.config.organisation, "bucket": self.config.bucket, "precision": "s"}
                 resp = await self.client.post("/api/v2/write", params=params, content=payload)
-            
+
             if resp.status_code in (200, 204):
                 write_successful = True
             else:
@@ -186,32 +264,120 @@ class InfluxHandler:
                     del self.buffer[:len(local_buffer)]
                     self.current_retry_interval = self.retry_interval
                     self.last_write_retry = None
+                elif self._is_non_retryable_write_error(resp.status_code, exception_message):
+                    log.error(
+                        "Dropping %s non-retryable InfluxDB measurement(s): %s: %.500s",
+                        len(local_buffer),
+                        resp.status_code,
+                        exception_message,
+                    )
+                    del self.buffer[:len(local_buffer)]
+                    self.last_write_retry = None
+                elif resp.status_code == 413:
+                    if self.current_measurements_per_write == 1:
+                        log.error(
+                            "Dropping oversized InfluxDB measurement (single line exceeds server limit): %.500s",
+                            exception_message,
+                        )
+                        del self.buffer[0]
+                        self.last_write_retry = None
+                    else:
+                        new_batch = max(1, self.current_measurements_per_write // 2)
+                        log.error(
+                            "InfluxDB write payload too large (%s measurements); reducing batch size to %s",
+                            self.current_measurements_per_write,
+                            new_batch,
+                        )
+                        self.set_num_current_measurements_to_write(new_batch)
+                        self.current_retry_interval = min(
+                            self.current_retry_interval * 2, self.max_retry_interval
+                        )
+                elif resp.status_code in self._retryable_status_codes:
+                    retry_after = resp.headers.get("Retry-After")
+                    if retry_after and retry_after.isdecimal():
+                        self.current_retry_interval = min(int(retry_after), self.max_retry_interval)
+                    else:
+                        self.current_retry_interval = min(
+                            self.current_retry_interval * 2, self.max_retry_interval
+                        )
+                    log.error(
+                        "Retryable InfluxDB write failure for '%s': %s: %.500s — retrying in %ss",
+                        self.config.hostname,
+                        resp.status_code,
+                        exception_message,
+                        self.current_retry_interval,
+                    )
+                    self.connection_lost = True
+                elif resp.status_code in {401, 403, 404}:
+                    log.error(
+                        "Non-retryable InfluxDB auth/config failure for '%s': %s: %.500s — "
+                        "backing off to max interval",
+                        self.config.hostname,
+                        resp.status_code,
+                        exception_message,
+                    )
+                    self.current_retry_interval = self.max_retry_interval
+                    self.connection_lost = True
                 else:
-                    log.error(f"Failed to write to InfluxDB '{self.config.hostname}': {resp.status_code}: {exception_message}")
-        except httpx.HTTPError:
+                    log.error(
+                        "Failed to write to InfluxDB '%s': %s: %.500s",
+                        self.config.hostname,
+                        resp.status_code,
+                        exception_message,
+                    )
+        except httpx.HTTPError as exc:
+            now = datetime.now(UTC)
+            if not self.connection_lost:
+                log.error("InfluxDB '%s' unreachable: %s — buffering data until connection is restored",
+                          self.config.hostname, exc)
+                self.last_connection_warning = now
+            elif (
+                self.last_connection_warning is None
+                or (now - self.last_connection_warning).total_seconds() >= self.connection_warning_interval
+            ):
+                log.warning(
+                    "InfluxDB '%s' still unreachable — %s measurement(s) buffered, retrying...",
+                    self.config.hostname, len(self.buffer),
+                )
+                self.last_connection_warning = now
+            else:
+                log.debug("InfluxDB '%s' still unreachable, retrying...", self.config.hostname)
             self.connection_lost = True
-            log.exception("Failed to write to InfluxDB '%s'", self.config.hostname)
+            if self.client is not None:
+                await self.client.aclose()
+                self.client = None
         except Exception:
             log.exception("Unexpected InfluxDB writer failure")
             raise
 
         if len(self.buffer) == 0:
             self.out_of_retention_period_range = False
+            self.retention_buffer_sorted = False
             self.current_measurements_per_write = self.max_measurements_per_write
 
         if write_successful:
             if self.connection_lost:
-                log.info(f"Connection to influxDB '{self.config.hostname}' restored.")
+                log.info(
+                    "InfluxDB '%s' connection restored — flushing %s buffered measurements",
+                    self.config.hostname,
+                    len(self.buffer),
+                )
+            self.last_connection_warning = None
             log.debug("Successfully wrote %s measurements to InfluxDB", len(local_buffer))
             del self.buffer[:len(local_buffer)]
             self.connection_lost = False
             self.last_write_retry = None
             self.current_retry_interval = self.retry_interval
             self.out_of_retention_period_range = False
+            self.retention_buffer_sorted = False
             self.set_num_current_measurements_to_write(self.current_measurements_per_write * 4)
         else:
-            if self.connection_lost:
-                self.current_retry_interval *= 2
+            if self.connection_lost and self.client is None:
+                # Transport error: use a fixed backoff step instead of a second
+                # doubling (HTTP-level errors already doubled the interval above).
+                self.current_retry_interval = min(
+                    self.current_retry_interval * 2, self.max_retry_interval
+                )
 
     def set_num_current_measurements_to_write(self, num_measurements: int):
         if not isinstance(num_measurements, int):
@@ -245,37 +411,31 @@ class InfluxHandler:
             self.current_max_measurements_buffer_warning = self.max_measurements_buffer_warning
 
     async def task_loop(self, queue: asyncio.Queue):
-        while not await self._init_client():
-            await asyncio.sleep(self.retry_interval)
-
         try:
             while True:
                 drained = 0
-                while (
-                    drained < self.max_measurements_per_write
-                    and len(self.buffer) < self.max_measurements_buffer_size
-                ):
+                while drained < self.max_measurements_per_write:
                     try:
                         measurement = queue.get_nowait()
                     except asyncio.QueueEmpty:
                         break
-
-                    self.buffer.append(measurement)
+                    try:
+                        self.append_measurement(measurement)
+                    finally:
+                        queue.task_done()
                     drained += 1
-                
+
                 await self.write_data()
                 await self.check_buffer()
                 await asyncio.sleep(0.1 if self.out_of_retention_period_range else 1)
         finally:
+            await self._flush_buffer_before_close()
             await self.close()
 
 
 class InfluxLogAndConfigWriter:
     name = "InfluxLogAndConfigWriter"
-    log_measurement_name = "log_entry"
     log_record_type = "fritzFlux"
-    timezone_measurement_name = "fritzFlux_setting_timezone"
-    timezone_setting_write_interval = 60 * 60 * 12
 
     def __init__(self, config: FritzBoxConfig, log_queue: asyncio.Queue):
         if not isinstance(config, FritzBoxConfig):
@@ -285,53 +445,50 @@ class InfluxLogAndConfigWriter:
 
         self.config = config
         self.log_queue = log_queue
-        self.last_timezone_setting_write = None
         self.init_successful = True
 
     def format_log_record(self, log_record):
         if not isinstance(log_record, LogRecord):
             return None
         log_timestamp = datetime.fromtimestamp(log_record.created, UTC)
-        log_msg = "{levelname}: {message}".format(**log_record.__dict__)
+        log_msg = f"{log_record.levelname}: {log_record.getMessage()}"
         return FritzMeasurement("message", log_msg,
-                                measurement=self.log_measurement_name,
                                 box_tag=self.config.box_tag,
                                 additional_tags={"log_type": self.log_record_type},
                                 data_type=str,
                                 timestamp=log_timestamp,
                                 timestamp_precision=WritePrecision.S)
 
-    def get_timezone_setting_measurement(self):
-        return FritzMeasurement("timezone", self.config.timezone,
-                                measurement=self.timezone_measurement_name,
-                                box_tag=self.config.box_tag,
-                                data_type=str)
-
-    def is_time_to_write_timezone_setting(self):
-        if self.last_timezone_setting_write is None:
-            return True
-        if (datetime.now(UTC) - self.last_timezone_setting_write).total_seconds() >= self.timezone_setting_write_interval:
-            return True
-        return False
-
     async def task_loop(self, output_queue: asyncio.Queue):
         max_log_records_per_tick = 1_000
-        
+        config_write_interval = 3600  # write config settings once per hour
+        last_config_write = 0.0
+
         while True:
+            now = time.monotonic()
+            if now - last_config_write >= config_write_interval:
+                last_config_write = now
+                tz_name = str(getattr(self.config, "timezone", "Europe/Berlin"))
+                await output_queue.put(FritzMeasurement(
+                    "fritzfluxdb_setting_timezone",
+                    tz_name,
+                    box_tag=self.config.box_tag,
+                    data_type=str,
+                    timestamp_precision=WritePrecision.S,
+                ))
+
             for _ in range(max_log_records_per_tick):
                 try:
                     log_record = self.log_queue.get_nowait()
                 except asyncio.QueueEmpty:
                     break
 
-                formatted_log_record = self.format_log_record(log_record)
-                if formatted_log_record is not None:
-                    await output_queue.put(formatted_log_record)
-
-            if self.is_time_to_write_timezone_setting():
-                timezone_measurement = self.get_timezone_setting_measurement()
-                await output_queue.put(timezone_measurement)
-                self.last_timezone_setting_write = datetime.now(UTC)
+                try:
+                    formatted_log_record = self.format_log_record(log_record)
+                    if formatted_log_record is not None:
+                        await output_queue.put(formatted_log_record)
+                finally:
+                    self.log_queue.task_done()
 
             await asyncio.sleep(1)
 

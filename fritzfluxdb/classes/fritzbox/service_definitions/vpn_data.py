@@ -4,14 +4,19 @@
 # Copyright (C) 2026 Gill-Bates http://github.com/Gill-Bates
 #
 
+import os
+
 from fritzfluxdb.common import grab
 from fritzfluxdb.classes.fritzbox.service_definitions import lua_services
 
-INCLUDE_VPN_ADDRESS_METRICS = False
+INCLUDE_VPN_ADDRESS_METRICS = os.getenv("FRITZFLUXDB_INCLUDE_VPN_ADDRESS_METRICS") == "1"
 
 def prepare_json_response_data(response):
+    if response.status_code == 404:
+        return {}
+
     if response.status_code != 200:
-        return None
+        raise ValueError(f"unexpected HTTP status {response.status_code} for {response.url}")
 
     try:
         return response.json()
@@ -47,19 +52,23 @@ def count_connected(data, path: str) -> int:
 
 def vpn_user_tags(vpn_type: str):
     def build_tags(data) -> dict[str, str]:
-        name = data.get("name")
-        if name is None or str(name).strip() == "":
-            raise ValueError("missing VPN user name")
-        return {"name": str(name), "vpn_type": vpn_type}
+        name = str(data.get("name") or data.get("id") or "unknown").strip()
+        return {"name": name, "vpn_type": vpn_type}
     return build_tags
 
 def vpn_connection_metric(path: str, source_key: str, value_type: type, vpn_type: str) -> dict:
+    def get_value(data):
+        value = data.get(source_key)
+        if value_type is bool:
+            return parse_bool(value)
+        return value
+
     return {
         "data_path": path,
         "type": dict,
         "next": {
             "type": value_type,
-            "value_function": lambda data: data.get(source_key),
+            "value_function": get_value,
             "tags_function": vpn_user_tags(vpn_type),
         },
         "exclude_filter_function": has_dict_at(path),

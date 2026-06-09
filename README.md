@@ -24,28 +24,57 @@
   <img src="https://img.shields.io/badge/python-3.13%2B-yellow" alt="Python 3.13+">
 </p>
 
+> [!NOTE]
+> **Built on the shoulders of giants.** This project is a fork of and would not exist without
+> [**bb-Ricardo/fritzinfluxdb**](https://github.com/bb-Ricardo/fritzinfluxdb) by **Ricardo Bartels**.
+> The original laid the entire foundation for collecting FritzBox metrics into InfluxDB —
+> a huge thank you for the years of work behind it. 🙏
+
 
 ## 📋 Table of Contents
 
+- [Why this fork?](#-why-this-fork)
 - [Features](#-features)
 - [Quick Start](#-quick-start)
 - [Configuration](#%EF%B8%8F-configuration)
 - [Grafana Dashboards](#-grafana-dashboards)
 - [Local Development](#-local-development)
-- [CI / Build](#-ci--build)
 - [License](#-license)
+
+---
+
+## 🔀 Why this fork?
+
+The original project is excellent and battle-tested. This fork modernises the codebase and
+focuses on **operational reliability** and a **smaller, container-first footprint**.
+
+| | `fritzFluxDB` (this fork) | `fritzinfluxdb` (original) |
+|---|---|---|
+| **Python** | 3.13 | 3.7+ |
+| **InfluxDB client** | `httpx` — single lightweight HTTP dependency | `influxdb` + `influxdb_client` libraries |
+| **Outage logging** | One error on outage, silent retries, one recovery message | Repeated errors per retry |
+| **Graceful shutdown** | Buffered measurements are flushed before exit | Buffer discarded on shutdown |
+| **HTTP backoff** | Exponential backoff on `429`/`5xx`, honours `Retry-After`, auto-shrinks batch on `413` | Fixed retry interval |
+| **Parser robustness** | Hardened against malformed JSON/XML/CSV with descriptive errors | Basic parsing |
+| **Measurement identity** | Named after the FritzBox serial — swapping hardware keeps history cleanly separated | Single static measurement |
+| **Secret handling** | Credentials masked in logs; refuses to send credentials over plain HTTP to remote hosts | — |
+| **Docker image** | Multi-arch (`amd64`/`arm64`), non-root, Tini as PID 1 | Single-arch, runs as root |
+| **Timezone correctness** | Log timestamps are timezone-aware | — |
+
+> The original still ships features this fork intentionally dropped (e.g. automatic
+> retention-policy creation). If you rely on those, the upstream project may suit you better.
 
 ---
 
 ## ✨ Features
 
-- 🔌 Collects TR-064 & Lua service data from FritzBox
-- 📊 Supports InfluxDB v1 and v2
-- 🏠 Home automation metrics (smart home devices)
-- 📞 Call logs & telephone data
-- 🌐 VPN, network hosts, connection info
-- 🐳 Multi-arch Docker image (`amd64` / `arm64`)
-- 🛡️ Runs as non-root with Tini as PID 1
+-  Collects TR-064 & Lua service data from FritzBox
+-  Supports InfluxDB v1 and v2
+-  Home automation metrics (smart home devices)
+-  Call logs & telephone data
+-  VPN, network hosts, connection info
+-  Multi-arch Docker image (`amd64` / `arm64`)
+-  Runs as non-root with Tini as PID 1
 
 ---
 
@@ -143,20 +172,10 @@ python run.py -c setup.conf
 
 ---
 
-## 🔄 CI / Build
+## 📄 License
 
-The GitHub Actions workflow (`.github/workflows/docker-build.yml`) handles:
-
-- ✅ Lint (`ruff`) and tests (`pytest`)
-- 🏗️ Multi-arch Docker builds (`linux/amd64`, `linux/arm64`)
-- 🛡️ Trivy vulnerability scanning
-- 📦 Multi-arch manifest push to Docker Hub
-- 🏷️ Automated GitHub Releases with security scan results
-
-Triggered on version tags (`v*`) or manually via `workflow_dispatch`.
+[MIT](LICENSE) — © 2026 Gill-Bates
 
 ---
 
-## 📄 License
-
-[MIT](LICENSE) — Gill-Bates
+> **Disclaimer:** This project is an independent open-source tool and is not affiliated with, endorsed by, or in any way associated with AVM GmbH or the FRITZ!Box product line. FRITZ!Box is a registered trademark of AVM GmbH.

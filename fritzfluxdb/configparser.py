@@ -13,7 +13,7 @@ from fritzfluxdb.common import do_error_exit
 log = get_logger()
 
 
-def import_config(filenames: list, default_config_file: str = None):
+def import_config(filenames: list | None, default_config_file: str | None = None):
     """
     Read config ini files in the given order and return configparser object
 
@@ -29,14 +29,17 @@ def import_config(filenames: list, default_config_file: str = None):
     configparser.ConfigParser(): configparser object
     """
 
-    # check if default config file actually exists
-    # and add it to the list of files to parse
-    if os.path.exists(default_config_file) and len(filenames) == 0:
-        filenames.append(default_config_file)
+    # work on a local copy so the caller's list is never mutated
+    config_files = list(filenames or [])
+
+    # check if default config file actually exists and add it to the list
+    if default_config_file is not None and not config_files:
+        if os.path.exists(default_config_file):
+            config_files.append(default_config_file)
 
     # check if config file exists
     config_file_errors = False
-    for f in filenames:
+    for f in config_files:
         # check if file exists
         if not os.path.exists(f):
             log.error(f'Config file "{f}" not found')
@@ -60,11 +63,11 @@ def import_config(filenames: list, default_config_file: str = None):
 
     config = configparser.ConfigParser()
 
-    if len(filenames) == 0:
+    if not config_files:
         return config
 
     try:
-        config.read(filenames)
+        config.read(config_files)
     except configparser.Error as e:
         do_error_exit(f"Config Error: {e}")
 

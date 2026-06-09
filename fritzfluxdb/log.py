@@ -70,20 +70,22 @@ def setup_logging(log_level=None, run_as_daemon=False, log_queue=None):
         datefmt='%Y-%m-%d %H:%M:%S',
     )
 
-    # create logger instance
+    # create logger instance; clear any handlers from a previous call
     logger = get_logger()
-
+    logger.handlers.clear()
     logger.setLevel(numeric_log_level)
+    logger.propagate = False
 
     # add handler to write logs to stdout
     log_stream = logging.StreamHandler(sys.stdout)
     log_stream.setFormatter(log_format)
     logger.addHandler(log_stream)
 
-    # add handler to write logs to InfluxDB log queue
-    queue_handler = DroppingQueueHandler(log_queue)
-    queue_handler.setLevel(logging.INFO)
-    logger.addHandler(queue_handler)
+    # add handler to write logs to InfluxDB log queue (only when queue provided)
+    if log_queue is not None:
+        queue_handler = DroppingQueueHandler(log_queue)
+        queue_handler.setLevel(logging.INFO)
+        logger.addHandler(queue_handler)
 
     return logger
 

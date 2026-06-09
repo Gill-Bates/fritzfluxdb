@@ -51,6 +51,15 @@ require_positive_int() {
     fi
 }
 
+require_positive_int_max() {
+    # $1 = variable name, $2 = value, $3 = max
+    require_positive_int "$1" "$2"
+    if [ "$2" -gt "$3" ]; then
+        printf 'Invalid %s: "%s" (expected positive integer <= %s)\n' "$1" "$2" "$3" >&2
+        exit 2
+    fi
+}
+
 # --- configuration & validation --------------------------------------------
 RESTART_DELAY="${WATCHDOG_RESTART_DELAY:-10}"
 MAX_RESTART_DELAY="${WATCHDOG_MAX_RESTART_DELAY:-300}"
@@ -58,11 +67,11 @@ MAX_RESTARTS="${WATCHDOG_MAX_RESTARTS:-10}"
 BACKOFF_RESET_AFTER="${WATCHDOG_BACKOFF_RESET_AFTER:-3600}"
 SHUTDOWN_TIMEOUT="${WATCHDOG_SHUTDOWN_TIMEOUT:-15}"
 
-require_positive_int WATCHDOG_RESTART_DELAY "${RESTART_DELAY}"
-require_positive_int WATCHDOG_MAX_RESTART_DELAY "${MAX_RESTART_DELAY}"
-require_positive_int WATCHDOG_MAX_RESTARTS "${MAX_RESTARTS}"
-require_positive_int WATCHDOG_BACKOFF_RESET_AFTER "${BACKOFF_RESET_AFTER}"
-require_positive_int WATCHDOG_SHUTDOWN_TIMEOUT "${SHUTDOWN_TIMEOUT}"
+require_positive_int_max WATCHDOG_RESTART_DELAY      "${RESTART_DELAY}"      3600
+require_positive_int_max WATCHDOG_MAX_RESTART_DELAY  "${MAX_RESTART_DELAY}"  86400
+require_positive_int_max WATCHDOG_MAX_RESTARTS        "${MAX_RESTARTS}"       1000
+require_positive_int_max WATCHDOG_BACKOFF_RESET_AFTER "${BACKOFF_RESET_AFTER}" 604800
+require_positive_int_max WATCHDOG_SHUTDOWN_TIMEOUT   "${SHUTDOWN_TIMEOUT}"   300
 
 # Keep the initial back-off within the cap.
 if [ "${RESTART_DELAY}" -gt "${MAX_RESTART_DELAY}" ]; then
@@ -87,8 +96,8 @@ fi
 forward_signal() {
     terminating=1
     if [ -n "${child_pid}" ] && kill -0 "${child_pid}" 2>/dev/null; then
-        log "received shutdown signal, forwarding SIGTERM to daemon (pid ${child_pid})"
-        kill -TERM "${child_pid}" 2>/dev/null || true
+        log "received shutdown signal, forwarding SIGTERM to daemon process group (pid ${child_pid})"
+        kill -TERM "-${child_pid}" 2>/dev/null || true
 
         remaining="${SHUTDOWN_TIMEOUT}"
         while kill -0 "${child_pid}" 2>/dev/null && [ "${remaining}" -gt 0 ]; do
@@ -97,8 +106,8 @@ forward_signal() {
         done
 
         if kill -0 "${child_pid}" 2>/dev/null; then
-            log "daemon did not stop within ${SHUTDOWN_TIMEOUT}s, sending SIGKILL"
-            kill -KILL "${child_pid}" 2>/dev/null || true
+            log "daemon did not stop within ${SHUTDOWN_TIMEOUT}s, sending SIGKILL to process group"
+            kill -KILL "-${child_pid}" 2>/dev/null || true
         fi
 
         wait "${child_pid}" 2>/dev/null || true
@@ -106,18 +115,26 @@ forward_signal() {
     exit 0
 }
 
-# main.py treats SIGHUP, SIGTERM and SIGINT as shutdown signals -> mirror that.
+# The daemon treats SIGHUP, SIGTERM and SIGINT as shutdown signals -> mirror that.
 trap forward_signal TERM INT HUP
 
 log "starting fritzFlux watchdog (delay=${RESTART_DELAY}s cap=${MAX_RESTART_DELAY}s max_restarts=${MAX_RESTARTS})"
-log "command: $*"
+log "command: $1"
 
 while true; do
     log "launching daemon"
     started_at="$(date +%s)"
 
-    # Run in the background so the shell stays responsive to signals.
-    "$@" &
+    # Suppress the startup banner on restarts so the log is not cluttered.
+    # Unset when restart_count was reset (stable run) so the banner reappears.
+    if [ "${restart_count}" -gt 0 ]; then
+        export FRITZFLUXDB_SKIP_BANNER=1
+    else
+        unset FRITZFLUXDB_SKIP_BANNER
+    fi
+
+    # Run in a separate session so shutdown can target the whole process group.
+    setsid "$@" &
     child_pid=$!
 
     # `wait` returns when the child exits OR a trapped signal fires.
@@ -136,7 +153,7 @@ while true; do
     # Treat a normal exit and signal-terminations (SIGINT/SIGTERM) as clean,
     # so an externally stopped daemon is not misread as a crash.
     case "${status}" in
-        0|130|143)
+        0|129|130|143)
             log "daemon exited cleanly (status ${status}), stopping watchdog"
             exit 0
             ;;
@@ -150,6 +167,7 @@ while true; do
         log "daemon ran ${runtime}s before failing; resetting back-off and counter"
         delay="${RESTART_DELAY}"
         restart_count=0
+        unset FRITZFLUXDB_SKIP_BANNER
     fi
 
     restart_count=$((restart_count + 1))

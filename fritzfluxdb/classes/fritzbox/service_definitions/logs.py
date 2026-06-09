@@ -5,8 +5,25 @@
 #
 
 from datetime import datetime
+from zoneinfo import ZoneInfo
 
 from fritzfluxdb.classes.fritzbox.service_definitions import lua_services
+
+LOCAL_TZ = ZoneInfo("Europe/Berlin")
+
+
+def parse_legacy_log_timestamp(data) -> datetime:
+    if not isinstance(data, list) or len(data) < 2:
+        raise ValueError(f"invalid legacy log entry: {data!r}")
+    return datetime.strptime(f"{data[0]} {data[1]}", "%d.%m.%y %H:%M:%S").replace(tzinfo=LOCAL_TZ)
+
+
+def parse_modern_log_timestamp(data) -> datetime:
+    date_value = data.get("date") if isinstance(data, dict) else None
+    time_value = data.get("time") if isinstance(data, dict) else None
+    if not date_value or not time_value:
+        raise ValueError(f"invalid log entry timestamp: {data!r}")
+    return datetime.strptime(f"{date_value} {time_value}", "%d.%m.%y %H:%M:%S").replace(tzinfo=LOCAL_TZ)
 
 
 def prepare_json_response_data(response):
@@ -14,7 +31,13 @@ def prepare_json_response_data(response):
     handler to prepare returned json data for parsing
     """
 
-    return response.json()
+    if response.status_code != 200:
+        raise ValueError(f"unexpected HTTP status {response.status_code} for {response.url}")
+
+    try:
+        return response.json()
+    except ValueError as exc:
+        raise ValueError(f"invalid JSON response for {response.url}: {exc}") from exc
 
 
 lua_services.append(
@@ -41,8 +64,7 @@ lua_services.append(
                     "tags": {
                         "log_type": "System"
                     },
-                    "timestamp_function": lambda data:
-                        datetime.strptime(f'{data[0]} {data[1]}', '%d.%m.%y %H:%M:%S'),
+                    "timestamp_function": parse_legacy_log_timestamp,
                     "value_function": lambda data: data[2],
                     "tags_function": None
                 }
@@ -73,8 +95,7 @@ lua_services.append(
                     "tags": {
                         "log_type": "System"
                     },
-                    "timestamp_function": lambda data:
-                        datetime.strptime(f'{data.get("date")} {data.get("time")}', '%d.%m.%y %H:%M:%S'),
+                    "timestamp_function": parse_modern_log_timestamp,
                     "value_function": lambda data: data.get("msg"),
                     "tags_function": None
                 }
@@ -106,8 +127,7 @@ lua_services.append(
                     "tags": {
                         "log_type": "Internet connection"
                     },
-                    "timestamp_function": lambda data:
-                        datetime.strptime(f'{data[0]} {data[1]}', '%d.%m.%y %H:%M:%S'),
+                    "timestamp_function": parse_legacy_log_timestamp,
                     "value_function": lambda data: data[2],
                     "tags_function": None
                 }
@@ -138,8 +158,7 @@ lua_services.append(
                     "tags": {
                         "log_type": "Internet connection"
                     },
-                    "timestamp_function": lambda data:
-                        datetime.strptime(f'{data.get("date")} {data.get("time")}', '%d.%m.%y %H:%M:%S'),
+                    "timestamp_function": parse_modern_log_timestamp,
                     "value_function": lambda data: data.get("msg"),
                     "tags_function": None
                 }
@@ -171,8 +190,7 @@ lua_services.append(
                     "tags": {
                         "log_type": "Telephony"
                     },
-                    "timestamp_function": lambda data:
-                        datetime.strptime(f'{data[0]} {data[1]}', '%d.%m.%y %H:%M:%S'),
+                    "timestamp_function": parse_legacy_log_timestamp,
                     "value_function": lambda data: data[2],
                     "tags_function": None
                 }
@@ -203,8 +221,7 @@ lua_services.append(
                     "tags": {
                         "log_type": "Telephony"
                     },
-                    "timestamp_function": lambda data:
-                        datetime.strptime(f'{data.get("date")} {data.get("time")}', '%d.%m.%y %H:%M:%S'),
+                    "timestamp_function": parse_modern_log_timestamp,
                     "value_function": lambda data: data.get("msg"),
                     "tags_function": None
                 }
@@ -236,8 +253,7 @@ lua_services.append(
                     "tags": {
                         "log_type": "WLAN"
                     },
-                    "timestamp_function": lambda data:
-                        datetime.strptime(f'{data[0]} {data[1]}', '%d.%m.%y %H:%M:%S'),
+                    "timestamp_function": parse_legacy_log_timestamp,
                     "value_function": lambda data: data[2],
                     "tags_function": None
                 }
@@ -268,8 +284,7 @@ lua_services.append(
                     "tags": {
                         "log_type": "WLAN"
                     },
-                    "timestamp_function": lambda data:
-                        datetime.strptime(f'{data.get("date")} {data.get("time")}', '%d.%m.%y %H:%M:%S'),
+                    "timestamp_function": parse_modern_log_timestamp,
                     "value_function": lambda data: data.get("msg"),
                     "tags_function": None
                 }
@@ -301,8 +316,7 @@ lua_services.append(
                     "tags": {
                         "log_type": "USB Devices"
                     },
-                    "timestamp_function": lambda data:
-                        datetime.strptime(f'{data[0]} {data[1]}', '%d.%m.%y %H:%M:%S'),
+                    "timestamp_function": parse_legacy_log_timestamp,
                     "value_function": lambda data: data[2],
                     "tags_function": None
                 }
@@ -333,8 +347,7 @@ lua_services.append(
                     "tags": {
                         "log_type": "USB Devices"
                     },
-                    "timestamp_function": lambda data:
-                        datetime.strptime(f'{data.get("date")} {data.get("time")}', '%d.%m.%y %H:%M:%S'),
+                    "timestamp_function": parse_modern_log_timestamp,
                     "value_function": lambda data: data.get("msg"),
                     "tags_function": None
                 }

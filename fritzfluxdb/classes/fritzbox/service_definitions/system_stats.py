@@ -14,7 +14,24 @@ def prepare_json_response_data(response):
     handler to prepare returned json data for parsing
     """
 
-    return response.json()
+    if response.status_code != 200:
+        raise ValueError(f"unexpected HTTP status {response.status_code} for {response.url}")
+
+    try:
+        return response.json()
+    except ValueError as exc:
+        raise ValueError(f"invalid JSON response for {response.url}: {exc}") from exc
+
+
+def missing_data_key(key: str):
+    def exclude(data) -> bool:
+        payload = data.get("data")
+        return not isinstance(payload, dict) or key not in payload
+    return exclude
+
+
+def is_lan_energy_entry(data: dict) -> bool:
+    return "lan" in data
 
 
 lua_services.append(
@@ -33,31 +50,31 @@ lua_services.append(
                 "data_path": "data.cputemp.series.0.-1",
                 "type": int,
                 # Cable FritzBox with FritzOS 8.00 got these stats removed
-                "exclude_filter_function": lambda data: "cputemp" not in data.get("data", {}).keys()
+                "exclude_filter_function": missing_data_key("cputemp")
             },
             "cpu_utilization": {
                 "data_path": "data.cpuutil.series.0.-1",
                 "type": int,
                 # Cable FritzBox with FritzOS 8.00 got these stats removed
-                "exclude_filter_function": lambda data: "cpuutil" not in data.get("data", {}).keys()
+                "exclude_filter_function": missing_data_key("cpuutil")
             },
             "ram_usage_fixed": {
                 "data_path": "data.ramusage.series.0.-1",
                 "type": int,
                 # Cable FritzBox with FritzOS 8.00 got these stats removed
-                "exclude_filter_function": lambda data: "ramusage" not in data.get("data", {}).keys()
+                "exclude_filter_function": missing_data_key("ramusage")
             },
             "ram_usage_dynamic": {
                 "data_path": "data.ramusage.series.1.-1",
                 "type": int,
                 # Cable FritzBox with FritzOS 8.00 got these stats removed
-                "exclude_filter_function": lambda data: "ramusage" not in data.get("data", {}).keys()
+                "exclude_filter_function": missing_data_key("ramusage")
             },
             "ram_usage_free": {
                 "data_path": "data.ramusage.series.2.-1",
                 "type": int,
                 # Cable FritzBox with FritzOS 8.00 got these stats removed
-                "exclude_filter_function": lambda data: "ramusage" not in data.get("data", {}).keys()
+                "exclude_filter_function": missing_data_key("ramusage")
             }
         }
     })
@@ -82,10 +99,10 @@ lua_services.append(
                     "type": int,
                     "tags_function": lambda data: {"name": data.get("name")},
                     "value_function": lambda data: data.get("actPerc"),
-                    "exclude_filter_function": lambda data: "lan" in data.keys()
+                    "exclude_filter_function": is_lan_energy_entry
                 },
                 # Cable FritzBox with FritzOS 8.00 got these stats removed
-                "exclude_filter_function": lambda data: "drain" not in data.get("data", {}).keys()
+                "exclude_filter_function": missing_data_key("drain")
             }
         }
     })

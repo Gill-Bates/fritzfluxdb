@@ -22,10 +22,10 @@ def do_error_exit(log_text):
     """
 
     print(f"Error: {log_text}", file=sys.stderr)
-    exit(1)
+    raise SystemExit(1)
 
 
-def grab(structure=None, path=None, separator=".", fallback=None):
+def grab(structure=None, path: str | None = None, separator=".", fallback=None):
     """
         get data from a complex object/json structure with a
         "." separated path information. If a part of a path
@@ -67,43 +67,31 @@ def grab(structure=None, path=None, separator=".", fallback=None):
             the desired path element if found, otherwise None
     """
 
-    max_recursion_level = 100
-
-    current_level = 0
-    levels = len(path.split(separator))
-
     if structure is None or path is None:
         return fallback
 
-    # noinspection PyBroadException
-    def traverse(r_structure, r_path):
-        nonlocal current_level
-        current_level += 1
-
-        if current_level > max_recursion_level:
+    current = structure
+    for attribute in path.split(separator):
+        try:
+            if isinstance(current, list):
+                current = current[int(attribute)]
+            elif isinstance(current, dict):
+                key = next(
+                    (k for k in current if str(k).lower() == attribute.lower()),
+                    None,
+                )
+                if key is None:
+                    return fallback
+                current = current[key]
+            else:
+                current = getattr(current, attribute)
+        except (AttributeError, IndexError, KeyError, TypeError, ValueError):
             return fallback
 
-        for attribute in r_path.split(separator):
-            if isinstance(r_structure, dict):
-                r_structure = {k.lower(): v for k, v in r_structure.items()}
+        if current is None:
+            return fallback
 
-            try:
-                if isinstance(r_structure, list):
-                    data = r_structure[int(attribute)]
-                elif isinstance(r_structure, dict):
-                    data = r_structure.get(attribute.lower())
-                else:
-                    data = getattr(r_structure, attribute)
-
-            except Exception:
-                return fallback
-
-            if current_level == levels:
-                return data if data is not None else fallback
-            else:
-                return traverse(data, separator.join(r_path.split(separator)[1:]))
-
-    return traverse(structure, path)
+    return current
 
 
 def in_test_mode():

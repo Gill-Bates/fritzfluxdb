@@ -4,14 +4,16 @@
 # Copyright (C) 2026 Gill-Bates http://github.com/Gill-Bates
 #
 
-from collections.abc import Sized
 from fritzfluxdb.common import grab
 from fritzfluxdb.classes.fritzbox.service_definitions import lua_services
 from fritzfluxdb.classes.fritzbox.model import FritzBoxLinkTypes
 
 def prepare_json_response_data(response):
+    if response.status_code == 404:
+        return {}
+
     if response.status_code != 200:
-        return None
+        raise ValueError(f"unexpected HTTP status {response.status_code} for {response.url}")
 
     try:
         return response.json()
@@ -35,12 +37,12 @@ def count_grouped_channels(data, path: str) -> int:
     groups = grab(data, path, fallback={})
     if not isinstance(groups, dict):
         return 0
-    return sum(len(group) for group in groups.values() if isinstance(group, Sized))
+    return sum(len(group) for group in groups.values() if isinstance(group, list | tuple))
 
 def channel_id_tag(data) -> dict[str, str]:
-    channel_id = data.get("channelID")
+    channel_id = data.get("channelID") or data.get("channel") or data.get("frequency")
     if channel_id is None or str(channel_id).strip() == "":
-        raise ValueError("missing channelID")
+        return {"id": "unknown"}
     return {"id": str(channel_id)}
 
 def channel_metric(data_path: str, value_key: str, value_type: type, exclude_filter) -> dict:
@@ -114,6 +116,7 @@ _CONNECTION_INFO_SERVICES = [
         },
         "link_type": FritzBoxLinkTypes.Cable,
         "response_parser": prepare_json_response_data,
+        "interval": 600,
         "value_instances": {
             "cable_channel_ds_docsis31_type": channel_metric("data.channelDs.docsis31", "type", str, exclude_filter_ds_docsis31),
             "cable_channel_ds_docsis31_power_level": channel_metric("data.channelDs.docsis31", "powerLevel", str, exclude_filter_ds_docsis31),
@@ -153,6 +156,7 @@ _CONNECTION_INFO_SERVICES = [
         },
         "link_type": FritzBoxLinkTypes.Cable,
         "response_parser": prepare_json_response_data,
+        "interval": 600,
         "value_instances": {
             # DOCSIS 3.1 down stream
             "cable_channel_ds_docsis31_power_level": channel_metric("data.channelDs.docsis31", "powerLevel", str, exclude_filter_ds_docsis31),

@@ -86,13 +86,30 @@ class InfluxDBConfig(ConfigBase):
         if self.tls_enabled and not self.verify_tls:
             log.warning(f"TLS certificate verification is disabled for InfluxDB at {self.hostname}; use only on trusted networks")
 
+        if not (1 <= self.port <= 65535):
+            log.error("InfluxDB port must be between 1 and 65535, got %s", self.port)
+            self.parser_error = True
+
+        if not self.tls_enabled and any(bool(v) for v in (self.username, self.password, self.token)):
+            if self.hostname not in {"localhost", "127.0.0.1", "::1"}:
+                log.error(
+                    "InfluxDB credentials must not be sent over plain HTTP to '%s'",
+                    self.hostname,
+                )
+                self.parser_error = True
+
         # validate data
         mandatory_keys = list()
         if self.version == 1:
             mandatory_keys = ["hostname", "database"]
 
-            if [getattr(self, "username"), getattr(self, "password")].count(None) == 1:
-                log.error(f"Username and password must be defined together or not at all for InfluxDB '{self.version}'")
+            username_defined = bool(str(self.username or "").strip())
+            password_defined = bool(str(self.password or "").strip())
+            if username_defined != password_defined:
+                log.error(
+                    "Username and password must be defined together or not at all for InfluxDB '%s'",
+                    self.version,
+                )
                 self.parser_error = True
 
         elif self.version == 2:

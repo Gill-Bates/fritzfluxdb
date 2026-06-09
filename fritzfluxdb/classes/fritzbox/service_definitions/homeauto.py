@@ -12,6 +12,7 @@
 import xmltodict
 import random
 from datetime import datetime
+from pathlib import Path
 
 from fritzfluxdb.common import grab, in_test_mode
 from fritzfluxdb.classes.fritzbox.service_handler import FritzBoxLuaURLPath
@@ -75,8 +76,13 @@ hun_fun_interface_types = {
 }
 
 test_data = None
-test_file_location = "test/homeauto_sample.xml"
+TEST_FILE_LOCATION = Path(__file__).resolve().parents[4] / "test" / "homeauto_sample.xml"
 test_start_ts = datetime.now().timestamp()
+
+
+def missing_device_list(data) -> bool:
+    device_list = data.get("devicelist")
+    return not isinstance(device_list, dict) or "device" not in device_list
 
 
 def force_int(data, path: str, default: int = 0):
@@ -85,10 +91,9 @@ def force_int(data, path: str, default: int = 0):
     if this fails return default
     """
 
-    # noinspection PyBroadException
     try:
         return int(grab(data, path, fallback=f"{default}"))
-    except Exception:
+    except (TypeError, ValueError):
         return default
 
 
@@ -127,9 +132,9 @@ def get_ha_powermeter_power(data):
 
 def get_ha_powermeter_energy(data):
 
-    energy = grab(data, "powermeter.energy")
+    energy = float(grab(data, "powermeter.energy", fallback="0"))
     if in_test_mode():
-        return float(energy) + float(datetime.now().timestamp() - test_start_ts)
+        return energy + float(datetime.now().timestamp() - test_start_ts)
 
     return energy
 
@@ -158,13 +163,12 @@ def get_ha_alert_state(data):
     return force_int(data, "alert.state")
 
 
-def decode_function_bitmask(bitmask: int):
+def decode_function_bitmask(bitmask: int | str | None) -> list[str]:
 
     return_values = list()
-    # noinspection PyBroadException
     try:
         binary_value = int(bitmask)
-    except Exception:
+    except (TypeError, ValueError):
         return return_values
 
     for bit_shift, value in home_automation_device_classes.items():
@@ -179,13 +183,21 @@ def reformat_homeauto_device_list(data):
 
     device_list = data.get("devicelist")
 
-    devices_by_id = {x.get("@id"): x for x in device_list.get("device", [])}
+    if not isinstance(device_list, dict):
+        data["devicelist"] = {"device": []}
+        return data
+
+    devices = device_list.get("device", [])
+    if not isinstance(devices, list):
+        devices = [devices] if isinstance(devices, dict) else []
+
+    devices_by_id = {x.get("@id"): x for x in devices if isinstance(x, dict)}
 
     hun_fun_device_id = 0  # these need to be skipped and only scraped for the @fwversion
     hun_fun_unit_id = 13   # these ones are kept
 
     new_device_list = list()
-    for device in device_list.get("device", []):
+    for device in devices:
 
         device_functions = decode_function_bitmask(device.get("@functionbitmask"))
 
@@ -202,7 +214,7 @@ def reformat_homeauto_device_list(data):
                 continue
 
             device["etsiunitinfo"]["unittype"] = hun_fun_unit_types.get(grab(device, "etsiunitinfo.unittype"), "")
-            device["etsiunitinfo"]["interfaces"] = hun_fun_unit_types.get(grab(device, "etsiunitinfo.interfaces"), "")
+            device["etsiunitinfo"]["interfaces"] = hun_fun_interface_types.get(grab(device, "etsiunitinfo.interfaces"), "")
 
             hun_fun_device_fw = devices_by_id.get(parent_unit_id, dict()).get("@fwversion")
             if hun_fun_device_fw is not None:
@@ -232,14 +244,25 @@ def prepare_response_data(response):
 
     if in_test_mode():
         if test_data is None:
-            with open(test_file_location) as f:
-                test_data = f.read()
+            test_data = TEST_FILE_LOCATION.read_text(encoding="utf-8")
 
-        content = test_data
+        content = test_data.encode()
     else:
+        if response.status_code != 200:
+            raise ValueError(f"unexpected HTTP status {response.status_code} for {response.url}")
+
         content = response.content
 
-    return reformat_homeauto_device_list(xmltodict.parse(content, force_list=('device',)))
+    MAX_RESPONSE_BYTES = 2_000_000
+    if len(content) > MAX_RESPONSE_BYTES:
+        raise ValueError(f"home automation response too large: {len(content)} bytes")
+
+    try:
+        parsed = xmltodict.parse(content, force_list=("device",), disable_entities=True)
+    except Exception as exc:
+        raise ValueError(f"invalid home automation XML response: {exc}") from exc
+
+    return reformat_homeauto_device_list(parsed)
 
 
 lua_services.append(
@@ -263,7 +286,7 @@ lua_services.append(
                     "tags_function": lambda data: {"name": data.get("name")},
                     "data_path": "@fwversion"
                 },
-                "exclude_filter_function": lambda data: "device" not in data.get("devicelist").keys()
+                "exclude_filter_function": missing_device_list
             },
             "ha_product_name": {
                 "data_path": "devicelist.device",
@@ -274,7 +297,7 @@ lua_services.append(
                     "tags_function": lambda data: {"name": data.get("name")},
                     "data_path": "@productname"
                 },
-                "exclude_filter_function": lambda data: "device" not in data.get("devicelist").keys()
+                "exclude_filter_function": missing_device_list
             },
             "ha_manufacturer": {
                 "data_path": "devicelist.device",
@@ -285,7 +308,7 @@ lua_services.append(
                     "tags_function": lambda data: {"name": data.get("name")},
                     "data_path": "@manufacturer"
                 },
-                "exclude_filter_function": lambda data: "device" not in data.get("devicelist").keys()
+                "exclude_filter_function": missing_device_list
             },
             "ha_devicefunctions": {
                 "data_path": "devicelist.device",
@@ -296,7 +319,7 @@ lua_services.append(
                     "tags_function": lambda data: {"name": data.get("name")},
                     "value_function": lambda data: ", ".join(data.get("@devicefunctions"))
                 },
-                "exclude_filter_function": lambda data: "device" not in data.get("devicelist").keys()
+                "exclude_filter_function": missing_device_list
             },
 
             "ha_device_present": {
@@ -308,7 +331,7 @@ lua_services.append(
                     "tags_function": lambda data: {"name": data.get("name")},
                     "data_path": "present"
                 },
-                "exclude_filter_function": lambda data: "device" not in data.get("devicelist").keys()
+                "exclude_filter_function": missing_device_list
             },
 
             # Battery data
@@ -322,7 +345,7 @@ lua_services.append(
                     "data_path": "battery",
                     "exclude_filter_function": lambda data: "battery" not in data.keys()
                 },
-                "exclude_filter_function": lambda data: "device" not in data.get("devicelist").keys()
+                "exclude_filter_function": missing_device_list
             },
             "ha_battery_low": {
                 "data_path": "devicelist.device",
@@ -334,7 +357,7 @@ lua_services.append(
                     "data_path": "batterylow",
                     "exclude_filter_function": lambda data: "batterylow" not in data.keys()
                 },
-                "exclude_filter_function": lambda data: "device" not in data.get("devicelist").keys()
+                "exclude_filter_function": missing_device_list
             },
 
             # Temperature
@@ -350,7 +373,7 @@ lua_services.append(
                         grab(data, "temperature.celsius") is None or grab(data, "temperature.offset") is None
                     )
                 },
-                "exclude_filter_function": lambda data: "device" not in data.get("devicelist").keys()
+                "exclude_filter_function": missing_device_list
             },
             "ha_temperature_celsius": {
                 "data_path": "devicelist.device",
@@ -364,7 +387,7 @@ lua_services.append(
                     ),
                     "exclude_filter_function": lambda data: grab(data, "temperature.celsius") is None
                 },
-                "exclude_filter_function": lambda data: "device" not in data.get("devicelist").keys()
+                "exclude_filter_function": missing_device_list
             },
             "ha_temperature_offset": {
                 "data_path": "devicelist.device",
@@ -378,7 +401,7 @@ lua_services.append(
                     ),
                     "exclude_filter_function": lambda data: grab(data, "temperature.offset") is None
                 },
-                "exclude_filter_function": lambda data: "device" not in data.get("devicelist").keys()
+                "exclude_filter_function": missing_device_list
             },
 
             # Power
@@ -392,7 +415,7 @@ lua_services.append(
                     "value_function": get_ha_powermeter_power,
                     "exclude_filter_function": lambda data: grab(data, "powermeter.power") is None
                 },
-                "exclude_filter_function": lambda data: "device" not in data.get("devicelist").keys()
+                "exclude_filter_function": missing_device_list
             },
             "ha_powermeter_energy": {
                 "data_path": "devicelist.device",
@@ -404,7 +427,7 @@ lua_services.append(
                     "value_function": get_ha_powermeter_energy,
                     "exclude_filter_function": lambda data: grab(data, "powermeter.energy") is None
                 },
-                "exclude_filter_function": lambda data: "device" not in data.get("devicelist").keys()
+                "exclude_filter_function": missing_device_list
             },
             "ha_powermeter_voltage": {
                 "data_path": "devicelist.device",
@@ -416,7 +439,7 @@ lua_services.append(
                     "value_function": get_ha_powermeter_voltage,
                     "exclude_filter_function": lambda data: grab(data, "powermeter.voltage") is None
                 },
-                "exclude_filter_function": lambda data: "device" not in data.get("devicelist").keys()
+                "exclude_filter_function": missing_device_list
             },
 
             # Switch data
@@ -430,7 +453,7 @@ lua_services.append(
                     "value_function": get_ha_switch_state,
                     "exclude_filter_function": lambda data: "switch" not in data.keys()
                 },
-                "exclude_filter_function": lambda data: "device" not in data.get("devicelist").keys()
+                "exclude_filter_function": missing_device_list
             },
             "ha_switch_mode": {
                 "data_path": "devicelist.device",
@@ -442,7 +465,7 @@ lua_services.append(
                     "value_function": lambda data: grab(data, "switch.mode", fallback=""),
                     "exclude_filter_function": lambda data: "switch" not in data.keys()
                 },
-                "exclude_filter_function": lambda data: "device" not in data.get("devicelist").keys()
+                "exclude_filter_function": missing_device_list
             },
             "ha_switch_lock": {
                 "data_path": "devicelist.device",
@@ -454,7 +477,7 @@ lua_services.append(
                     "value_function": lambda data: force_int(data, "switch.lock"),
                     "exclude_filter_function": lambda data: "switch" not in data.keys()
                 },
-                "exclude_filter_function": lambda data: "device" not in data.get("devicelist").keys()
+                "exclude_filter_function": missing_device_list
             },
             "ha_switch_devicelock": {
                 "data_path": "devicelist.device",
@@ -466,7 +489,7 @@ lua_services.append(
                     "value_function": lambda data: force_int(data, "switch.devicelock"),
                     "exclude_filter_function": lambda data: "switch" not in data.keys()
                 },
-                "exclude_filter_function": lambda data: "device" not in data.get("devicelist").keys()
+                "exclude_filter_function": missing_device_list
             },
             "ha_simpleonoff_state": {
                 "data_path": "devicelist.device",
@@ -478,7 +501,7 @@ lua_services.append(
                     "value_function": lambda data: force_int(data, "simpleonoff.state"),
                     "exclude_filter_function": lambda data: "simpleonoff" not in data.keys()
                 },
-                "exclude_filter_function": lambda data: "device" not in data.get("devicelist").keys()
+                "exclude_filter_function": missing_device_list
             },
             "ha_levelcontrol_level": {
                 "data_path": "devicelist.device",
@@ -490,7 +513,7 @@ lua_services.append(
                     "value_function": lambda data: force_int(data, "levelcontrol.levelpercentage"),
                     "exclude_filter_function": lambda data: "levelcontrol" not in data.keys()
                 },
-                "exclude_filter_function": lambda data: "device" not in data.get("devicelist").keys()
+                "exclude_filter_function": missing_device_list
             },
 
             # HUN-FUN device data
@@ -504,7 +527,7 @@ lua_services.append(
                     "value_function": lambda data: grab(data, "etsiunitinfo.interfaces"),
                     "exclude_filter_function": lambda data: "etsiunitinfo" not in data.keys()
                 },
-                "exclude_filter_function": lambda data: "device" not in data.get("devicelist").keys()
+                "exclude_filter_function": missing_device_list
             },
             "ha_hun_fun_unittype": {
                 "data_path": "devicelist.device",
@@ -516,7 +539,7 @@ lua_services.append(
                     "value_function": lambda data: grab(data, "etsiunitinfo.unittype"),
                     "exclude_filter_function": lambda data: "etsiunitinfo" not in data.keys()
                 },
-                "exclude_filter_function": lambda data: "device" not in data.get("devicelist").keys()
+                "exclude_filter_function": missing_device_list
             },
 
             # Colorcontrol
@@ -530,7 +553,7 @@ lua_services.append(
                     "value_function": lambda data: force_int(data, "colorcontrol.current_mode"),
                     "exclude_filter_function": lambda data: "colorcontrol" not in data.keys()
                 },
-                "exclude_filter_function": lambda data: "device" not in data.get("devicelist").keys()
+                "exclude_filter_function": missing_device_list
             },
             "ha_colorcontrol_hue": {
                 "data_path": "devicelist.device",
@@ -541,7 +564,7 @@ lua_services.append(
                     "value_function": lambda data: force_int(data, "colorcontrol.hue"),
                     "exclude_filter_function": lambda data: "colorcontrol" not in data.keys()
                 },
-                "exclude_filter_function": lambda data: "device" not in data.get("devicelist").keys()
+                "exclude_filter_function": missing_device_list
             },
             "ha_colorcontrol_saturation": {
                 "data_path": "devicelist.device",
@@ -552,7 +575,7 @@ lua_services.append(
                     "value_function": lambda data: force_int(data, "colorcontrol.saturation"),
                     "exclude_filter_function": lambda data: "colorcontrol" not in data.keys()
                 },
-                "exclude_filter_function": lambda data: "device" not in data.get("devicelist").keys()
+                "exclude_filter_function": missing_device_list
             },
             "ha_colorcontrol_temperature": {
                 "data_path": "devicelist.device",
@@ -563,7 +586,7 @@ lua_services.append(
                     "value_function": lambda data: force_int(data, "colorcontrol.temperature"),
                     "exclude_filter_function": lambda data: "colorcontrol" not in data.keys()
                 },
-                "exclude_filter_function": lambda data: "device" not in data.get("devicelist").keys()
+                "exclude_filter_function": missing_device_list
             },
 
             # Alarm
@@ -576,7 +599,7 @@ lua_services.append(
                     "value_function": get_ha_alert_state,
                     "exclude_filter_function": lambda data: "alert" not in data.keys()
                 },
-                "exclude_filter_function": lambda data: "device" not in data.get("devicelist").keys()
+                "exclude_filter_function": missing_device_list
             },
 
             # Heating
@@ -592,7 +615,7 @@ lua_services.append(
                     ),
                     "exclude_filter_function": lambda data: "hkr" not in data.keys()
                 },
-                "exclude_filter_function": lambda data: "device" not in data.get("devicelist").keys()
+                "exclude_filter_function": missing_device_list
             },
             "ha_heating_tsoll": {
                 "data_path": "devicelist.device",
@@ -606,7 +629,7 @@ lua_services.append(
                     ),
                     "exclude_filter_function": lambda data: "hkr" not in data.keys()
                 },
-                "exclude_filter_function": lambda data: "device" not in data.get("devicelist").keys()
+                "exclude_filter_function": missing_device_list
             },
             "ha_heating_komfort": {
                 "data_path": "devicelist.device",
@@ -620,7 +643,7 @@ lua_services.append(
                     ),
                     "exclude_filter_function": lambda data: "hkr" not in data.keys()
                 },
-                "exclude_filter_function": lambda data: "device" not in data.get("devicelist").keys()
+                "exclude_filter_function": missing_device_list
             },
             "ha_heating_absenk": {
                 "data_path": "devicelist.device",
@@ -634,7 +657,7 @@ lua_services.append(
                     ),
                     "exclude_filter_function": lambda data: "hkr" not in data.keys()
                 },
-                "exclude_filter_function": lambda data: "device" not in data.get("devicelist").keys()
+                "exclude_filter_function": missing_device_list
             },
             "ha_heating_lock": {
                 "data_path": "devicelist.device",
@@ -646,7 +669,7 @@ lua_services.append(
                     "value_function": lambda data: force_int(data, "hkr.lock"),
                     "exclude_filter_function": lambda data: "hkr" not in data.keys()
                 },
-                "exclude_filter_function": lambda data: "device" not in data.get("devicelist").keys()
+                "exclude_filter_function": missing_device_list
             },
             "ha_heating_devicelock": {
                 "data_path": "devicelist.device",
@@ -658,7 +681,7 @@ lua_services.append(
                     "value_function": lambda data: force_int(data, "hkr.devicelock"),
                     "exclude_filter_function": lambda data: "hkr" not in data.keys()
                 },
-                "exclude_filter_function": lambda data: "device" not in data.get("devicelist").keys()
+                "exclude_filter_function": missing_device_list
             },
             "ha_heating_errorcode": {
                 "data_path": "devicelist.device",
@@ -670,7 +693,7 @@ lua_services.append(
                     "value_function": lambda data: force_int(data, "hkr.errorcode"),
                     "exclude_filter_function": lambda data: "hkr" not in data.keys()
                 },
-                "exclude_filter_function": lambda data: "device" not in data.get("devicelist").keys()
+                "exclude_filter_function": missing_device_list
             },
             "ha_heating_windowopenactiv": {
                 "data_path": "devicelist.device",
@@ -682,7 +705,7 @@ lua_services.append(
                     "value_function": lambda data: force_int(data, "hkr.windowopenactiv"),
                     "exclude_filter_function": lambda data: "hkr" not in data.keys()
                 },
-                "exclude_filter_function": lambda data: "device" not in data.get("devicelist").keys()
+                "exclude_filter_function": missing_device_list
             },
             "ha_heating_windowopenactiveendtime": {
                 "data_path": "devicelist.device",
@@ -694,7 +717,7 @@ lua_services.append(
                     "value_function": lambda data: force_int(data, "hkr.windowopenactiveendtime"),
                     "exclude_filter_function": lambda data: "hkr" not in data.keys()
                 },
-                "exclude_filter_function": lambda data: "device" not in data.get("devicelist").keys()
+                "exclude_filter_function": missing_device_list
             },
             "ha_heating_boostactive": {
                 "data_path": "devicelist.device",
@@ -706,7 +729,7 @@ lua_services.append(
                     "value_function": lambda data: force_int(data, "hkr.boostactive"),
                     "exclude_filter_function": lambda data: "hkr" not in data.keys()
                 },
-                "exclude_filter_function": lambda data: "device" not in data.get("devicelist").keys()
+                "exclude_filter_function": missing_device_list
             },
             "ha_heating_boostactiveendtime": {
                 "data_path": "devicelist.device",
@@ -718,7 +741,7 @@ lua_services.append(
                     "value_function": lambda data: force_int(data, "hkr.boostactiveendtime"),
                     "exclude_filter_function": lambda data: "hkr" not in data.keys()
                 },
-                "exclude_filter_function": lambda data: "device" not in data.get("devicelist").keys()
+                "exclude_filter_function": missing_device_list
             },
             "ha_heating_batterylow": {
                 "data_path": "devicelist.device",
@@ -730,7 +753,7 @@ lua_services.append(
                     "value_function": lambda data: force_int(data, "hkr.batterylow"),
                     "exclude_filter_function": lambda data: "hkr" not in data.keys()
                 },
-                "exclude_filter_function": lambda data: "device" not in data.get("devicelist").keys()
+                "exclude_filter_function": missing_device_list
             },
             "ha_heating_battery": {
                 "data_path": "devicelist.device",
@@ -742,7 +765,7 @@ lua_services.append(
                     "value_function": lambda data: force_int(data, "hkr.battery"),
                     "exclude_filter_function": lambda data: "hkr" not in data.keys()
                 },
-                "exclude_filter_function": lambda data: "device" not in data.get("devicelist").keys()
+                "exclude_filter_function": missing_device_list
             },
             "ha_heating_nextchange_endperiod": {
                 "data_path": "devicelist.device",
@@ -754,7 +777,7 @@ lua_services.append(
                     "value_function": lambda data: force_int(data, "hkr.nextchange.endperiod"),
                     "exclude_filter_function": lambda data: "hkr" not in data.keys()
                 },
-                "exclude_filter_function": lambda data: "device" not in data.get("devicelist").keys()
+                "exclude_filter_function": missing_device_list
             },
             "ha_heating_nextchange_tchange": {
                 "data_path": "devicelist.device",
@@ -768,7 +791,7 @@ lua_services.append(
                     ),
                     "exclude_filter_function": lambda data: "hkr" not in data.keys()
                 },
-                "exclude_filter_function": lambda data: "device" not in data.get("devicelist").keys()
+                "exclude_filter_function": missing_device_list
             },
             "ha_heating_summeractive": {
                 "data_path": "devicelist.device",
@@ -780,7 +803,7 @@ lua_services.append(
                     "value_function": lambda data: force_int(data, "hkr.summeractive"),
                     "exclude_filter_function": lambda data: "hkr" not in data.keys()
                 },
-                "exclude_filter_function": lambda data: "device" not in data.get("devicelist").keys()
+                "exclude_filter_function": missing_device_list
             },
             "ha_heating_holidayactive": {
                 "data_path": "devicelist.device",
@@ -792,7 +815,7 @@ lua_services.append(
                     "value_function": lambda data: force_int(data, "hkr.holidayactive"),
                     "exclude_filter_function": lambda data: "hkr" not in data.keys()
                 },
-                "exclude_filter_function": lambda data: "device" not in data.get("devicelist").keys()
+                "exclude_filter_function": missing_device_list
             },
         }
     })

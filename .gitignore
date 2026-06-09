@@ -20,6 +20,7 @@ my-fritzfluxdb.xml
 *.swp
 *.swo
 .DS_Store
+.claude/
 
 # Pytest and coverage
 .pytest_cache/

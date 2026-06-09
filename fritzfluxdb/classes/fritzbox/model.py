@@ -83,6 +83,9 @@ class FritzBoxModel:
                          f"Please report this link type as issue to the github_project")
             return discovered_link_mode
 
+        if not model_name:
+            return FritzBoxLinkTypes.Other
+
         for fb_model, link_type in cls._fritzbox_model_link_types.items():
             if fb_model in model_name:
                 return link_type

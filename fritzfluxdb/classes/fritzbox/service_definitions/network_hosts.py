@@ -16,8 +16,17 @@ from fritzfluxdb.classes.fritzbox.service_definitions import lua_services
 #   5 GHz, 50 / 836 Mbit/s
 #   2,4 GHz
 #   5 GHz
-active_host_txt_regex = \
-    re.compile(r"((?P<frequency>[0-9,]+) GHz)*(, )*((?P<downstream>\d+) / (?P<upstream>\d+) .*bit.*)*")
+active_host_txt_regex = re.compile(
+    r"^(?:(?P<frequency>[0-9,]+) GHz(?:, )?)?"
+    r"(?:(?P<downstream>\d+) / (?P<upstream>\d+) .*bit.*)?$"
+)
+
+
+def nested_value(data: dict, key: str, child_key: str, fallback=None):
+    value = data.get(key)
+    if not isinstance(value, dict):
+        return fallback
+    return value.get(child_key, fallback)
 
 
 def get_active_host_details(data, desired_value: str, fallback_value):
@@ -27,20 +36,30 @@ def get_active_host_details(data, desired_value: str, fallback_value):
     if not isinstance(property_list, list):
         property_list = list()
 
-    txt_list = [x.get("txt") for x in property_list]
+    txt_list = [
+        item.get("txt")
+        for item in property_list
+        if isinstance(item, dict) and isinstance(item.get("txt"), str)
+    ]
 
     if desired_value == "additional_text":
         return ", ".join(txt_list)
 
     if desired_value == "is_mesh":
-        return True if "Mesh" in txt_list else False
+        return "Mesh" in txt_list
 
-    regex_matches = active_host_txt_regex.match(next((x for x in txt_list if "GHz" in x or "bit" in x), ""))
+    regex_matches = active_host_txt_regex.fullmatch(
+        next((x for x in txt_list if "GHz" in x or "bit" in x), "")
+    )
 
     if regex_matches is None:
         return fallback_value
 
-    return regex_matches.groupdict(fallback_value).get(desired_value, fallback_value)
+    value = regex_matches.groupdict(fallback_value).get(desired_value, fallback_value)
+    if desired_value in {"downstream", "upstream"}:
+        return int(value) if str(value).isdigit() else fallback_value
+
+    return value
 
 
 def prepare_json_response_data(response):
@@ -48,7 +67,13 @@ def prepare_json_response_data(response):
     handler to prepare returned json data for parsing
     """
 
-    return response.json()
+    if response.status_code != 200:
+        raise ValueError(f"unexpected HTTP status {response.status_code} for {response.url}")
+
+    try:
+        return response.json()
+    except ValueError as exc:
+        raise ValueError(f"invalid JSON response for {response.url}: {exc}") from exc
 
 
 # every 2 minutes
@@ -104,7 +129,7 @@ lua_services.append(
                     # data struct type: dict
                     "type": str,
                     "tags_function": lambda data: {"uid": data.get("UID")},
-                    "value_function": lambda data: data.get("parent", dict()).get("name")
+                    "value_function": lambda data: nested_value(data, "parent", "name")
                 }
             },
             "active_hosts_port": {
@@ -124,7 +149,7 @@ lua_services.append(
                     # data struct type: dict
                     "type": str,
                     "tags_function": lambda data: {"uid": data.get("UID")},
-                    "value_function": lambda data: data.get("ipv4", dict()).get("ip")
+                    "value_function": lambda data: nested_value(data, "ipv4", "ip")
                 }
             },
             "active_hosts_ipv4_last_used": {
@@ -134,7 +159,7 @@ lua_services.append(
                     # data struct type: dict
                     "type": int,
                     "tags_function": lambda data: {"uid": data.get("UID"), "name": data.get("name")},
-                    "value_function": lambda data: data.get("ipv4", dict()).get("lastused", 0)
+                    "value_function": lambda data: nested_value(data, "ipv4", "lastused", 0)
                 }
             },
             "active_hosts_additional_text": {
@@ -246,7 +271,7 @@ lua_services.append({
                     # data struct type: dict
                     "type": str,
                     "tags_function": lambda data: {"uid": data.get("UID")},
-                    "value_function": lambda data: data.get("ipv4", dict()).get("ip")
+                    "value_function": lambda data: nested_value(data, "ipv4", "ip")
                 }
             },
             "num_passive_host": {

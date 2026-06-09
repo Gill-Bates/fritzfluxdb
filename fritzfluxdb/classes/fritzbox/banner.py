@@ -10,8 +10,6 @@ from __future__ import annotations
 
 import sys
 
-from fritzfluxdb.version import AUTHOR, BUILD_DATE, GIT_SHA, URL, VERSION
-
 
 def print_banner() -> None:
     """Print the fritzfluxdb startup banner to stdout.
@@ -20,15 +18,20 @@ def print_banner() -> None:
     Never raises: a cosmetic banner must not be able to take the daemon down.
     """
     try:
+        try:
+            from fritzfluxdb.version import AUTHOR, BUILD_DATE, GIT_SHA, URL, VERSION
+        except Exception:
+            AUTHOR, BUILD_DATE, GIT_SHA, URL, VERSION = "unknown", "", "", "", "dev"
+
         sha_short = GIT_SHA[:7] if GIT_SHA else ""
         built_day = BUILD_DATE.split("T", 1)[0] if BUILD_DATE else ""
 
         ascii_art = r"""
-  __      _ _        __ _               _ _
- / _|_ __(_) |_ ____/ _| |_   ___  ____| | |__
-| |_| '__| | __|_  / |_| | | | \ \/ / _` | '_ \
+  __      _ _        __ _               _ _     
+ / _|_ __(_) |_ ____/ _| |_   ___  ____| | |__  
+| |_| '__| | __|_  / |_| | | | \ \/ / _` | '_ \ 
 |  _| |  | | |_ / /|  _| | |_| |>  < (_| | |_) |
-|_| |_|  |_|\__/___|_| |_|\__,_/_/\_\__,_|_.__/
+|_| |_|  |_|\__/___|_| |_|\__,_/_/\_\__,_|_.__/ 
 """.strip("\n")
 
         version_line = f"v{VERSION}"

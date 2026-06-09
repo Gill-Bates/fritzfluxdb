@@ -5,6 +5,7 @@
 #
 
 from datetime import datetime, UTC
+from math import isfinite
 import configparser
 import os
 
@@ -18,6 +19,8 @@ class WritePrecision(object):
     MS = "ms"
     S = "s"
     US = "us"
+
+    VALID = {MS, S, US}
 
 
 class FritzMeasurement:
@@ -39,7 +42,7 @@ class FritzMeasurement:
 
         # name and primary tag should always be present
         self.name = str(key)
-        self.box_tag = str(box_tag)
+        self.box_tag = str(box_tag) if box_tag is not None else None
         self.value = None
 
         # Optional override for the InfluxDB measurement name. When set, this
@@ -48,26 +51,40 @@ class FritzMeasurement:
         self.measurement = str(measurement) if measurement is not None else None
 
         if data_type is not None:
-            # noinspection PyBroadException
             try:
                 self.value = data_type(value)
-            except Exception:
-                pass
-
-        if self.value is None:
+            except (TypeError, ValueError) as exc:
+                if value is not None:
+                    log.error(
+                        "Unable to convert measurement '%s' value %r using %s: %s",
+                        self.name,
+                        value,
+                        getattr(data_type, "__name__", data_type),
+                        exc,
+                    )
+        else:
             self.value = self.sanitize_value(value)
 
-        if timestamp is not None and isinstance(timestamp, datetime):
-            self.timestamp = timestamp
-        else:
+        if timestamp is None or not isinstance(timestamp, datetime):
             self.timestamp = datetime.now(UTC)
+        elif timestamp.tzinfo is None or timestamp.utcoffset() is None:
+            log.warning("FritzMeasurement '%s' received naive timestamp; assuming UTC", self.name)
+            self.timestamp = timestamp.replace(tzinfo=UTC)
+        else:
+            self.timestamp = timestamp.astimezone(UTC)
 
         self.update_timestamp_precision(timestamp_precision)
 
         self.additional_tags = None
 
         if isinstance(additional_tags, dict):
-            self.additional_tags = additional_tags
+            if self.box_tag is not None and self.default_box_tag_key in additional_tags:
+                log.warning(
+                    "additional_tags must not override reserved tag '%s'; key ignored",
+                    self.default_box_tag_key,
+                )
+                additional_tags = {k: v for k, v in additional_tags.items() if k != self.default_box_tag_key}
+            self.additional_tags = dict(additional_tags)
 
     def __repr__(self):
         return f"{self.timestamp}: {self.name}={self.value} ({self.tags})"
@@ -80,20 +97,22 @@ class FritzMeasurement:
         if precision is None:
             precision = self.default_timestamp_precision
 
-        if precision not in WritePrecision.__dict__.values():
+        if precision not in WritePrecision.VALID:
             raise ValueError(f"invalid timestamp precision '{precision}'")
 
         if precision == WritePrecision.MS:
-            self.timestamp = self.timestamp.replace(microsecond=int(self.timestamp.microsecond/1_000))
+            self.timestamp = self.timestamp.replace(
+                microsecond=(self.timestamp.microsecond // 1_000) * 1_000
+            )
         elif precision == WritePrecision.S:
-            self.timestamp = self.timestamp.replace(microsecond=int(self.timestamp.microsecond/1_000_000))
+            self.timestamp = self.timestamp.replace(microsecond=0)
 
         self.timestamp_precision = precision
 
     def sanitize_value(self, value):
 
         if value is None:
-            return 0
+            return None
 
         if isinstance(value, (int, bool, float)):
             return value
@@ -132,33 +151,62 @@ class FritzMeasurement:
 
         return tags
 
+    # InfluxDB integer fields are signed 64-bit. The FritzBox occasionally
+    # reports glitched byte counters (an AVM-side under-/overflow yielding a
+    # near-2**64 value) that exceed this range. Such a value cannot be written
+    # as an int field and would otherwise poison the whole write batch.
+    INT64_MIN = -(2 ** 63)
+    INT64_MAX = 2 ** 63 - 1
+
+    @staticmethod
+    def _escape_line_token(value: object, *, escape_equals: bool = True) -> str:
+        escaped = (
+            str(value)
+            .replace("\r", "\\r")
+            .replace("\n", "\\n")
+            .replace(",", "\\,")
+            .replace(" ", "\\ ")
+        )
+        if escape_equals:
+            escaped = escaped.replace("=", "\\=")
+        return escaped
+
     @staticmethod
     def _escape_field_string(value: str) -> str:
-        return '"' + value.replace('"', '\\"') + '"'
+        normalized = value.replace("\r", "\\r").replace("\n", "\\n")
+        return '"' + normalized.replace("\\", "\\\\").replace('"', '\\"') + '"'
 
     def to_line_protocol(self, measurement_name: str) -> str:
+        if self.value is None:
+            return ""
+
         # format tags
         tags_str = ""
         tags = self.tags
         if tags:
             # properly escape keys and values: https://docs.influxdata.com/influxdb/v2/reference/syntax/line-protocol/#special-characters
-            escaped_tags = []
-            for k, v in sorted(tags.items()):
-                ek = str(k).replace(",", "\\,").replace("=", "\\=").replace(" ", "\\ ")
-                ev = str(v).replace(",", "\\,").replace("=", "\\=").replace(" ", "\\ ")
-                escaped_tags.append(f"{ek}={ev}")
+            escaped_tags = [
+                f"{self._escape_line_token(k)}={self._escape_line_token(v)}"
+                for k, v in sorted(tags.items())
+            ]
             tags_str = "," + ",".join(escaped_tags)
 
         # escape measurement name (per-measurement override wins over the default)
         effective_measurement = self.measurement if self.measurement is not None else measurement_name
-        escaped_meas = str(effective_measurement).replace(",", "\\,").replace(" ", "\\ ")
+        escaped_meas = self._escape_line_token(effective_measurement, escape_equals=False)
 
         # format fields
-        fk = str(self.name).replace(",", "\\,").replace("=", "\\=").replace(" ", "\\ ")
-        if isinstance(self.value, int) and not isinstance(self.value, bool):
+        fk = self._escape_line_token(self.name)
+        if isinstance(self.value, bool):
+            fv = "true" if self.value else "false"
+        elif isinstance(self.value, int):
+            if not (self.INT64_MIN <= self.value <= self.INT64_MAX):
+                return ""
             fv = f"{self.value}i"
         elif isinstance(self.value, float):
-            fv = f"{self.value}"
+            if not isfinite(self.value):
+                return ""
+            fv = repr(self.value)
         elif isinstance(self.value, str):
             fv = self._escape_field_string(self.value)
         else:
@@ -176,8 +224,8 @@ class FritzMeasurement:
 
         return f"{escaped_meas}{tags_str} {fields_str} {ts}"
 
-    def __hash__(self):
-        return hash(self.__repr__())
+    def __hash__(self) -> int:
+        return hash((self.name, self.value, self.box_tag, self.timestamp))
 
 
 class ConfigBase:
@@ -185,11 +233,7 @@ class ConfigBase:
         Base class to parse config data
     """
 
-    sensitive_keys = [
-        "password",
-        "token",
-        "password"
-    ]
+    sensitive_keys = {"password", "token", "secret", "key"}
 
     not_config_vars = [
         "config_section_name",
@@ -230,7 +274,7 @@ class ConfigBase:
             generic method to parse config data and also takes care of reading equivalent env var
         """
 
-        config_section_name = getattr(self.__class__, "config_section_name")
+        config_section_name = getattr(self.__class__, "config_section_name", None)
 
         if config_section_name is None:
             raise KeyError(f"Class '{self.__class__.__name__}' is missing 'config_section_name' attribute")
@@ -271,9 +315,9 @@ class ConfigBase:
                     config_value = var_default
 
             debug_value = config_value
-            if isinstance(debug_value, str) and config_option in self.sensitive_keys:
-                debug_value = config_value[0:3] + "***"
+            if any(k in config_option.lower() for k in self.sensitive_keys):
+                debug_value = "***"
 
-            log.debug(f"Config: {config_section_name}.{config_option} = {debug_value}")
+            log.debug("Config: %s.%s = %s", config_section_name, config_option, debug_value)
 
             setattr(self, config_option, config_value)

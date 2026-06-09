@@ -58,8 +58,10 @@ class FritzBoxService:
             do_error_exit(f"{self.__class__.name} service data must be a dict")
             return
 
+        self.available = True
+        self.last_query = None
         self.name = service_data.get("name")
-        self.params = service_data.get("params")
+        self.params = service_data.get("params") or {}
         self.value_instances = dict()
         self.interval = service_data.get("interval", self.interval)
 
@@ -258,11 +260,26 @@ class FritzBoxLuaService(FritzBoxService):
 
     def os_version_match(self, current_os_version):
 
-        # very simple version comparison but should do with the current AVM version schema.
         def versiontuple(v):
-            return tuple(map(int, (v.split("."))))
+            if not v:
+                return None
+            try:
+                return tuple(int(x) for x in str(v).split("."))
+            except ValueError:
+                return None
 
-        if self.os_max_versions is None:
-            return versiontuple(current_os_version) >= versiontuple(self.os_min_versions)
+        current = versiontuple(current_os_version)
+        minimum = versiontuple(self.os_min_versions)
 
-        return versiontuple(self.os_min_versions) <= versiontuple(current_os_version) <= versiontuple(self.os_max_versions)
+        if current is None or minimum is None:
+            log.warning(
+                "Unable to compare FritzOS version for service '%s': current=%r min=%r",
+                self.name, current_os_version, self.os_min_versions,
+            )
+            return False
+
+        maximum = versiontuple(self.os_max_versions)
+        if maximum is None:
+            return current >= minimum
+
+        return minimum <= current <= maximum

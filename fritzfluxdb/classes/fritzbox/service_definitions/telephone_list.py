@@ -4,14 +4,17 @@
 # Copyright (C) 2026 Gill-Bates http://github.com/Gill-Bates
 #
 
+import csv
 import hashlib
 from datetime import datetime
+from io import StringIO
+from zoneinfo import ZoneInfo
 
 from fritzfluxdb.classes.fritzbox.service_handler import FritzBoxLuaURLPath
 from fritzfluxdb.classes.fritzbox.service_definitions import lua_services
 
 
-hash_cache = dict()
+LOCAL_TZ = ZoneInfo("Europe/Berlin")
 
 read_interval = 60
 
@@ -48,10 +51,14 @@ class CallLogEntry:
         # compute a MD5 hash and use as ID to track and group log data by uid tag
         self._hash = hashlib.md5(entry.encode("UTF-8")).hexdigest()
 
-        entry_dict = dict(zip(config.header_list, entry.split(config.sep)))
+        entry_dict = dict(zip(
+            config.header_list,
+            next(csv.reader(StringIO(entry), delimiter=config.sep), []),
+            strict=False,
+        ))
 
         self._call_type = self.call_types.get(entry_dict.get("Typ"), "undefined")
-        self._date_time = datetime.strptime(entry_dict.get("Datum"), '%d.%m.%y %H:%M')
+        self._date_time = datetime.strptime(entry_dict["Datum"], '%d.%m.%y %H:%M').replace(tzinfo=LOCAL_TZ)
         self._caller_name = entry_dict.get("Name", "")
         self._caller_number = entry_dict.get("Rufnummer", "")
         self._caller_location = entry_dict.get("Landes-/Ortsnetzbereich", "")
@@ -65,14 +72,14 @@ class CallLogEntry:
         returns call duration in minutes
         """
 
-        # noinspection PyBroadException
-        try:
-            hours, minutes = field.split(":")
-            duration = int(hours) * 60 + int(minutes)
-        except Exception:
-            duration = 0
+        if not field:
+            return 0
 
-        return duration
+        try:
+            hours, minutes = field.split(":", maxsplit=1)
+            return int(hours) * 60 + int(minutes)
+        except (AttributeError, ValueError):
+            return 0
 
     @property
     def hash(self) -> str:
@@ -138,6 +145,9 @@ class CallLog:
             sep = lines[0].split("=")[-1]
             lines = lines[1:]
 
+        if not lines:
+            return
+
         # extract header
         if lines[0].strip('"').startswith("Typ"):
             header = lines[0]
@@ -152,7 +162,10 @@ class CallLog:
             if len(line) == 0:
                 continue
 
-            self.entries.append(CallLogEntry(line, config))
+            try:
+                self.entries.append(CallLogEntry(line, config))
+            except (ValueError, TypeError) as exc:
+                raise ValueError(f"invalid call log line: {line!r}") from exc
 
 
 # due to the tracking of measurements multiple short calls from the same number within the same minute

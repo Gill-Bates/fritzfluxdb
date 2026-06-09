@@ -123,7 +123,7 @@ tr069_services.extend([
             "NewExternalIPAddress": "external_ip:str",
             "NewLastAuthErrorInfo": "last_auth_error:str",
             "NewPPPoEACName": "remote_pop:str",
-            "NewUptime": "phyiscal_linkuptime:int",
+            "NewUptime": "physical_linkuptime:int",
             "NewConnectionStatus": "physical_connection_status:str",
             "NewLastConnectionError": "last_connection_error:str"
         }
@@ -134,7 +134,7 @@ tr069_services.extend([
         "link_type": FritzBoxLinkTypes.Cable,
         "value_instances": {
             "NewExternalIPAddress": "external_ip:str",
-            "NewUptime": "phyiscal_linkuptime:int",
+            "NewUptime": "physical_linkuptime:int",
             "NewConnectionStatus": "physical_connection_status:str",
             "NewLastConnectionError": "last_connection_error:str"
         }

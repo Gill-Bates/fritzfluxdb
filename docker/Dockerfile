@@ -1,5 +1,5 @@
 FROM python:3.13-slim-trixie AS base
-SHELL ["/bin/sh", "-eux", "-c"]
+SHELL ["/bin/sh", "-eu", "-c"]
 
 # --- Build-time metadata (populated from the CI build args) -----------------
 ARG APP_VERSION="unknown"
@@ -25,7 +25,7 @@ ENV PYTHONUNBUFFERED=1 \
 WORKDIR ${APP_HOME}
 
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends tini tzdata procps \
+    && apt-get install -y --no-install-recommends tini tzdata \
     && rm -rf /var/lib/apt/lists/*
 
 # --- Python dependencies (cached layer) ------------------------------------
@@ -39,16 +39,15 @@ RUN pip install -r requirements.txt \
 COPY run.py BUILD_INFO* ./
 COPY fritzfluxdb ./fritzfluxdb
 COPY docker/entrypoint.sh /usr/local/bin/entrypoint.sh
-RUN chmod +x /usr/local/bin/entrypoint.sh
 
-# --- Build-time sanity check ------------------------------------------------
-RUN python -c "import fritzfluxdb.main" \
-    && pip check
-
-# --- Drop privileges -------------------------------------------------------
-RUN useradd --create-home --uid 10001 --shell /usr/sbin/nologin fritzfluxdb \
+# --- Build-time sanity check + privilege drop (single layer) ---------------
+RUN chmod 0555 /usr/local/bin/entrypoint.sh \
+    && python -m compileall -q /app/run.py /app/fritzfluxdb \
+    && python -c "import fritzfluxdb.main" \
+    && groupadd --gid 10001 fritzfluxdb \
+    && useradd --uid 10001 --gid 10001 --create-home --shell /usr/sbin/nologin fritzfluxdb \
     && chmod -R a-w /app
-USER fritzfluxdb
+USER 10001:10001
 
 # --- Watchdog tuning (overridable at runtime) ------------------------------
 ENV WATCHDOG_RESTART_DELAY=10 \
