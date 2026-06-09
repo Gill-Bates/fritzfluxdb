@@ -230,7 +230,7 @@ class InfluxHandler:
                 params = {"db": self.config.database, "precision": "s"}
                 resp = await self.client.post("/write", params=params, content=payload, auth=auth)
             else:
-                params = {"org": self.config.organisation, "bucket": self.config.bucket, "precision": "s"}
+                params = {"org": self.config.organization, "bucket": self.config.bucket, "precision": "s"}
                 resp = await self.client.post("/api/v2/write", params=params, content=payload)
 
             if resp.status_code in (200, 204):

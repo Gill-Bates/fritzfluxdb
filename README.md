@@ -90,7 +90,7 @@ FRITZBOX_PASSWORD=your-secret-password
 INFLUXDB_VERSION=2
 INFLUXDB_HOSTNAME=influxdb
 INFLUXDB_PORT=8086
-INFLUXDB_ORGANISATION=my-org
+INFLUXDB_ORGANIZATION=my-org
 INFLUXDB_BUCKET=fritzflux
 INFLUXDB_TOKEN=your-influxdb-token
 ```
@@ -132,7 +132,7 @@ All settings are passed via environment variables:
 | `INFLUXDB_VERSION` | `2` | InfluxDB version (`1` or `2`) |
 | `INFLUXDB_HOSTNAME` | — | InfluxDB host |
 | `INFLUXDB_PORT` | `8086` | InfluxDB port |
-| `INFLUXDB_ORGANISATION` | — | InfluxDB v2 organisation |
+| `INFLUXDB_ORGANIZATION` | — | InfluxDB v2 organization |
 | `INFLUXDB_BUCKET` | `fritzflux` | InfluxDB bucket / database |
 | `INFLUXDB_TOKEN` | — | InfluxDB auth token |
 | `INFLUXDB_TLS_ENABLED` | `false` | Enable TLS for InfluxDB |

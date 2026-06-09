@@ -68,7 +68,7 @@ class InfluxDBConfig(ConfigBase):
         "type": str,
         "default": None
     }
-    organisation = {
+    organization = {
         "type": str,
         "default": None
     }
@@ -113,7 +113,7 @@ class InfluxDBConfig(ConfigBase):
                 self.parser_error = True
 
         elif self.version == 2:
-            mandatory_keys = ["hostname", "token", "organisation", "bucket"]
+            mandatory_keys = ["hostname", "token", "organization", "bucket"]
         else:
             log.error(f"Invalid InfluxDB version '{self.version}'.")
             self.parser_error = True
