@@ -254,6 +254,7 @@ jobs:
           severity: 'CRITICAL,HIGH'
           timeout: '10m'
           trivyignores: '.trivyignore'
+          version: 'latest'
 
       - name: Generate Trivy summary (amd64)
         id: trivy_summary
@@ -428,6 +429,7 @@ jobs:
           severity: 'CRITICAL,HIGH'
           timeout: '10m'
           trivyignores: '.trivyignore'
+          version: 'latest'
 
       - name: Generate Trivy summary (arm64)
         id: trivy_summary
