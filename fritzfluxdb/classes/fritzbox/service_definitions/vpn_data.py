@@ -9,22 +9,32 @@ import os
 from fritzfluxdb.common import grab
 from fritzfluxdb.classes.fritzbox.service_definitions import lua_services
 
-INCLUDE_VPN_ADDRESS_METRICS = os.getenv("FRITZFLUXDB_INCLUDE_VPN_ADDRESS_METRICS") == "1"
+INCLUDE_VPN_ADDRESS_METRICS = (
+    os.getenv("FRITZFLUXDB_INCLUDE_VPN_ADDRESS_METRICS", "")
+    .strip()
+    .lower()
+    in {"1", "true", "yes", "on"}
+)
+
 
 def prepare_json_response_data(response):
+    url = getattr(response, "url", "<unknown>")
+
     if response.status_code == 404:
         return {}
 
     if response.status_code != 200:
-        raise ValueError(f"unexpected HTTP status {response.status_code} for {response.url}")
+        raise ValueError(f"unexpected HTTP status {response.status_code} for {url}")
 
     try:
         return response.json()
     except ValueError as exc:
-        raise ValueError(f"invalid JSON response for {response.url}: {exc}") from exc
+        raise ValueError(f"invalid JSON response for {url}: {exc}") from exc
 
-def has_dict_at(path: str):
+
+def missing_dict_at(path: str):
     return lambda data: not isinstance(grab(data, path), dict)
+
 
 def parse_bool(value) -> bool:
     if isinstance(value, bool):
@@ -37,18 +47,24 @@ def parse_bool(value) -> bool:
             return True
         if normalized in {"false", "f", "0", "no", "off"}:
             return False
-    return False
+    raise ValueError(f"invalid boolean value: {value!r}")
+
 
 def count_connected(data, path: str) -> int:
     connections = grab(data, path, fallback={})
     if not isinstance(connections, dict):
         return 0
 
-    return sum(
-        1
-        for connection in connections.values()
-        if isinstance(connection, dict) and parse_bool(connection.get("connected"))
-    )
+    count = 0
+    for connection in connections.values():
+        if not isinstance(connection, dict):
+            continue
+        try:
+            if parse_bool(connection.get("connected")):
+                count += 1
+        except ValueError:
+            continue
+    return count
 
 def vpn_user_tags(vpn_type: str):
     def build_tags(data) -> dict[str, str]:
@@ -56,11 +72,14 @@ def vpn_user_tags(vpn_type: str):
         return {"name": name, "vpn_type": vpn_type}
     return build_tags
 
+
 def vpn_connection_metric(path: str, source_key: str, value_type: type, vpn_type: str) -> dict:
     def get_value(data):
         value = data.get(source_key)
         if value_type is bool:
             return parse_bool(value)
+        if value_type is str:
+            return "" if value is None else str(value)
         return value
 
     return {
@@ -71,7 +90,7 @@ def vpn_connection_metric(path: str, source_key: str, value_type: type, vpn_type
             "value_function": get_value,
             "tags_function": vpn_user_tags(vpn_type),
         },
-        "exclude_filter_function": has_dict_at(path),
+        "exclude_filter_function": missing_dict_at(path),
     }
 
 def add_vpn_address_metrics(
@@ -92,6 +111,7 @@ def add_vpn_address_metrics(
         connection_path, remote_key, str, vpn_type
     )
 
+
 _VPN_SERVICES = []
 
 # VPN Users 7.29-7.38
@@ -102,7 +122,7 @@ vi_729 = {
         "type": int,
         "value_function": lambda data: count_connected(data, "data.vpnInfo.userConnections"),
         "tags": {"vpn_type": "IPSec"},
-        "exclude_filter_function": has_dict_at("data.vpnInfo.userConnections"),
+        "exclude_filter_function": missing_dict_at("data.vpnInfo.userConnections"),
     },
 }
 add_vpn_address_metrics(
@@ -137,7 +157,7 @@ vi_739_ipsec = {
         "type": int,
         "value_function": lambda data: count_connected(data, "data.init.userConnections"),
         "tags": {"vpn_type": "IPSec"},
-        "exclude_filter_function": has_dict_at("data.init.userConnections"),
+        "exclude_filter_function": missing_dict_at("data.init.userConnections"),
     },
 }
 add_vpn_address_metrics(
@@ -171,7 +191,7 @@ vi_739_wg = {
         "type": int,
         "value_function": lambda data: count_connected(data, "data.init.boxConnections"),
         "tags": {"vpn_type": "WireGuard"},
-        "exclude_filter_function": has_dict_at("data.init.boxConnections"),
+        "exclude_filter_function": missing_dict_at("data.init.boxConnections"),
     },
 }
 add_vpn_address_metrics(
@@ -214,4 +234,5 @@ for service in _VPN_SERVICES:
     )
     if key not in _registered:
         lua_services.append(service)
+        _registered.add(key)
 

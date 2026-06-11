@@ -50,21 +50,6 @@ tr069_services.extend([
         }
     },
     {
-        "name": "WANCommonInterfaceConfig",
-        "actions": [
-            {
-                "name": "X_AVM-DE_GetOnlineMonitor",
-                "params": {
-                    "NewSyncGroupIndex": 0
-                }
-            }
-        ],
-        "value_instances": {
-            "NewLayer1DownstreamMaxBitRate": "downstreamphysicalmax:int",
-            "NewLayer1UpstreamMaxBitRate": "upstreamphysicalmax:int"
-        }
-    },
-    {
         "name": "DeviceInfo",
         "actions": ["GetInfo"],
         "value_instances": {
@@ -189,6 +174,21 @@ tr069_services.extend([
         }
     },
     {
+        "name": "WLANConfiguration:4",
+        "description": "WiFi 6E / WiFi 7 (4th WLAN radio)",
+        "actions": [
+            "GetInfo",
+            "GetTotalAssociations"
+        ],
+        "value_instances": {
+            "NewStatus": "wlan4_status:str",
+            "NewChannel": "wlan4_channel:int",
+            "NewSSID": "wlan4_ssid:str",
+            "NewStandard": "wlan4_802.11_standard:str",
+            "NewTotalAssociations": "wlan4_associations:int"
+        }
+    },
+    {
         "name": "X_AVM-DE_RemoteAccess",
         "actions": ["GetDDNSInfo"],
         "value_instances": {
@@ -198,6 +198,13 @@ tr069_services.extend([
             "NewStatusIPv4": "ddns_status_ipv4:str",
             "NewStatusIPv6": "ddns_status_ipv6:str",
             "NewMode": "ddns_mode:str"
+        }
+    },
+    {
+        "name": "X_AVM-DE_MyFritz",
+        "actions": ["GetInfo"],
+        "value_instances": {
+            "NewHostName": "myfritz_host_name:str"
         }
     }
 ])

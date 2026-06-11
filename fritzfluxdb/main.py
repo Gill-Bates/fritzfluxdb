@@ -31,7 +31,8 @@ async def main_async() -> int:
     args = parse_command_line(VERSION, DESCRIPTION, VERSION_DATE, URL, default_config)
 
     log_queue: asyncio.Queue = asyncio.Queue(maxsize=10_000)
-    log = setup_logging("DEBUG" if args.verbose > 0 else "INFO", args.daemon, log_queue)
+    effective_log_level = "DEBUG" if args.verbose > 0 else args.log_level
+    log = setup_logging(effective_log_level, args.daemon, log_queue)
     log.propagate = False
     log.info(f"Starting {DESCRIPTION} v{VERSION} ({VERSION_DATE})")
 
@@ -54,7 +55,8 @@ async def main_async() -> int:
 
     for handler in handler_list:
         if getattr(handler.config, 'parser_error', False):
-            return 1
+            # EX_CONFIG: permanent configuration error, restarts won't fix it
+            return 78
 
     log.info("Successfully parsed config")
 
@@ -95,11 +97,17 @@ async def main_async() -> int:
 
         serial = fritzbox_connection.config.serial_number
         if serial:
-            safe_serial = re.sub(r"[^A-Za-z0-9_]", "_", serial)
+            safe_serial = "fritzbox_" + re.sub(r"[^A-Za-z0-9_]", "_", serial)
             influx_connection.config.measurement_name = safe_serial
-            log.info("Using InfluxDB measurement '%s'", safe_serial)
+            if influx_connection.version == "questdb":
+                log.info("Using QuestDB table '%s'", safe_serial)
+            else:
+                log.info("Using InfluxDB measurement '%s'", safe_serial)
         else:
-            log.warning("FritzBox serial number unavailable, using default measurement name")
+            if influx_connection.version == "questdb":
+                log.warning("FritzBox serial number unavailable, using default table name")
+            else:
+                log.warning("FritzBox serial number unavailable, using default measurement name")
 
         init_errors = False
         for handler in handler_list:

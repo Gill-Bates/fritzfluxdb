@@ -17,12 +17,15 @@ from fritzfluxdb.classes.fritzbox.service_definitions import lua_services
 #   2,4 GHz
 #   5 GHz
 active_host_txt_regex = re.compile(
-    r"^(?:(?P<frequency>[0-9,]+) GHz(?:, )?)?"
-    r"(?:(?P<downstream>\d+) / (?P<upstream>\d+) .*bit.*)?$"
+    r"^\s*(?:(?P<frequency>[0-9,.]+)\s*GHz(?:,\s*)?)?"
+    r"(?:(?P<downstream>\d+)\s*/\s*(?P<upstream>\d+)\s*.*bit.*)?\s*$",
+    re.IGNORECASE,
 )
 
 
-def nested_value(data: dict, key: str, child_key: str, fallback=None):
+def nested_value(data, key: str, child_key: str, fallback=None):
+    if not isinstance(data, dict):
+        return fallback
     value = data.get(key)
     if not isinstance(value, dict):
         return fallback
@@ -30,6 +33,8 @@ def nested_value(data: dict, key: str, child_key: str, fallback=None):
 
 
 def get_active_host_details(data, desired_value: str, fallback_value):
+    if not isinstance(data, dict):
+        return fallback_value
 
     property_list = data.get("properties")
 
@@ -62,18 +67,39 @@ def get_active_host_details(data, desired_value: str, fallback_value):
     return value
 
 
+def host_uid_tag(data) -> dict[str, str]:
+    if not isinstance(data, dict):
+        return {"uid": "unknown"}
+    uid = data.get("UID") or data.get("uid") or data.get("mac") or "unknown"
+    return {"uid": str(uid)}
+
+
+def host_uid_name_tag(data) -> dict[str, str]:
+    tags = host_uid_tag(data)
+    if isinstance(data, dict):
+        tags["name"] = str(data.get("name") or "")
+    return tags
+
+
+def count_hosts(data, key: str) -> int:
+    payload = data.get("data") if isinstance(data, dict) else None
+    hosts = payload.get(key) if isinstance(payload, dict) else None
+    return len(hosts) if isinstance(hosts, list) else 0
+
+
 def prepare_json_response_data(response):
     """
     handler to prepare returned json data for parsing
     """
+    url = getattr(response, "url", "")
 
     if response.status_code != 200:
-        raise ValueError(f"unexpected HTTP status {response.status_code} for {response.url}")
+        raise ValueError(f"unexpected HTTP status {response.status_code} for {url}")
 
     try:
         return response.json()
     except ValueError as exc:
-        raise ValueError(f"invalid JSON response for {response.url}: {exc}") from exc
+        raise ValueError(f"invalid JSON response for {url}: {exc}") from exc
 
 
 # every 2 minutes
@@ -98,7 +124,7 @@ lua_services.append(
                 "next": {
                     # data struct type: dict
                     "type": str,
-                    "tags_function": lambda data: {"uid": data.get("UID")},
+                    "tags_function": host_uid_tag,
                     "value_function": lambda data: data.get("name")
                 }
             },
@@ -108,7 +134,7 @@ lua_services.append(
                 "next": {
                     # data struct type: dict
                     "type": str,
-                    "tags_function": lambda data: {"uid": data.get("UID")},
+                    "tags_function": host_uid_tag,
                     "value_function": lambda data: data.get("mac")
                 }
             },
@@ -118,7 +144,7 @@ lua_services.append(
                 "next": {
                     # data struct type: dict
                     "type": str,
-                    "tags_function": lambda data: {"uid": data.get("UID")},
+                    "tags_function": host_uid_tag,
                     "value_function": lambda data: data.get("type")
                 }
             },
@@ -128,7 +154,7 @@ lua_services.append(
                 "next": {
                     # data struct type: dict
                     "type": str,
-                    "tags_function": lambda data: {"uid": data.get("UID")},
+                    "tags_function": host_uid_tag,
                     "value_function": lambda data: nested_value(data, "parent", "name")
                 }
             },
@@ -138,7 +164,7 @@ lua_services.append(
                 "next": {
                     # data struct type: dict
                     "type": str,
-                    "tags_function": lambda data: {"uid": data.get("UID")},
+                    "tags_function": host_uid_tag,
                     "value_function": lambda data: data.get("port")
                 }
             },
@@ -148,7 +174,7 @@ lua_services.append(
                 "next": {
                     # data struct type: dict
                     "type": str,
-                    "tags_function": lambda data: {"uid": data.get("UID")},
+                    "tags_function": host_uid_tag,
                     "value_function": lambda data: nested_value(data, "ipv4", "ip")
                 }
             },
@@ -158,7 +184,7 @@ lua_services.append(
                 "next": {
                     # data struct type: dict
                     "type": int,
-                    "tags_function": lambda data: {"uid": data.get("UID"), "name": data.get("name")},
+                    "tags_function": host_uid_name_tag,
                     "value_function": lambda data: nested_value(data, "ipv4", "lastused", 0)
                 }
             },
@@ -168,7 +194,7 @@ lua_services.append(
                 "next": {
                     # data struct type: dict
                     "type": str,
-                    "tags_function": lambda data: {"uid": data.get("UID"), "name": data.get("name")},
+                    "tags_function": host_uid_name_tag,
                     "value_function": lambda data: get_active_host_details(data, "additional_text", "")
                 }
             },
@@ -178,7 +204,7 @@ lua_services.append(
                 "next": {
                     # data struct type: dict
                     "type": bool,
-                    "tags_function": lambda data: {"uid": data.get("UID"), "name": data.get("name")},
+                    "tags_function": host_uid_name_tag,
                     "value_function": lambda data: get_active_host_details(data, "is_mesh", False)
                 }
             },
@@ -188,7 +214,7 @@ lua_services.append(
                 "next": {
                     # data struct type: dict
                     "type": str,
-                    "tags_function": lambda data: {"uid": data.get("UID"), "name": data.get("name")},
+                    "tags_function": host_uid_name_tag,
                     "value_function": lambda data: get_active_host_details(data, "frequency", "")
                 }
             },
@@ -198,7 +224,7 @@ lua_services.append(
                 "next": {
                     # data struct type: dict
                     "type": int,
-                    "tags_function": lambda data: {"uid": data.get("UID"), "name": data.get("name")},
+                    "tags_function": host_uid_name_tag,
                     "value_function": lambda data: get_active_host_details(data, "downstream", 0)
                 }
             },
@@ -208,13 +234,13 @@ lua_services.append(
                 "next": {
                     # data struct type: dict
                     "type": int,
-                    "tags_function": lambda data: {"uid": data.get("UID"), "name": data.get("name")},
+                    "tags_function": host_uid_name_tag,
                     "value_function": lambda data: get_active_host_details(data, "upstream", 0)
                 }
             },
             "num_active_host": {
                 "type": int,
-                "value_function": lambda data: len(data.get("data", {}).get("active", []))
+                "value_function": lambda data: count_hosts(data, "active")
             }
         }
     }
@@ -240,7 +266,7 @@ lua_services.append({
                 "next": {
                     # data struct type: dict
                     "type": str,
-                    "tags_function": lambda data: {"uid": data.get("UID")},
+                    "tags_function": host_uid_tag,
                     "value_function": lambda data: data.get("name")
                 }
             },
@@ -250,7 +276,7 @@ lua_services.append({
                 "next": {
                     # data struct type: dict
                     "type": str,
-                    "tags_function": lambda data: {"uid": data.get("UID")},
+                    "tags_function": host_uid_tag,
                     "value_function": lambda data: data.get("mac")
                 }
             },
@@ -260,7 +286,7 @@ lua_services.append({
                 "next": {
                     # data struct type: dict
                     "type": str,
-                    "tags_function": lambda data: {"uid": data.get("UID")},
+                    "tags_function": host_uid_tag,
                     "value_function": lambda data: data.get("port")
                 }
             },
@@ -270,13 +296,13 @@ lua_services.append({
                 "next": {
                     # data struct type: dict
                     "type": str,
-                    "tags_function": lambda data: {"uid": data.get("UID")},
+                    "tags_function": host_uid_tag,
                     "value_function": lambda data: nested_value(data, "ipv4", "ip")
                 }
             },
             "num_passive_host": {
                 "type": int,
-                "value_function": lambda data: len(data.get("data", {}).get("passive", [])),
+                "value_function": lambda data: count_hosts(data, "passive"),
             }
         }
     }

@@ -8,6 +8,9 @@ import asyncio
 import time
 from datetime import UTC, datetime
 from logging import LogRecord
+import re
+from email.utils import parsedate_to_datetime
+from ipaddress import ip_address
 
 import httpx
 
@@ -16,7 +19,108 @@ from fritzfluxdb.log import get_logger
 from fritzfluxdb.classes.common import FritzMeasurement, WritePrecision
 from fritzfluxdb.classes.fritzbox.config import FritzBoxConfig
 
+
+def _format_url_host(hostname: str) -> str:
+    try:
+        if ip_address(hostname).version == 6:
+            return f"[{hostname}]"
+    except ValueError:
+        pass
+    return hostname
+
 log = get_logger()
+
+
+_QUESTDB_TYPE_MAP = {
+    bool: "BOOLEAN",
+    int: "LONG",
+    float: "DOUBLE",
+    str: "VARCHAR",
+}
+
+_QUESTDB_TAG_COLUMNS = {
+    "box": "SYMBOL",
+    "id": "SYMBOL",
+    "log_type": "SYMBOL",
+    "name": "SYMBOL",
+    "uid": "SYMBOL",
+    "vpn_type": "SYMBOL",
+}
+
+_QUESTDB_INTERNAL_COLUMNS = {
+    "message": "VARCHAR",
+    "fritzfluxdb_setting_timezone": "VARCHAR",
+}
+
+_QUESTDB_DASHBOARD_COMPATIBILITY_COLUMNS = {
+    "ddns_status": "VARCHAR",
+    "dsl_line_type": "VARCHAR",
+    "myfritz_host_name": "VARCHAR",
+    "vpn_user_remote_address": "VARCHAR",
+    "vpn_user_virtual_address": "VARCHAR",
+}
+
+
+def _questdb_identifier(name: str) -> str:
+    return '"' + str(name).replace('"', '""') + '"'
+
+
+def _questdb_metric_name(name: str) -> str:
+    return str(name).replace(".", "_")
+
+
+def _questdb_type_from_python(data_type: type | None) -> str | None:
+    return _QUESTDB_TYPE_MAP.get(data_type)
+
+
+def _collect_metric_columns(metric_name: str, metric_params: object, columns: dict[str, str]) -> None:
+    if isinstance(metric_params, str):
+        try:
+            name, type_name = metric_params.rsplit(":", maxsplit=1)
+        except ValueError:
+            return
+        data_type = {
+            "bool": bool,
+            "int": int,
+            "float": float,
+            "str": str,
+        }.get(type_name)
+        sql_type = _questdb_type_from_python(data_type)
+        if sql_type is not None:
+            columns[_questdb_metric_name(name)] = sql_type
+        return
+
+    if not isinstance(metric_params, dict):
+        return
+
+    next_metric = metric_params.get("next")
+    if next_metric is not None:
+        _collect_metric_columns(metric_name, next_metric, columns)
+        return
+
+    sql_type = _questdb_type_from_python(metric_params.get("type"))
+    if sql_type is not None:
+        columns[_questdb_metric_name(metric_name)] = sql_type
+
+
+def questdb_expected_columns() -> dict[str, str]:
+    from fritzfluxdb.classes.fritzbox import service_definitions
+
+    columns = {
+        **_QUESTDB_TAG_COLUMNS,
+        **_QUESTDB_INTERNAL_COLUMNS,
+        **_QUESTDB_DASHBOARD_COMPATIBILITY_COLUMNS,
+    }
+
+    for service in service_definitions.tr069_services:
+        for metric_params in service.get("value_instances", {}).values():
+            _collect_metric_columns("", metric_params, columns)
+
+    for service in service_definitions.lua_services:
+        for metric_name, metric_params in service.get("value_instances", {}).items():
+            _collect_metric_columns(metric_name, metric_params, columns)
+
+    return dict(sorted(columns.items()))
 
 class InfluxHandler:
     name = "InfluxDB"
@@ -34,9 +138,20 @@ class InfluxHandler:
 
     def __init__(self, config, user_agent: str | None = None):
         self.config = InfluxDBConfig(config)
-        self.version = int(self.config.version)
-        if self.version not in {1, 2}:
-            raise ValueError(f"Unsupported InfluxDB version: {self.version}")
+        try:
+            self.version = int(self.config.version)
+        except (ValueError, TypeError):
+            self.version = str(self.config.version).lower()
+
+        if self.version not in {1, 2, "questdb"}:
+            raise ValueError(f"Unsupported database version/type: {self.version}")
+
+        if self.version == "questdb":
+            self.name = "QuestDB"
+        else:
+            self.name = f"InfluxDB v{self.version}"
+
+        self.questdb_version: str | None = None
         self.client: httpx.AsyncClient | None = None
         self.init_successful = False
         self.connection_lost = False
@@ -50,26 +165,33 @@ class InfluxHandler:
         self.current_max_measurements_buffer_warning = self.max_measurements_buffer_warning
         self.current_measurements_per_write = self.max_measurements_per_write
         self.user_agent = user_agent
+        self._write_lock = asyncio.Lock()
 
         proto = "https" if self.config.tls_enabled else "http"
-        self.base_url = f"{proto}://{self.config.hostname}:{self.config.port}"
+        host = _format_url_host(self.config.hostname)
+        self.base_url = f"{proto}://{host}:{self.config.port}"
 
     def connect(self) -> None:
-        # Async initialization happens inside task_loop via _init_client()
-        pass
+        raise RuntimeError("InfluxHandler initialization is asynchronous; use task_loop()")
 
     def append_measurement(self, measurement: FritzMeasurement) -> None:
         if len(self.buffer) >= self.max_measurements_buffer_size:
-            del self.buffer[0]
-            log.warning("InfluxDB measurement buffer is full; dropping oldest measurement")
+            drop_count = min(len(self.buffer), self.max_measurements_per_write)
+            del self.buffer[:drop_count]
+            log.warning(
+                "%s measurement buffer is full; dropping %s oldest measurement(s)",
+                self.name,
+                drop_count,
+            )
         self.buffer.append(measurement)
         if self.out_of_retention_period_range:
             self.retention_buffer_sorted = False
 
     async def close(self) -> None:
-        if self.client is not None:
-            await self.client.aclose()
-            self.client = None
+        async with self._write_lock:
+            if self.client is not None:
+                await self.client.aclose()
+                self.client = None
 
     async def _init_client(self) -> bool:
         timeout = self.connection_timeout_v1 if self.version == 1 else self.connection_timeout_v2
@@ -78,6 +200,8 @@ class InfluxHandler:
             headers["User-Agent"] = self.user_agent
         if self.version == 2:
             headers["Authorization"] = f"Token {self.config.token}"
+        elif self.version == "questdb" and self.config.token:
+            headers["Authorization"] = f"Bearer {self.config.token}"
 
         self.client = httpx.AsyncClient(
             base_url=self.base_url,
@@ -91,6 +215,25 @@ class InfluxHandler:
                 auth = (self.config.username, self.config.password) if self.config.username else None
                 resp = await self.client.get("/ping", auth=auth)
                 resp.raise_for_status()
+            elif self.version == "questdb":
+                auth = (self.config.username, self.config.password) if self.config.username else None
+                resp = await self.client.get("/exec", params={"query": "SELECT build();"}, auth=auth)
+                resp.raise_for_status()
+                try:
+                    data = resp.json()
+                    build_str = data["dataset"][0][0]
+                    match = re.search(r"QuestDB\s+([0-9a-zA-Z\.\-]+)", build_str)
+                    if match:
+                        self.questdb_version = match.group(1)
+                    else:
+                        self.questdb_version = build_str
+                except Exception as exc:
+                    log.debug("Failed to parse QuestDB version response: %s", exc)
+                    self.questdb_version = "unknown version"
+                try:
+                    await self._ensure_questdb_schema(auth=auth)
+                except Exception as exc:
+                    log.error("Failed to ensure QuestDB schema for '%s': %s", self.config.measurement_name, exc)
             else:
                 resp = await self.client.get("/ping")
                 resp.raise_for_status()
@@ -98,8 +241,8 @@ class InfluxHandler:
             now = datetime.now(UTC)
             if not self.connection_lost:
                 log.error(
-                    "InfluxDB '%s' unreachable: %s — buffering data until connection is restored",
-                    self.config.hostname, exc,
+                    "%s '%s' unreachable: %s — buffering data until connection is restored",
+                    self.name, self.config.hostname, exc,
                 )
                 self.last_connection_warning = now
             elif (
@@ -107,12 +250,12 @@ class InfluxHandler:
                 or (now - self.last_connection_warning).total_seconds() >= self.connection_warning_interval
             ):
                 log.warning(
-                    "InfluxDB '%s' still unreachable — %s measurement(s) buffered, retrying...",
-                    self.config.hostname, len(self.buffer),
+                    "%s '%s' still unreachable — %s measurement(s) buffered, retrying...",
+                    self.name, self.config.hostname, len(self.buffer),
                 )
                 self.last_connection_warning = now
             else:
-                log.debug("InfluxDB '%s' still unreachable, retrying...", self.config.hostname)
+                log.debug("%s '%s' still unreachable, retrying...", self.name, self.config.hostname)
             self.connection_lost = True
             self.init_successful = False
             await self.client.aclose()
@@ -120,11 +263,44 @@ class InfluxHandler:
             return False
 
         self.init_successful = True
-        log.info("Connection to InfluxDB %s established", self.version)
+        if self.version == "questdb" and self.questdb_version:
+            log.info("Connection to %s [v%s] established", self.name, self.questdb_version)
+        else:
+            log.info("Connection to %s established", self.name)
         return True
 
+    async def _questdb_exec(self, query: str, *, auth=None) -> dict:
+        if self.client is None:
+            raise RuntimeError("QuestDB client is not initialized")
+        resp = await self.client.get("/exec", params={"query": query}, auth=auth)
+        resp.raise_for_status()
+        data = resp.json()
+        if isinstance(data, dict) and data.get("error"):
+            raise RuntimeError(f"{data.get('error')} at position {data.get('position')}")
+        return data
+
+    async def _ensure_questdb_schema(self, *, auth=None) -> None:
+        table_name = self.config.measurement_name
+        table_ident = _questdb_identifier(table_name)
+
+        await self._questdb_exec(
+            f"CREATE TABLE IF NOT EXISTS {table_ident} (timestamp TIMESTAMP) "
+            "TIMESTAMP(timestamp) PARTITION BY DAY;",
+            auth=auth,
+        )
+
+        columns = questdb_expected_columns()
+        for column_name, column_type in columns.items():
+            column_ident = _questdb_identifier(column_name)
+            await self._questdb_exec(
+                f"ALTER TABLE {table_ident} ADD COLUMN IF NOT EXISTS {column_ident} {column_type};",
+                auth=auth,
+            )
+
+        log.debug("Ensured QuestDB schema for %s with %s expected columns", table_name, len(columns))
+
     @staticmethod
-    def _is_retention_drop(message: str) -> bool:
+    def _is_retention_drop(status_code: int, message: str) -> bool:
         """True if an InfluxDB write response reports points dropped because they
         fall outside the retention policy (a non-retryable partial write).
 
@@ -132,15 +308,31 @@ class InfluxHandler:
         'points beyond retention policy' and
         'partial write: dropped N points outside retention policy ...
          violates a Retention Policy Lower Bound'.
-        Deliberately does NOT match other partial writes (e.g. field type
-        conflicts), which must still surface as errors.
+         Deliberately does NOT match other partial writes (e.g. field type
+         conflicts), which must still surface as errors.
         """
+        if status_code not in {400, 422}:
+            return False
         msg = (message or "").lower()
         return "retention policy" in msg and (
             "partial write" in msg
             or "dropped" in msg
             or "beyond retention policy" in msg
         )
+
+    @staticmethod
+    def _parse_retry_after(value: str | None) -> int | None:
+        if not value:
+            return None
+        if value.isdecimal():
+            return int(value)
+        try:
+            retry_at = parsedate_to_datetime(value)
+        except (TypeError, ValueError):
+            return None
+        if retry_at.tzinfo is None:
+            retry_at = retry_at.replace(tzinfo=UTC)
+        return max(0, int((retry_at - datetime.now(UTC)).total_seconds()))
 
     @staticmethod
     def _is_non_retryable_write_error(status_code: int, message: str) -> bool:
@@ -158,6 +350,13 @@ class InfluxHandler:
         if not isinstance(measurement, FritzMeasurement):
             log.error("Measurement needs to be a 'FritzMeasurement' but got '%s'", type(measurement))
             return ""
+        if self.version == "questdb" and "." in measurement.name:
+            # QuestDB rejects dots in column names (e.g. "802.11" in wlan metric names)
+            original_name = measurement.name
+            measurement.name = original_name.replace(".", "_")
+            result = measurement.to_line_protocol(self.config.measurement_name)
+            measurement.name = original_name
+            return result
         return measurement.to_line_protocol(self.config.measurement_name)
 
     def permitted_to_write_data(self):
@@ -181,11 +380,16 @@ class InfluxHandler:
                         break
         except TimeoutError:
             log.warning(
-                "Timed out while flushing %s buffered InfluxDB measurement(s) before shutdown",
+                "Timed out while flushing %s buffered %s measurement(s) before shutdown",
                 len(self.buffer),
+                self.name,
             )
 
     async def write_data(self, *, force: bool = False):
+        async with self._write_lock:
+            await self._write_data_unlocked(force=force)
+
+    async def _write_data_unlocked(self, *, force: bool = False):
         if self.client is None:
             if not await self._init_client():
                 return
@@ -211,7 +415,7 @@ class InfluxHandler:
             else:
                 invalid_count += 1
         if invalid_count:
-            log.error("Dropping %s invalid InfluxDB measurement(s) from current batch", invalid_count)
+            log.error("Dropping %s invalid %s measurement(s) from current batch", invalid_count, self.name)
             # Remove invalid entries from the buffer immediately so they are not
             # retried on the next write attempt after a retryable failure.
             self.buffer[:len(local_buffer)] = valid_measurements
@@ -229,6 +433,10 @@ class InfluxHandler:
                 auth = (self.config.username, self.config.password) if self.config.username else None
                 params = {"db": self.config.database, "precision": "s"}
                 resp = await self.client.post("/write", params=params, content=payload, auth=auth)
+            elif self.version == "questdb":
+                auth = (self.config.username, self.config.password) if self.config.username else None
+                params = {"precision": "s"}
+                resp = await self.client.post("/write", params=params, content=payload, auth=auth)
             else:
                 params = {"org": self.config.organization, "bucket": self.config.bucket, "precision": "s"}
                 resp = await self.client.post("/api/v2/write", params=params, content=payload)
@@ -237,7 +445,7 @@ class InfluxHandler:
                 write_successful = True
             else:
                 exception_message = resp.text
-                if self._is_retention_drop(exception_message):
+                if self._is_retention_drop(resp.status_code, exception_message):
                     # InfluxDB did a *partial write*: points within the retention
                     # window were stored, points older than the retention policy
                     # were permanently dropped server-side. Neither can be retried,
@@ -248,16 +456,18 @@ class InfluxHandler:
                             or (now - self.last_retention_warning).total_seconds()
                             >= self.retention_warning_interval):
                         log.warning(
-                            "InfluxDB '%s' is discarding measurements older than its "
+                            "%s '%s' is discarding measurements older than its "
                             "retention policy; these points cannot be stored "
                             "(suppressing similar notices for %ss)",
+                            self.name,
                             self.config.hostname,
                             self.retention_warning_interval,
                         )
                         self.last_retention_warning = now
                     else:
                         log.debug(
-                            "InfluxDB dropped %s measurement(s) outside the retention policy",
+                            "%s dropped %s measurement(s) outside the retention policy",
+                            self.name,
                             len(local_buffer),
                         )
                     self.out_of_retention_period_range = True
@@ -266,8 +476,9 @@ class InfluxHandler:
                     self.last_write_retry = None
                 elif self._is_non_retryable_write_error(resp.status_code, exception_message):
                     log.error(
-                        "Dropping %s non-retryable InfluxDB measurement(s): %s: %.500s",
+                        "Dropping %s non-retryable %s measurement(s): %s: %.500s",
                         len(local_buffer),
+                        self.name,
                         resp.status_code,
                         exception_message,
                     )
@@ -276,7 +487,8 @@ class InfluxHandler:
                 elif resp.status_code == 413:
                     if self.current_measurements_per_write == 1:
                         log.error(
-                            "Dropping oversized InfluxDB measurement (single line exceeds server limit): %.500s",
+                            "Dropping oversized %s measurement (single line exceeds server limit): %.500s",
+                            self.name,
                             exception_message,
                         )
                         del self.buffer[0]
@@ -284,7 +496,8 @@ class InfluxHandler:
                     else:
                         new_batch = max(1, self.current_measurements_per_write // 2)
                         log.error(
-                            "InfluxDB write payload too large (%s measurements); reducing batch size to %s",
+                            "%s write payload too large (%s measurements); reducing batch size to %s",
+                            self.name,
                             self.current_measurements_per_write,
                             new_batch,
                         )
@@ -293,15 +506,16 @@ class InfluxHandler:
                             self.current_retry_interval * 2, self.max_retry_interval
                         )
                 elif resp.status_code in self._retryable_status_codes:
-                    retry_after = resp.headers.get("Retry-After")
-                    if retry_after and retry_after.isdecimal():
-                        self.current_retry_interval = min(int(retry_after), self.max_retry_interval)
+                    retry_after_seconds = self._parse_retry_after(resp.headers.get("Retry-After"))
+                    if retry_after_seconds is not None:
+                        self.current_retry_interval = min(retry_after_seconds, self.max_retry_interval)
                     else:
                         self.current_retry_interval = min(
                             self.current_retry_interval * 2, self.max_retry_interval
                         )
                     log.error(
-                        "Retryable InfluxDB write failure for '%s': %s: %.500s — retrying in %ss",
+                        "Retryable %s write failure for '%s': %s: %.500s — retrying in %ss",
+                        self.name,
                         self.config.hostname,
                         resp.status_code,
                         exception_message,
@@ -310,8 +524,20 @@ class InfluxHandler:
                     self.connection_lost = True
                 elif resp.status_code in {401, 403, 404}:
                     log.error(
-                        "Non-retryable InfluxDB auth/config failure for '%s': %s: %.500s — "
+                        "Non-retryable %s auth/config failure for '%s': %s: %.500s — "
                         "backing off to max interval",
+                        self.name,
+                        self.config.hostname,
+                        resp.status_code,
+                        exception_message,
+                    )
+                    self.current_retry_interval = self.max_retry_interval
+                    self.connection_lost = True
+                elif 400 <= resp.status_code < 500:
+                    log.error(
+                        "Non-retryable %s client/config write failure for '%s': %s: %.500s — "
+                        "backing off to max interval",
+                        self.name,
                         self.config.hostname,
                         resp.status_code,
                         exception_message,
@@ -320,7 +546,8 @@ class InfluxHandler:
                     self.connection_lost = True
                 else:
                     log.error(
-                        "Failed to write to InfluxDB '%s': %s: %.500s",
+                        "Failed to write to %s '%s': %s: %.500s",
+                        self.name,
                         self.config.hostname,
                         resp.status_code,
                         exception_message,
@@ -328,26 +555,26 @@ class InfluxHandler:
         except httpx.HTTPError as exc:
             now = datetime.now(UTC)
             if not self.connection_lost:
-                log.error("InfluxDB '%s' unreachable: %s — buffering data until connection is restored",
-                          self.config.hostname, exc)
+                log.error("%s '%s' unreachable: %s — buffering data until connection is restored",
+                          self.name, self.config.hostname, exc)
                 self.last_connection_warning = now
             elif (
                 self.last_connection_warning is None
                 or (now - self.last_connection_warning).total_seconds() >= self.connection_warning_interval
             ):
                 log.warning(
-                    "InfluxDB '%s' still unreachable — %s measurement(s) buffered, retrying...",
-                    self.config.hostname, len(self.buffer),
+                    "%s '%s' still unreachable — %s measurement(s) buffered, retrying...",
+                    self.name, self.config.hostname, len(self.buffer),
                 )
                 self.last_connection_warning = now
             else:
-                log.debug("InfluxDB '%s' still unreachable, retrying...", self.config.hostname)
+                log.debug("%s '%s' still unreachable, retrying...", self.name, self.config.hostname)
             self.connection_lost = True
             if self.client is not None:
                 await self.client.aclose()
                 self.client = None
         except Exception:
-            log.exception("Unexpected InfluxDB writer failure")
+            log.exception("Unexpected %s writer failure", self.name)
             raise
 
         if len(self.buffer) == 0:
@@ -358,12 +585,13 @@ class InfluxHandler:
         if write_successful:
             if self.connection_lost:
                 log.info(
-                    "InfluxDB '%s' connection restored — flushing %s buffered measurements",
+                    "%s '%s' connection restored — flushing %s buffered measurements",
+                    self.name,
                     self.config.hostname,
                     len(self.buffer),
                 )
             self.last_connection_warning = None
-            log.debug("Successfully wrote %s measurements to InfluxDB", len(local_buffer))
+            log.debug("Successfully wrote %s measurements to %s", len(local_buffer), self.name)
             del self.buffer[:len(local_buffer)]
             self.connection_lost = False
             self.last_write_retry = None
@@ -394,11 +622,12 @@ class InfluxHandler:
         max_length = self.max_measurements_buffer_size
         percent_buffer_usage = 100 / max_length * length
         if length > max_length:
-            log.critical(f"InfluxDB measurement buffer length '{length}' exceeded the maximum. Discarding old measurements.")
+            log.critical(f"{self.name} measurement buffer length '{length}' exceeded the maximum. Discarding old measurements.")
             self.buffer[:] = self.buffer[0 - max_length:]
         elif percent_buffer_usage >= self.current_max_measurements_buffer_warning:
             log.warning(
-                "InfluxDB measurement buffer usage is %.1f%% (%s/%s)",
+                "%s measurement buffer usage is %.1f%% (%s/%s)",
+                self.name,
                 percent_buffer_usage,
                 length,
                 max_length,

@@ -296,6 +296,10 @@ class ConfigBase:
 
             config_value = os.environ.get(f"{config_section_name}_{config_option}".upper(), config_value)
 
+            # treat empty / whitespace-only strings as absent (e.g. Unraid sends "" for unset fields)
+            if isinstance(config_value, str) and not config_value.strip():
+                config_value = None
+
             if config_value is not None and var_type is bool:
                 try:
                     config_value = self.to_bool(config_value)

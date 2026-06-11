@@ -1,0 +1,54 @@
+services:
+  influxdb:
+    image: influxdb:1.8-alpine
+    container_name: influxdb_v1
+    restart: unless-stopped
+    ports:
+      - "8086:8086"
+    volumes:
+      - influxdb_data:/var/lib/influxdb
+    environment:
+      - INFLUXDB_DB=fritzflux
+
+  fritzfluxdb:
+    image: giiibates/fritzfluxdb:latest
+    container_name: fritzfluxdb_influx1
+    restart: unless-stopped
+    stop_grace_period: 20s
+    depends_on:
+      - influxdb
+    env_file:
+      - ./.env
+    environment:
+      TZ: ${TZ:-Europe/Berlin}
+      FRITZBOX_HOSTNAME: ${FRITZBOX_HOSTNAME:-192.168.178.1}
+      FRITZBOX_USERNAME: ${FRITZBOX_USERNAME}
+      FRITZBOX_PASSWORD: ${FRITZBOX_PASSWORD}
+      DB_TYPE: "influxdb_v1"
+      INFLUXDB_HOSTNAME: influxdb
+      INFLUXDB_PORT: 8086
+      INFLUXDB_DATABASE: ${INFLUXDB_DATABASE:-fritzflux}
+      INFLUXDB_USERNAME: ${INFLUXDB_USERNAME:-}
+      INFLUXDB_PASSWORD: ${INFLUXDB_PASSWORD:-}
+      INFLUXDB_TLS_ENABLED: ${INFLUXDB_TLS_ENABLED:-false}
+      # credentials (if set) are sent over HTTP inside the trusted compose network
+      INFLUXDB_ALLOW_PLAINTEXT_CREDENTIALS: ${INFLUXDB_ALLOW_PLAINTEXT_CREDENTIALS:-true}
+
+    logging:
+      driver: json-file
+      options:
+        max-size: "50m"
+        max-file: "5"
+
+    security_opt:
+      - no-new-privileges:true
+
+    healthcheck:
+      test: ["CMD-SHELL", "pgrep -f 'run.py' >/dev/null || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 15s
+
+volumes:
+  influxdb_data:

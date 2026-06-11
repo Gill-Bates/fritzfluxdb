@@ -4,18 +4,22 @@
 # Copyright (C) 2026 Gill-Bates http://github.com/Gill-Bates
 #
 
+from collections.abc import Callable
 from datetime import datetime
-from zoneinfo import ZoneInfo
-
+from typing import Any
 from fritzfluxdb.classes.fritzbox.service_definitions import lua_services
-
-LOCAL_TZ = ZoneInfo("Europe/Berlin")
 
 
 def parse_legacy_log_timestamp(data) -> datetime:
-    if not isinstance(data, list) or len(data) < 2:
+    if not isinstance(data, list) or len(data) < 3:
         raise ValueError(f"invalid legacy log entry: {data!r}")
-    return datetime.strptime(f"{data[0]} {data[1]}", "%d.%m.%y %H:%M:%S").replace(tzinfo=LOCAL_TZ)
+    return datetime.strptime(f"{data[0]} {data[1]}", "%d.%m.%y %H:%M:%S")
+
+
+def parse_legacy_log_message(data) -> str:
+    if not isinstance(data, list) or len(data) < 3:
+        raise ValueError(f"invalid legacy log entry: {data!r}")
+    return str(data[2])
 
 
 def parse_modern_log_timestamp(data) -> datetime:
@@ -23,334 +27,94 @@ def parse_modern_log_timestamp(data) -> datetime:
     time_value = data.get("time") if isinstance(data, dict) else None
     if not date_value or not time_value:
         raise ValueError(f"invalid log entry timestamp: {data!r}")
-    return datetime.strptime(f"{date_value} {time_value}", "%d.%m.%y %H:%M:%S").replace(tzinfo=LOCAL_TZ)
+    return datetime.strptime(f"{date_value} {time_value}", "%d.%m.%y %H:%M:%S")
+
+
+def parse_modern_log_message(data) -> str:
+    if not isinstance(data, dict) or data.get("msg") is None:
+        raise ValueError(f"invalid log entry message: {data!r}")
+    return str(data["msg"])
 
 
 def prepare_json_response_data(response):
-    """
-    handler to prepare returned json data for parsing
-    """
-
+    url = getattr(response, "url", "<unknown>")
     if response.status_code != 200:
-        raise ValueError(f"unexpected HTTP status {response.status_code} for {response.url}")
-
+        raise ValueError(f"unexpected HTTP status {response.status_code} for {url}")
     try:
         return response.json()
     except ValueError as exc:
-        raise ValueError(f"invalid JSON response for {response.url}: {exc}") from exc
+        raise ValueError(f"invalid JSON response for {url}: {exc}") from exc
 
 
-lua_services.append(
-    {
-        "name": "System logs",
-        "os_min_versions": "7.29",
-        "os_max_versions": "7.38",
+def _build_log_service(
+    name: str,
+    log_type: str,
+    filter_value: int | str,
+    interval: int,
+    os_min_versions: str,
+    os_max_versions: str | None,
+    timestamp_function: Callable[[Any], datetime],
+    value_function: Callable[[Any], str],
+) -> dict:
+    service: dict = {
+        "name": name,
+        "os_min_versions": os_min_versions,
         "method": "POST",
         "params": {
-            "filter": 1,
+            "filter": filter_value,
             "page": "log",
-            "lang": "de"
+            "lang": "de",
         },
         "response_parser": prepare_json_response_data,
         "track": True,
-        "interval": 60,
+        "interval": interval,
         "value_instances": {
             "log_entry": {
                 "data_path": "data.log",
                 "type": list,
                 "next": {
-                    # data struct type: list
                     "type": str,
-                    "tags": {
-                        "log_type": "System"
-                    },
-                    "timestamp_function": parse_legacy_log_timestamp,
-                    "value_function": lambda data: data[2],
-                    "tags_function": None
-                }
-            }
-        }
-    })
-
-lua_services.append(
-    {
-        "name": "System logs",
-        "os_min_versions": "7.39",
-        "method": "POST",
-        "params": {
-            "filter": "sys",
-            "page": "log",
-            "lang": "de"
+                    "tags": {"log_type": log_type},
+                    "timestamp_function": timestamp_function,
+                    "value_function": value_function,
+                    "tags_function": None,
+                },
+            },
         },
-        "response_parser": prepare_json_response_data,
-        "track": True,
-        "interval": 60,
-        "value_instances": {
-            "log_entry": {
-                "data_path": "data.log",
-                "type": list,
-                "next": {
-                    # data struct type: list
-                    "type": str,
-                    "tags": {
-                        "log_type": "System"
-                    },
-                    "timestamp_function": parse_modern_log_timestamp,
-                    "value_function": lambda data: data.get("msg"),
-                    "tags_function": None
-                }
-            }
-        }
-    })
+    }
+    if os_max_versions is not None:
+        service["os_max_versions"] = os_max_versions
+    return service
 
-lua_services.append(
-    {
-        "name": "Internet connection logs",
-        "os_min_versions": "7.29",
-        "os_max_versions": "7.38",
-        "method": "POST",
-        "params": {
-            "filter": 2,
-            "page": "log",
-            "lang": "de"
-        },
-        "response_parser": prepare_json_response_data,
-        "track": True,
-        "interval": 61,
-        "value_instances": {
-            "log_entry": {
-                "data_path": "data.log",
-                "type": list,
-                "next": {
-                    # data struct type: list
-                    "type": str,
-                    "tags": {
-                        "log_type": "Internet connection"
-                    },
-                    "timestamp_function": parse_legacy_log_timestamp,
-                    "value_function": lambda data: data[2],
-                    "tags_function": None
-                }
-            }
-        }
-    })
 
-lua_services.append(
-    {
-        "name": "Internet connection logs",
-        "os_min_versions": "7.39",
-        "method": "POST",
-        "params": {
-            "filter": "net",
-            "page": "log",
-            "lang": "de"
-        },
-        "response_parser": prepare_json_response_data,
-        "track": True,
-        "interval": 61,
-        "value_instances": {
-            "log_entry": {
-                "data_path": "data.log",
-                "type": list,
-                "next": {
-                    # data struct type: list
-                    "type": str,
-                    "tags": {
-                        "log_type": "Internet connection"
-                    },
-                    "timestamp_function": parse_modern_log_timestamp,
-                    "value_function": lambda data: data.get("msg"),
-                    "tags_function": None
-                }
-            }
-        }
-    })
+# (name, log_type, legacy_filter, modern_filter, interval)
+_LOG_DEFINITIONS: list[tuple[str, str, int, str, int]] = [
+    ("System logs",              "System",             1, "sys",  60),
+    ("Internet connection logs", "Internet connection", 2, "net",  61),
+    ("Telephony logs",           "Telephony",           3, "fon",  62),
+    ("WLAN logs",                "WLAN",                4, "wlan", 63),
+    ("USB Devices logs",         "USB Devices",         5, "usb",  64),
+]
 
-lua_services.append(
-    {
-        "name": "Telephony logs",
-        "os_min_versions": "7.29",
-        "os_max_versions": "7.38",
-        "method": "POST",
-        "params": {
-            "filter": 3,
-            "page": "log",
-            "lang": "de"
-        },
-        "response_parser": prepare_json_response_data,
-        "track": True,
-        "interval": 62,
-        "value_instances": {
-            "log_entry": {
-                "data_path": "data.log",
-                "type": list,
-                "next": {
-                    # data struct type: list
-                    "type": str,
-                    "tags": {
-                        "log_type": "Telephony"
-                    },
-                    "timestamp_function": parse_legacy_log_timestamp,
-                    "value_function": lambda data: data[2],
-                    "tags_function": None
-                }
-            }
-        }
-    })
+for _name, _log_type, _legacy_filter, _modern_filter, _interval in _LOG_DEFINITIONS:
+    lua_services.append(_build_log_service(
+        name=_name,
+        log_type=_log_type,
+        filter_value=_legacy_filter,
+        interval=_interval,
+        os_min_versions="7.29",
+        os_max_versions="7.38",
+        timestamp_function=parse_legacy_log_timestamp,
+        value_function=parse_legacy_log_message,
+    ))
+    lua_services.append(_build_log_service(
+        name=_name,
+        log_type=_log_type,
+        filter_value=_modern_filter,
+        interval=_interval,
+        os_min_versions="7.39",
+        os_max_versions=None,
+        timestamp_function=parse_modern_log_timestamp,
+        value_function=parse_modern_log_message,
+    ))
 
-lua_services.append(
-    {
-        "name": "Telephony logs",
-        "os_min_versions": "7.39",
-        "method": "POST",
-        "params": {
-            "filter": "fon",
-            "page": "log",
-            "lang": "de"
-        },
-        "response_parser": prepare_json_response_data,
-        "track": True,
-        "interval": 62,
-        "value_instances": {
-            "log_entry": {
-                "data_path": "data.log",
-                "type": list,
-                "next": {
-                    # data struct type: list
-                    "type": str,
-                    "tags": {
-                        "log_type": "Telephony"
-                    },
-                    "timestamp_function": parse_modern_log_timestamp,
-                    "value_function": lambda data: data.get("msg"),
-                    "tags_function": None
-                }
-            }
-        }
-    })
-
-lua_services.append(
-    {
-        "name": "WLAN logs",
-        "os_min_versions": "7.29",
-        "os_max_versions": "7.38",
-        "method": "POST",
-        "params": {
-            "filter": 4,
-            "page": "log",
-            "lang": "de"
-        },
-        "response_parser": prepare_json_response_data,
-        "track": True,
-        "interval": 63,
-        "value_instances": {
-            "log_entry": {
-                "data_path": "data.log",
-                "type": list,
-                "next": {
-                    # data struct type: list
-                    "type": str,
-                    "tags": {
-                        "log_type": "WLAN"
-                    },
-                    "timestamp_function": parse_legacy_log_timestamp,
-                    "value_function": lambda data: data[2],
-                    "tags_function": None
-                }
-            }
-        }
-    })
-
-lua_services.append(
-    {
-        "name": "WLAN logs",
-        "os_min_versions": "7.39",
-        "method": "POST",
-        "params": {
-            "filter": "wlan",
-            "page": "log",
-            "lang": "de"
-        },
-        "response_parser": prepare_json_response_data,
-        "track": True,
-        "interval": 63,
-        "value_instances": {
-            "log_entry": {
-                "data_path": "data.log",
-                "type": list,
-                "next": {
-                    # data struct type: list
-                    "type": str,
-                    "tags": {
-                        "log_type": "WLAN"
-                    },
-                    "timestamp_function": parse_modern_log_timestamp,
-                    "value_function": lambda data: data.get("msg"),
-                    "tags_function": None
-                }
-            }
-        }
-    })
-
-lua_services.append(
-    {
-        "name": "USB Devices logs",
-        "os_min_versions": "7.29",
-        "os_max_versions": "7.38",
-        "method": "POST",
-        "params": {
-            "filter": 5,
-            "page": "log",
-            "lang": "de"
-        },
-        "response_parser": prepare_json_response_data,
-        "track": True,
-        "interval": 64,
-        "value_instances": {
-            "log_entry": {
-                "data_path": "data.log",
-                "type": list,
-                "next": {
-                    # data struct type: list
-                    "type": str,
-                    "tags": {
-                        "log_type": "USB Devices"
-                    },
-                    "timestamp_function": parse_legacy_log_timestamp,
-                    "value_function": lambda data: data[2],
-                    "tags_function": None
-                }
-            }
-        }
-    })
-
-lua_services.append(
-    {
-        "name": "USB Devices logs",
-        "os_min_versions": "7.39",
-        "method": "POST",
-        "params": {
-            "filter": "usb",
-            "page": "log",
-            "lang": "de"
-        },
-        "response_parser": prepare_json_response_data,
-        "track": True,
-        "interval": 64,
-        "value_instances": {
-            "log_entry": {
-                "data_path": "data.log",
-                "type": list,
-                "next": {
-                    # data struct type: list
-                    "type": str,
-                    "tags": {
-                        "log_type": "USB Devices"
-                    },
-                    "timestamp_function": parse_modern_log_timestamp,
-                    "value_function": lambda data: data.get("msg"),
-                    "tags_function": None
-                }
-            }
-        }
-    })

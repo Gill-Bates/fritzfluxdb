@@ -1,0 +1,61 @@
+services:
+  influxdb:
+    image: influxdb:2.7-alpine
+    container_name: influxdb_v2
+    restart: unless-stopped
+    ports:
+      - "8086:8086"
+    volumes:
+      - influxdb2_data:/var/lib/influxdb2
+      - influxdb2_config:/etc/influxdb2
+    environment:
+      - DOCKER_INFLUXDB_INIT_MODE=setup
+      - DOCKER_INFLUXDB_INIT_USERNAME=${INFLUXDB_USERNAME:-admin}
+      - DOCKER_INFLUXDB_INIT_PASSWORD=${INFLUXDB_PASSWORD:-secretpassword123}
+      - DOCKER_INFLUXDB_INIT_ORG=${INFLUXDB_ORGANIZATION:-fritzflux_org}
+      - DOCKER_INFLUXDB_INIT_BUCKET=${INFLUXDB_BUCKET:-fritzflux}
+      - DOCKER_INFLUXDB_INIT_ADMIN_TOKEN=${INFLUXDB_TOKEN:-admin-secret-token}
+
+  fritzfluxdb:
+    image: giiibates/fritzfluxdb:latest
+    container_name: fritzfluxdb_influx2
+    restart: unless-stopped
+    stop_grace_period: 20s
+    depends_on:
+      - influxdb
+    env_file:
+      - ./.env
+    environment:
+      TZ: ${TZ:-Europe/Berlin}
+      FRITZBOX_HOSTNAME: ${FRITZBOX_HOSTNAME:-192.168.178.1}
+      FRITZBOX_USERNAME: ${FRITZBOX_USERNAME}
+      FRITZBOX_PASSWORD: ${FRITZBOX_PASSWORD}
+      DB_TYPE: "influxdb_v2"
+      INFLUXDB_HOSTNAME: influxdb
+      INFLUXDB_PORT: 8086
+      INFLUXDB_ORGANIZATION: ${INFLUXDB_ORGANIZATION:-fritzflux_org}
+      INFLUXDB_BUCKET: ${INFLUXDB_BUCKET:-fritzflux}
+      INFLUXDB_TOKEN: ${INFLUXDB_TOKEN:-admin-secret-token}
+      INFLUXDB_TLS_ENABLED: ${INFLUXDB_TLS_ENABLED:-false}
+      # token is sent over HTTP inside the trusted compose network
+      INFLUXDB_ALLOW_PLAINTEXT_CREDENTIALS: ${INFLUXDB_ALLOW_PLAINTEXT_CREDENTIALS:-true}
+
+    logging:
+      driver: json-file
+      options:
+        max-size: "50m"
+        max-file: "5"
+
+    security_opt:
+      - no-new-privileges:true
+
+    healthcheck:
+      test: ["CMD-SHELL", "pgrep -f 'run.py' >/dev/null || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 15s
+
+volumes:
+  influxdb2_data:
+  influxdb2_config:

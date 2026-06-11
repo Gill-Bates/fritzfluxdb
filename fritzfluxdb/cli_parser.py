@@ -4,6 +4,7 @@
 # Copyright (C) 2026 Gill-Bates http://github.com/Gill-Bates
 #
 
+import os
 from argparse import ArgumentParser, Namespace, RawDescriptionHelpFormatter
 from collections.abc import Sequence
 from pathlib import Path
@@ -52,6 +53,15 @@ def parse_command_line(
         action="count",
         default=0,
         help="Increase application log verbosity. Repeat for more detailed debug logs.",
+    )
+
+    parser.add_argument(
+        "-l",
+        "--log-level",
+        dest="log_level",
+        default=os.environ.get("LOG_LEVEL", "INFO").upper(),
+        choices=["DEBUG", "INFO", "WARNING", "ERROR"],
+        help="Set log level (default: INFO, or $LOG_LEVEL env var)",
     )
 
     args = parser.parse_args(argv)

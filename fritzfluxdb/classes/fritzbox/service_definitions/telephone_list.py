@@ -8,13 +8,10 @@ import csv
 import hashlib
 from datetime import datetime
 from io import StringIO
-from zoneinfo import ZoneInfo
 
 from fritzfluxdb.classes.fritzbox.service_handler import FritzBoxLuaURLPath
 from fritzfluxdb.classes.fritzbox.service_definitions import lua_services
 
-
-LOCAL_TZ = ZoneInfo("Europe/Berlin")
 
 read_interval = 60
 
@@ -22,15 +19,11 @@ read_interval = 60
 class CallLogConfig:
 
     def __init__(self, sep, header):
+        self.sep = sep.strip() if isinstance(sep, str) and sep.strip() else ";"
+        self.header_list = []
 
-        self.sep = ";"
-        self.header_list = list()
-
-        if len(sep) > 0:
-            self.sep = sep
-
-        if len(header) > 0:
-            self.header_list = [x.strip('"') for x in header.split(self.sep)]
+        if isinstance(header, str) and header:
+            self.header_list = next(csv.reader(StringIO(header), delimiter=self.sep), [])
 
 
 class CallLogEntry:
@@ -49,7 +42,7 @@ class CallLogEntry:
     def __init__(self, entry: str, config: CallLogConfig):
 
         # compute a MD5 hash and use as ID to track and group log data by uid tag
-        self._hash = hashlib.md5(entry.encode("UTF-8")).hexdigest()
+        self._hash = hashlib.md5(entry.encode("UTF-8"), usedforsecurity=False).hexdigest()
 
         entry_dict = dict(zip(
             config.header_list,
@@ -58,7 +51,10 @@ class CallLogEntry:
         ))
 
         self._call_type = self.call_types.get(entry_dict.get("Typ"), "undefined")
-        self._date_time = datetime.strptime(entry_dict["Datum"], '%d.%m.%y %H:%M').replace(tzinfo=LOCAL_TZ)
+        date_value = entry_dict.get("Datum")
+        if not date_value:
+            raise ValueError(f"missing call date in entry: {entry!r}")
+        self._date_time = datetime.strptime(date_value, "%d.%m.%y %H:%M")
         self._caller_name = entry_dict.get("Name", "")
         self._caller_number = entry_dict.get("Rufnummer", "")
         self._caller_location = entry_dict.get("Landes-/Ortsnetzbereich", "")
@@ -132,7 +128,7 @@ class CallLog:
         if not isinstance(data, str):
             return
 
-        lines = data.split(self.new_line_char)
+        lines = data.splitlines()
 
         if len(lines) == 0:
             return
@@ -142,7 +138,7 @@ class CallLog:
 
         # extract separator
         if lines[0].startswith("sep="):
-            sep = lines[0].split("=")[-1]
+            sep = lines[0].removeprefix("sep=").strip()
             lines = lines[1:]
 
         if not lines:
@@ -164,12 +160,25 @@ class CallLog:
 
             try:
                 self.entries.append(CallLogEntry(line, config))
-            except (ValueError, TypeError) as exc:
+            except (ValueError, TypeError, KeyError) as exc:
                 raise ValueError(f"invalid call log line: {line!r}") from exc
 
 
-# due to the tracking of measurements multiple short calls from the same number within the same minute
-# will be reduced to one entry
+def _call_entry_metric(attr: str, data_type: type = str) -> dict:
+    return {
+        "type": list,
+        "value_function": lambda data: data,
+        "next": {
+            "type": data_type,
+            "tags_function": lambda entry: {"uid": entry.hash},
+            "value_function": lambda entry, _a=attr: getattr(entry, _a),
+            "timestamp_function": lambda entry: entry.date_time,
+        },
+    }
+
+
+# Tracking prevents the same Fritz!Box call-list row from being emitted repeatedly
+# across polling intervals.
 lua_services.append(
     {
         "name": "Phone call list",
@@ -184,76 +193,13 @@ lua_services.append(
         "interval": read_interval,
         "track": True,
         "value_instances": {
-            "call_list_type": {
-                "type": list,
-                "value_function": lambda data: data,
-                "next": {
-                    "type": str,
-                    "tags_function": lambda entry: {"uid": entry.hash},
-                    "value_function": lambda entry: entry.type,
-                    "timestamp_function": lambda entry: entry.date_time,
-                }
-            },
-            "call_list_caller_name": {
-                "type": list,
-                "value_function": lambda data: data,
-                "next": {
-                    "type": str,
-                    "tags_function": lambda entry: {"uid": entry.hash},
-                    "value_function": lambda entry: entry.caller_name,
-                    "timestamp_function": lambda entry: entry.date_time,
-                }
-            },
-            "call_list_caller_number": {
-                "type": list,
-                "value_function": lambda data: data,
-                "next": {
-                    "type": str,
-                    "tags_function": lambda entry: {"uid": entry.hash},
-                    "value_function": lambda entry: entry.caller_number,
-                    "timestamp_function": lambda entry: entry.date_time,
-                }
-            },
-            "call_list_caller_location": {
-                "type": list,
-                "value_function": lambda data: data,
-                "next": {
-                    "type": str,
-                    "tags_function": lambda entry: {"uid": entry.hash},
-                    "value_function": lambda entry: entry.caller_location,
-                    "timestamp_function": lambda entry: entry.date_time,
-                }
-            },
-            "call_list_extension": {
-                "type": list,
-                "value_function": lambda data: data,
-                "next": {
-                    "type": str,
-                    "tags_function": lambda entry: {"uid": entry.hash},
-                    "value_function": lambda entry: entry.extension,
-                    "timestamp_function": lambda entry: entry.date_time,
-                }
-            },
-            "call_list_number_called": {
-                "type": list,
-                "value_function": lambda data: data,
-                "next": {
-                    "type": str,
-                    "tags_function": lambda entry: {"uid": entry.hash},
-                    "value_function": lambda entry: entry.number_called,
-                    "timestamp_function": lambda entry: entry.date_time,
-                }
-            },
-            "call_list_duration": {
-                "type": list,
-                "value_function": lambda data: data,
-                "next": {
-                    "type": int,
-                    "tags_function": lambda entry: {"uid": entry.hash},
-                    "value_function": lambda entry: entry.duration,
-                    "timestamp_function": lambda entry: entry.date_time,
-                }
-            }
+            "call_list_type":            _call_entry_metric("type"),
+            "call_list_caller_name":     _call_entry_metric("caller_name"),
+            "call_list_caller_number":   _call_entry_metric("caller_number"),
+            "call_list_caller_location": _call_entry_metric("caller_location"),
+            "call_list_extension":       _call_entry_metric("extension"),
+            "call_list_number_called":   _call_entry_metric("number_called"),
+            "call_list_duration":        _call_entry_metric("duration", int),
         }
     }
 )

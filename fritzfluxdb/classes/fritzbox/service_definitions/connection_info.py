@@ -8,19 +8,21 @@ from fritzfluxdb.common import grab
 from fritzfluxdb.classes.fritzbox.service_definitions import lua_services
 from fritzfluxdb.classes.fritzbox.model import FritzBoxLinkTypes
 
+
 def prepare_json_response_data(response):
+    url = getattr(response, "url", "<unknown>")
+
     if response.status_code == 404:
         return {}
 
     if response.status_code != 200:
-        raise ValueError(f"unexpected HTTP status {response.status_code} for {response.url}")
+        raise ValueError(f"unexpected HTTP status {response.status_code} for {url}")
 
     try:
         return response.json()
     except ValueError as exc:
-        raise ValueError(
-            f"invalid JSON response for {response.url}: {exc}"
-        ) from exc
+        raise ValueError(f"invalid JSON response for {url}: {exc}") from exc
+
 
 def make_docsis_filter(channel_path: str, docsis_key: str):
     def exclude_when_missing(data) -> bool:
@@ -28,30 +30,41 @@ def make_docsis_filter(channel_path: str, docsis_key: str):
         return not isinstance(channels, dict) or docsis_key not in channels
     return exclude_when_missing
 
+
 exclude_filter_ds_docsis30 = make_docsis_filter("data.channelDs", "docsis30")
 exclude_filter_ds_docsis31 = make_docsis_filter("data.channelDs", "docsis31")
 exclude_filter_us_docsis30 = make_docsis_filter("data.channelUs", "docsis30")
 exclude_filter_us_docsis31 = make_docsis_filter("data.channelUs", "docsis31")
 
+
 def count_grouped_channels(data, path: str) -> int:
     groups = grab(data, path, fallback={})
     if not isinstance(groups, dict):
         return 0
-    return sum(len(group) for group in groups.values() if isinstance(group, list | tuple))
+    return sum(len(group) for group in groups.values() if isinstance(group, (list, tuple)))
+
 
 def channel_id_tag(data) -> dict[str, str]:
+    if not isinstance(data, dict):
+        return {"id": "unknown"}
     channel_id = data.get("channelID") or data.get("channel") or data.get("frequency")
     if channel_id is None or str(channel_id).strip() == "":
         return {"id": "unknown"}
     return {"id": str(channel_id)}
 
+
 def channel_metric(data_path: str, value_key: str, value_type: type, exclude_filter) -> dict:
+    def get_value(data):
+        if not isinstance(data, dict) or data.get(value_key) is None:
+            raise ValueError(f"missing channel value {value_key!r}: {data!r}")
+        return data[value_key]
+
     return {
         "data_path": data_path,
         "type": list,
         "next": {
             "type": value_type,
-            "value_function": lambda data: data.get(value_key),
+            "value_function": get_value,
             "tags_function": channel_id_tag,
         },
         "exclude_filter_function": exclude_filter,
@@ -205,3 +218,4 @@ for service in _CONNECTION_INFO_SERVICES:
     )
     if key not in _registered_names:
         lua_services.append(service)
+        _registered_names.add(key)

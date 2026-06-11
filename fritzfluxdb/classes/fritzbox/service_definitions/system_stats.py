@@ -14,24 +14,34 @@ def prepare_json_response_data(response):
     handler to prepare returned json data for parsing
     """
 
+    url = getattr(response, "url", "")
+
     if response.status_code != 200:
-        raise ValueError(f"unexpected HTTP status {response.status_code} for {response.url}")
+        raise ValueError(f"unexpected HTTP status {response.status_code} for {url}")
 
     try:
         return response.json()
     except ValueError as exc:
-        raise ValueError(f"invalid JSON response for {response.url}: {exc}") from exc
+        raise ValueError(f"invalid JSON response for {url}: {exc}") from exc
 
 
 def missing_data_key(key: str):
     def exclude(data) -> bool:
+        if not isinstance(data, dict):
+            return True
         payload = data.get("data")
         return not isinstance(payload, dict) or key not in payload
     return exclude
 
 
-def is_lan_energy_entry(data: dict) -> bool:
-    return "lan" in data
+def is_lan_energy_entry(data) -> bool:
+    return isinstance(data, dict) and "lan" in data
+
+
+def energy_consumption_value(data) -> int:
+    if not isinstance(data, dict) or data.get("actPerc") is None:
+        raise ValueError(f"missing energy actPerc: {data!r}")
+    return data["actPerc"]
 
 
 lua_services.append(
@@ -98,7 +108,7 @@ lua_services.append(
                     # data struct type: dict
                     "type": int,
                     "tags_function": lambda data: {"name": data.get("name")},
-                    "value_function": lambda data: data.get("actPerc"),
+                    "value_function": energy_consumption_value,
                     "exclude_filter_function": is_lan_energy_entry
                 },
                 # Cable FritzBox with FritzOS 8.00 got these stats removed

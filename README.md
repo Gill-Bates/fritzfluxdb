@@ -5,7 +5,7 @@
 <h1 align="center">fritzFluxDB</h1>
 
 <p align="center">
-  Lightweight daemon that collects metrics from your AVM FritzBox and pushes them into InfluxDB.
+  Lightweight daemon that collects metrics from your AVM FritzBox and pushes them into InfluxDB or QuestDB.
 </p>
 
 <p align="center">
@@ -51,7 +51,8 @@ focuses on **operational reliability** and a **smaller, container-first footprin
 | | `fritzFluxDB` (this fork) | `fritzinfluxdb` (original) |
 |---|---|---|
 | **Python** | 3.13 | 3.7+ |
-| **InfluxDB client** | `httpx` — single lightweight HTTP dependency | `influxdb` + `influxdb_client` libraries |
+| **Database backends** | InfluxDB v1, InfluxDB v2 **and QuestDB** | InfluxDB v1 and v2 |
+| **Database client** | `httpx` — single lightweight HTTP dependency | `influxdb` + `influxdb_client` libraries |
 | **Outage logging** | One error on outage, silent retries, one recovery message | Repeated errors per retry |
 | **Graceful shutdown** | Buffered measurements are flushed before exit | Buffer discarded on shutdown |
 | **HTTP backoff** | Exponential backoff on `429`/`5xx`, honours `Retry-After`, auto-shrinks batch on `413` | Fixed retry interval |
@@ -69,7 +70,7 @@ focuses on **operational reliability** and a **smaller, container-first footprin
 ## ✨ Features
 
 -  Collects TR-064 & Lua service data from FritzBox
--  Supports InfluxDB v1 and v2
+-  Supports InfluxDB v1, InfluxDB v2 and QuestDB as storage backend
 -  Home automation metrics (smart home devices)
 -  Call logs & telephone data
 -  VPN, network hosts, connection info
@@ -87,12 +88,22 @@ FRITZBOX_HOSTNAME=192.168.178.1
 FRITZBOX_USERNAME=admin
 FRITZBOX_PASSWORD=your-secret-password
 
-INFLUXDB_VERSION=2
+DB_TYPE=influxdb_v2
 INFLUXDB_HOSTNAME=influxdb
 INFLUXDB_PORT=8086
 INFLUXDB_ORGANIZATION=my-org
 INFLUXDB_BUCKET=fritzflux
 INFLUXDB_TOKEN=your-influxdb-token
+# allow sending the token over plain HTTP inside your trusted home network
+INFLUXDB_ALLOW_PLAINTEXT_CREDENTIALS=true
+```
+
+Using QuestDB instead? Set:
+
+```env
+DB_TYPE=questdb
+QUESTDB_HOSTNAME=questdb
+QUESTDB_PORT=9000
 ```
 
 ### 2. Create `docker-compose.yml`
@@ -122,22 +133,59 @@ That's it. Metrics will start flowing into your InfluxDB.
 
 ## ⚙️ Configuration
 
-All settings are passed via environment variables:
+All settings can be passed via environment variables (e.g., in `.env` or in Docker Compose).
 
+### General Settings
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `LOG_LEVEL` | `INFO` | Log level (`DEBUG`, `INFO`, `WARNING`, `ERROR`) |
+| `TZ` | `Europe/Berlin` | Timezone for logging |
+| `DB_TYPE` | `influxdb_v2` | Target database type (`influxdb_v1`, `influxdb_v2` or `questdb`) |
+
+> [!TIP]
+> **TLS auto-detection:** The hostname may be a full URL (e.g. `https://influx.example.com` behind a
+> reverse proxy) — scheme and port are derived automatically. Port `443` always enables TLS.
+
+### FritzBox Configuration
 | Variable | Default | Description |
 |----------|---------|-------------|
 | `FRITZBOX_HOSTNAME` | `192.168.178.1` | FritzBox IP or hostname |
 | `FRITZBOX_USERNAME` | — | FritzBox login user |
 | `FRITZBOX_PASSWORD` | — | FritzBox login password |
-| `INFLUXDB_VERSION` | `2` | InfluxDB version (`1` or `2`) |
-| `INFLUXDB_HOSTNAME` | — | InfluxDB host |
+| `FRITZBOX_PORT` | `49000` | FritzBox TR-064 port |
+| `FRITZBOX_TLS_ENABLED` | `false` | Enable HTTPS for FritzBox connection |
+| `FRITZBOX_VERIFY_TLS` | `false` | Verify FritzBox certificate |
+| `FRITZBOX_REQUEST_INTERVAL`| `10` | Frequency of requests in seconds |
+| `FRITZBOX_BOX_TAG` | `fritz.box` | Custom tag to identify the FritzBox |
+
+### InfluxDB Configuration (used when `DB_TYPE=influxdb_v1` or `influxdb_v2`)
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `INFLUXDB_HOSTNAME` | — | InfluxDB host (or full URL, e.g. `https://influx.example.com`) |
 | `INFLUXDB_PORT` | `8086` | InfluxDB port |
-| `INFLUXDB_ORGANIZATION` | — | InfluxDB v2 organization |
-| `INFLUXDB_BUCKET` | `fritzflux` | InfluxDB bucket / database |
-| `INFLUXDB_TOKEN` | — | InfluxDB auth token |
-| `INFLUXDB_TLS_ENABLED` | `false` | Enable TLS for InfluxDB |
-| `LOG_LEVEL` | `INFO` | Log level (`DEBUG`, `INFO`, `WARNING`, `ERROR`) |
-| `TZ` | `Europe/Berlin` | Container timezone |
+| `INFLUXDB_TLS_ENABLED`| `false` | Enable TLS (HTTPS) |
+| `INFLUXDB_VERIFY_TLS` | `true` | Verify TLS certificate |
+| `INFLUXDB_ALLOW_PLAINTEXT_CREDENTIALS` | `false` | Allow sending credentials/token over plain HTTP (trusted networks only) |
+| `INFLUXDB_MEASUREMENT_NAME` | `fritzbox` | Base measurement name (overridden by serial if available) |
+| `INFLUXDB_DATABASE` | — | InfluxDB v1 database name |
+| `INFLUXDB_USERNAME` | — | InfluxDB v1 username |
+| `INFLUXDB_PASSWORD` | — | InfluxDB v1 password |
+| `INFLUXDB_ORGANIZATION`| — | InfluxDB v2 organization |
+| `INFLUXDB_BUCKET` | `fritzflux` | InfluxDB v2 bucket |
+| `INFLUXDB_TOKEN` | — | InfluxDB v2 auth token |
+
+### QuestDB Configuration (used when `DB_TYPE=questdb`)
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `QUESTDB_HOSTNAME` | — | QuestDB host (or full URL, e.g. `https://questdb.example.com`) |
+| `QUESTDB_PORT` | `9000` | QuestDB HTTP API port (InfluxDB Line Protocol over HTTP) |
+| `QUESTDB_TLS_ENABLED` | `false` | Enable TLS (HTTPS) |
+| `QUESTDB_VERIFY_TLS` | `true` | Verify TLS certificate |
+| `QUESTDB_ALLOW_PLAINTEXT_CREDENTIALS` | `false` | Allow sending credentials/token over plain HTTP (trusted networks only) |
+| `QUESTDB_MEASUREMENT_NAME` | `fritzbox` | Base table name (overridden by serial if available) |
+| `QUESTDB_USERNAME` | — | QuestDB basic authentication username |
+| `QUESTDB_PASSWORD` | — | QuestDB basic authentication password |
+| `QUESTDB_TOKEN` | — | QuestDB Bearer token authentication |
 
 ---
 
@@ -162,12 +210,6 @@ source .venv/bin/activate
 pip install -r requirements.txt
 
 python run.py -c setup.conf
-```
-
-### Build Docker image locally
-
-```bash
-./docker/build.sh
 ```
 
 ---

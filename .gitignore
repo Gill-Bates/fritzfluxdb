@@ -5,6 +5,7 @@ __pycache__/
 *.so
 full_codebase*
 .env
+.omx/
 
 # Virtual environment
 .venv/

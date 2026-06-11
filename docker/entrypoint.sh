@@ -15,6 +15,8 @@
 #
 # A clean exit (0) or a normal signal-termination (130 SIGINT / 143 SIGTERM)
 # stops the watchdog so container shutdown does not restart the daemon.
+# Exit 78 (EX_CONFIG) signals an invalid configuration: restarting cannot fix
+# it, so the watchdog gives up immediately instead of retrying.
 #
 # The launched command defaults to the bundled daemon but can be overridden via
 # the image CMD or `docker run <image> <cmd...>` / compose `command:`.
@@ -156,6 +158,11 @@ while true; do
         0|129|130|143)
             log "daemon exited cleanly (status ${status}), stopping watchdog"
             exit 0
+            ;;
+        78)
+            # EX_CONFIG: invalid configuration -- retrying cannot succeed.
+            log "daemon reported a configuration error (status 78); fix the configuration and restart the container"
+            exit 78
             ;;
     esac
 

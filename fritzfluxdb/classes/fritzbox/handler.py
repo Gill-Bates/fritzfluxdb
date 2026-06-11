@@ -5,8 +5,9 @@
 #
 
 import asyncio
+from datetime import datetime, UTC, timezone, timedelta
 
-import requests
+import httpx
 import xml.etree.ElementTree as ET
 import hashlib
 
@@ -174,8 +175,32 @@ class FritzBoxHandler(FritzBoxHandlerBase):
             self.config.link_type = link_type
         except FritzConnectionException as exc:
             log.warning(f"Unable to determine FritzBox link type: {exc}")
-        except Exception:
-            pass
+        except Exception as exc:
+            log.debug(f"Unable to determine FritzBox link type: {exc}")
+
+        # auto-detect Fritz!Box local timezone via Time:1 -> GetInfo
+        try:
+            utc_before = datetime.now(UTC)
+            time_info = self.session.call_action("Time:1", "GetInfo")
+            utc_after = datetime.now(UTC)
+            local_str = (time_info or {}).get("NewCurrentLocalTime", "")
+            if local_str:
+                local_dt = datetime.strptime(local_str[:19], "%Y-%m-%dT%H:%M:%S")
+                # Use midpoint of the two UTC samples to minimise request latency error
+                utc_mid = utc_before + (utc_after - utc_before) / 2
+                raw_offset = local_dt - utc_mid.replace(tzinfo=None)
+                # Round to nearest minute (Fritz!Box offsets are always whole minutes)
+                total_seconds = round(raw_offset.total_seconds() / 60) * 60
+                detected_tz = timezone(timedelta(seconds=total_seconds))
+                self.config.timezone = detected_tz
+                sign = "+" if total_seconds >= 0 else "-"
+                abs_s = abs(total_seconds)
+                log.info(
+                    "Fritz!Box timezone auto-detected: UTC%s%02d:%02d",
+                    sign, abs_s // 3600, (abs_s % 3600) // 60,
+                )
+        except Exception as exc:
+            log.warning("Unable to auto-detect Fritz!Box timezone, keeping configured value: %s", exc)
 
         proto = "HTTPS" if self.config.tls_enabled else "HTTP"
         log.info(f"Successfully established {self.name} session ({proto})")
@@ -185,7 +210,7 @@ class FritzBoxHandler(FritzBoxHandlerBase):
     def close(self):
         if self.session is None:
             return
-            
+
         raw_session = getattr(self.session, "session", None)
         if raw_session is not None:
             raw_session.close()
@@ -193,16 +218,16 @@ class FritzBoxHandler(FritzBoxHandlerBase):
         if self.init_successful is True:
             log.info(f"Closed {self.name} connection")
 
+        self.session = None
+        self.init_successful = False
+
     def query_service_data(self, service):
 
         def service_invalid_log(log_message):
             if service.link_type is not None and service.link_type != self.config.link_type:
-                log_handler = log.debug
-                log_message += f" (only available on {service.link_type} connections)"
+                log.debug("%s (only available on %s connections)", log_message, service.link_type)
             else:
-                log_handler = log.warning
-
-            log_handler(log_message)
+                log.info("%s", log_message)
 
         if not isinstance(service, FritzBoxTR069Service):
             log.error("Query service must be of type 'FritzBoxTR069Service'")
@@ -225,15 +250,15 @@ class FritzBoxHandler(FritzBoxHandlerBase):
             try:
                 call_result = self.session.call_action(service.name, action.name, **action.params)
             except FritzServiceError:
-                service_invalid_log(f"Requested invalid service: {service.name}")
                 if self.discovery_done is False:
-                    service_invalid_log(f"Querying service '{service.name}' will be disabled")
+                    label = service.description or service.name
+                    service_invalid_log(f"'{label}' not supported by this Fritz!Box — metrics skipped")
                     service.available = False
                 continue
             except FritzActionError:
-                service_invalid_log(f"Requested invalid action '{action.name}' for service: {service.name}")
                 if self.discovery_done is False:
-                    service_invalid_log(f"Querying action '{action.name}' will be disabled")
+                    label = service.description or service.name
+                    service_invalid_log(f"'{label}' action '{action.name}' not supported by this Fritz!Box — metrics skipped")
                     action.available = False
                 continue
             except FritzConnectionException as e:
@@ -269,7 +294,7 @@ class FritzBoxHandler(FritzBoxHandlerBase):
 
                     data_type = None
 
-                    # support setting a data type by appending it to the metric name by a double colon
+                    # support setting a data type by appending it to the metric name with a colon
                     if ":" in metric_name:
                         metric_data_type = metric_name.split(":")[1]
                         metric_name = metric_name.split(":")[0]
@@ -284,6 +309,7 @@ class FritzBoxHandler(FritzBoxHandlerBase):
                         if data_type is None:
                             log.warning(f"Unknown data type '{metric_data_type}' for metric '{key}' "
                                         f"in service '{service.name}'")
+                            continue
 
                     self.current_result_list.append(
                         FritzMeasurement(metric_name, value, box_tag=self.config.box_tag, data_type=data_type)
@@ -291,7 +317,9 @@ class FritzBoxHandler(FritzBoxHandlerBase):
 
             # special case: update firmware version when requested
             if service.name == "DeviceInfo" and action.name == "GetInfo":
-                self.config.fw_version = call_result.get("NewSoftwareVersion", "154.7.50")
+                fw_version = call_result.get("NewSoftwareVersion")
+                if fw_version:
+                    self.config.fw_version = fw_version
 
         if self.discovery_done is False:
             if True not in [x.available for x in service.actions]:
@@ -311,10 +339,20 @@ class FritzBoxLuaHandler(FritzBoxHandlerBase):
         self.url = None  # built lazily in connect() after TR-069 auto-detect resolves tls_enabled
         self.sid = None
 
-        self.session = requests.Session()
-        self.session.verify = self.config.verify_tls
+        # created lazily in connect(): httpx fixes `verify` at client construction,
+        # so the client can only be built once the TLS mode is resolved
+        self.session = None
 
         self.add_services(FritzBoxLuaService, service_definitions.lua_services)
+
+    def _build_session(self, verify: bool) -> None:
+        if self.session is not None:
+            self.session.close()
+
+        self.session = httpx.Client(
+            verify=verify,
+            timeout=httpx.Timeout(self.config.connect_timeout * 4, connect=self.config.connect_timeout),
+        )
 
     def connect(self):
 
@@ -325,13 +363,16 @@ class FritzBoxLuaHandler(FritzBoxHandlerBase):
         use_tls = bool(self.config.tls_enabled) if self.config.tls_enabled is not None else True
 
         # In auto-detect mode use HTTPS without cert verification: FritzBox always has a
-        # self-signed certificate, so SSLError would be a false negative. Only a
-        # ConnectionError (port unreachable) is a real signal to fall back to HTTP.
+        # self-signed certificate, so an SSL error would be a false negative. Only a
+        # connect error (port unreachable) is a real signal to fall back to HTTP.
+        verify = self.config.verify_tls
         if self.config.tls_auto and use_tls:
-            self.session.verify = False
+            verify = False
         elif self.config.tls_enabled is True and not self.config.verify_tls:
-            self.session.verify = False
+            verify = False
             log.warning(f"TLS certificate verification is disabled for FritzBox '{self.config.hostname}'")
+
+        self._build_session(verify)
 
         self.url = f"{'https' if use_tls else 'http'}://{self.config.hostname}"
 
@@ -341,11 +382,11 @@ class FritzBoxLuaHandler(FritzBoxHandlerBase):
 
         # perform login
         try:
-            response = self.session.get(login_url, timeout=(self.config.connect_timeout, self.config.connect_timeout*4))
+            response = self.session.get(login_url)
             dom = ET.fromstring(response.content)
             sid = dom.findtext('./SID')
             challenge = dom.findtext('./Challenge')
-        except requests.exceptions.ConnectionError as exc:
+        except (httpx.ConnectError, httpx.ConnectTimeout) as exc:
             if self.config.tls_auto and use_tls:
                 # HTTPS port unreachable — fall back to HTTP
                 log.warning(
@@ -353,21 +394,21 @@ class FritzBoxLuaHandler(FritzBoxHandlerBase):
                     self.config.hostname,
                 )
                 self.config.tls_enabled = False
-                self.session.verify = True
+                self._build_session(True)
                 self.url = f"http://{self.config.hostname}"
                 login_url = f"{self.url}/login_sid.lua"
                 try:
-                    response = self.session.get(login_url, timeout=(self.config.connect_timeout, self.config.connect_timeout*4))
+                    response = self.session.get(login_url)
                     dom = ET.fromstring(response.content)
                     sid = dom.findtext('./SID')
                     challenge = dom.findtext('./Challenge')
-                except (requests.RequestException, ET.ParseError) as exc2:
+                except (httpx.HTTPError, ET.ParseError) as exc2:
                     log.error(f"Unable to parse {self.name} login response after HTTP fallback: {exc2}")
                     return
             else:
                 log.error(f"Unable to parse {self.name} login response: {exc}")
                 return
-        except (requests.RequestException, ET.ParseError) as exc:
+        except (httpx.HTTPError, ET.ParseError) as exc:
             log.error(f"Unable to parse {self.name} login response: {exc}")
             return
 
@@ -379,26 +420,21 @@ class FritzBoxLuaHandler(FritzBoxHandlerBase):
             log.error(f"Missing {self.name} login challenge")
             return
 
-        md5 = hashlib.md5()
-        md5.update(challenge.encode('utf-16le'))
-        md5.update('-'.encode('utf-16le'))
-        md5.update(self.config.password.encode('utf-16le'))
-
         login_params = {
             "username": self.config.username,
-            "response": challenge + '-' + md5.hexdigest()
+            "response": self._legacy_login_response(challenge, self.config.password),
         }
 
         try:
-            response = self.session.get(login_url, timeout=self.config.connect_timeout, params=login_params)
+            response = self.session.get(login_url, params=login_params)
             dom = ET.fromstring(response.content)
             sid = dom.findtext('./SID')
             block_time = dom.findtext('./BlockTime')
-        except (requests.RequestException, ET.ParseError) as exc:
+        except (httpx.HTTPError, ET.ParseError) as exc:
             log.error(f"Unable to parse {self.name} login response: {exc}")
             return
 
-        if block_time != "0":
+        if block_time and block_time != "0":
             log.error(f"Failed to connect to {self.name} '{self.config.hostname}'. "
                       f"Logins blocked for '{block_time}' seconds!")
             return
@@ -430,9 +466,7 @@ class FritzBoxLuaHandler(FritzBoxHandlerBase):
             params = {**params, **additional_params}
 
         # basic function call attributes
-        call_attributes = {
-            "timeout": self.config.connect_timeout
-        }
+        call_attributes = {}
 
         if service_to_request.method == "POST":
             call_attributes["data"] = params
@@ -444,7 +478,7 @@ class FritzBoxLuaHandler(FritzBoxHandlerBase):
         # perform request
         try:
             response = self.session.request(service_to_request.method, data_url, **call_attributes)
-        except requests.RequestException as exc:
+        except httpx.HTTPError as exc:
             log.error(f"Unable to perform request to '{data_url}': {exc}")
             return None
 
@@ -471,14 +505,30 @@ class FritzBoxLuaHandler(FritzBoxHandlerBase):
         if response.status_code == 200:
             log.debug(f"{self.name} request successful")
         else:
-            log.error(f"{self.name} request '{service_to_request.name}' returned {response.status_code}: {response.reason}")
+            log.error(f"{self.name} request '{service_to_request.name}' returned "
+                      f"{response.status_code}: {response.reason_phrase}")
 
         return result
 
     def close(self):
-        self.session.close()
+        if self.session is not None:
+            self.session.close()
+            self.session = None
+
         if self.init_successful is True:
             log.info(f"Closed {self.name} connection")
+
+        self.sid = None
+        self.init_successful = False
+
+    @staticmethod
+    def _legacy_login_response(challenge: str, password: str) -> str:
+        # AVM mandates MD5; usedforsecurity=False avoids ValueError on FIPS-mode hosts
+        md5 = hashlib.md5(usedforsecurity=False)
+        md5.update(challenge.encode("utf-16le"))
+        md5.update("-".encode("utf-16le"))
+        md5.update(password.encode("utf-16le"))
+        return f"{challenge}-{md5.hexdigest()}"
 
     @staticmethod
     def _parse_bool(value) -> bool:
@@ -544,8 +594,8 @@ class FritzBoxLuaHandler(FritzBoxHandlerBase):
         if callable(tags_function):
             try:
                 generated_tags = tags_function(data)
-            except ValueError as exc:
-                log.error(f"Invalid tags for metric '{metric_name}': {exc}")
+            except Exception as exc:
+                log.error(f"Tags function for metric '{metric_name}' failed: {exc}")
                 return
             if not isinstance(generated_tags, dict):
                 log.error(f"tags_function for metric '{metric_name}' did not return a dict")
@@ -565,7 +615,7 @@ class FritzBoxLuaHandler(FritzBoxHandlerBase):
                 return
 
         if metric_value is None:
-            log.error(f"Unable to extract '{metric_name}' form '{data}', got '{type(metric_value)}'")
+            log.error(f"Unable to extract '{metric_name}' from '{data}', got '{type(metric_value)}'")
             return
 
         if data_type in [int, float, bool, str]:
@@ -592,7 +642,11 @@ class FritzBoxLuaHandler(FritzBoxHandlerBase):
             self.current_result_list.append(metric)
             return
 
-        if type(metric_value) is not data_type:
+        if not isinstance(data_type, type):
+            log.error(f"Invalid data type for metric '{metric_name}': {data_type!r}")
+            return
+
+        if not isinstance(metric_value, data_type):
             log.error(f"FritzBox metric type '{data_type}' for '{metric_name}' "
                       f"does not match '{type(metric_value)}' data: {metric_value}")
             return
@@ -609,7 +663,7 @@ class FritzBoxLuaHandler(FritzBoxHandlerBase):
 
             return
 
-        log.error(f"Unknown metric '{data_path}' form '{data}', with type '{type(metric_value)}' "
+        log.error(f"Unknown metric '{data_path}' from '{data}', with type '{type(metric_value)}' "
                   f"and defined type '{data_type}'")
 
     def query_service_data(self, service):
@@ -632,8 +686,10 @@ class FritzBoxLuaHandler(FritzBoxHandlerBase):
                 return
 
             if service.link_type is not None and self.config.link_type != service.link_type:
-                log.info(f"Service '{service_and_version_name}' not applicable for this "
-                         f"FritzBox Model Link type '{self.config.link_type}'")
+                log.debug(
+                    "Skipping '%s' metrics: requires %s connection (this device uses %s)",
+                    service.name, service.link_type, self.config.link_type,
+                )
                 service.available = False
                 return
 
@@ -641,19 +697,7 @@ class FritzBoxLuaHandler(FritzBoxHandlerBase):
         result = self.request(service, additional_params=service.params)
 
         if result is None:
-            message_handler = log.info
-            message_text = f"Unable to request {self.name} service '{service.name}'"
-            if result is None:
-                message_handler = log.error
-                message_text += ", no data returned"
-            elif self.discovery_done is True:
-                message_handler = log.error
-
-            message_handler(message_text)
-
-            if self.discovery_done is False:
-                log.info(f"{self.name} service '{service_and_version_name}' will be disabled.")
-                service.available = False
+            log.error(f"Unable to request {self.name} service '{service.name}', no data returned")
             return
 
         log.debug(f"Request {self.name} service '{service_and_version_name}' returned successfully")

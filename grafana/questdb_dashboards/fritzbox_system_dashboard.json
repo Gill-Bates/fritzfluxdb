@@ -1,19 +1,12 @@
 {
   "__inputs": [
     {
-      "name": "DS_INFLUXDB",
-      "label": "InfluxDB",
+      "name": "DS_QUESTDB",
+      "label": "QuestDB",
       "description": "",
       "type": "datasource",
-      "pluginId": "influxdb",
-      "pluginName": "InfluxDB"
-    },
-    {
-      "name": "VAR_MEASUREMENT",
-      "type": "constant",
-      "label": "InfluxDB measurement",
-      "value": "fritzbox",
-      "description": ""
+      "pluginId": "questdb-questdb-datasource",
+      "pluginName": "QuestDB"
     }
   ],
   "__elements": {},
@@ -35,12 +28,6 @@
       "id": "grafana",
       "name": "Grafana",
       "version": "9.2.2"
-    },
-    {
-      "type": "datasource",
-      "id": "influxdb",
-      "name": "InfluxDB",
-      "version": "1.0.0"
     },
     {
       "type": "panel",
@@ -65,6 +52,12 @@
       "id": "timeseries",
       "name": "Time series",
       "version": ""
+    },
+    {
+      "type": "datasource",
+      "id": "questdb-questdb-datasource",
+      "name": "QuestDB",
+      "version": "1.0.0"
     }
   ],
   "annotations": {
@@ -72,8 +65,8 @@
       {
         "builtIn": 1,
         "datasource": {
-          "type": "influxdb",
-          "uid": "${DS_INFLUXDB}"
+          "type": "questdb-questdb-datasource",
+          "uid": "${DS_QUESTDB}"
         },
         "enable": true,
         "hide": false,
@@ -81,8 +74,10 @@
         "mappings": {},
         "name": "Log annotations",
         "target": {
-          "query": "from(bucket: v.defaultBucket)\n  |> range(start: v.timeRangeStart, stop:v.timeRangeStop)\n  |> filter(fn: (r) => r._field == \"log_entry\" and r.box == \"$boxtag\" and r.log_type == \"Internet connection\" )\n  |> sort(columns: [\"_time\"], desc: true)\n  |> group(columns: [\"_measurement\"])\n  |> keep(columns:[\"_time\", \"_value\", \"log_type\"])",
-          "refId": "annotation_query"
+          "format": 1,
+          "queryType": "sql",
+          "rawSql": "SELECT timestamp AS time, log_entry AS text, log_type AS tags\nFROM ${measurement}\nWHERE $__timeFilter(timestamp)\n  AND box ~ '^${boxtag:regex}$'\n  AND log_entry IS NOT NULL\n  AND log_type = 'Internet connection'\nORDER BY timestamp DESC",
+          "selectedFormat": 1
         },
         "type": "dashboard"
       }
@@ -112,8 +107,8 @@
     },
     {
       "datasource": {
-        "type": "influxdb",
-        "uid": "${DS_INFLUXDB}"
+        "type": "questdb-questdb-datasource",
+        "uid": "${DS_QUESTDB}"
       },
       "fieldConfig": {
         "defaults": {
@@ -318,21 +313,25 @@
       "targets": [
         {
           "datasource": {
-            "type": "influxdb",
-            "uid": "${DS_INFLUXDB}"
+            "type": "questdb-questdb-datasource",
+            "uid": "${DS_QUESTDB}"
           },
-          "hide": false,
-          "query": "finalMap = (tables=<-) => tables\n  |> map(fn: (r) =>  ({\n        r with _value:\n          if r._field =~ /.*rate$/ then r._value * 8.0\n          else if r._field =~ /.*dsl_sync_max$/ then r._value * 1000.0\n          else r._value,\n        _field:\n          if r._field == \"sendrate\" then \"UP\"\n          else if r._field == \"receiverate\" then \"DOWN\"\n          else if r._field == \"downstreammax\" then \"DOWN netto Max\"\n          else if r._field == \"downstreamphysicalmax\" then \"DOWN Physical Max\"\n          else if r._field == \"downstream_dsl_sync_max\" then \"DOWN DSL Sync\"\n          else if r._field == \"upstreammax\" then \"UP netto Max\"\n          else if r._field == \"upstreamphysicalmax\" then \"UP Physical Max\"\n          else if r._field == \"upstream_dsl_sync_max\" then \"UP DSL Sync\"\n          else r._field\n        })\n      )\n\nfrom(bucket: v.defaultBucket)\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r[\"_measurement\"] == \"${measurement}\" and r.box == \"${boxtag}\" and\n    (\n        r._field == \"sendrate\" or\n        r._field == \"receiverate\" or\n        r._field == \"downstreammax\" or\n        r._field == \"downstream_dsl_sync_max\" or\n        r._field == \"downstreamphysicalmax\" or\n        r._field == \"upstreammax\" or\n        r._field == \"upstream_dsl_sync_max\" or\n        r._field == \"upstreamphysicalmax\"\n    )\n  )\n  |> aggregateWindow(every: v.windowPeriod, fn: mean, createEmpty: false)\n  |> drop(columns: [\"box\", \"_measurement\", \"_start\", \"_stop\"])\n  |> sort(columns: [\"_time\"], desc: false)\n  |> finalMap()\n",
-          "refId": "A"
+          "format": 0,
+          "queryType": "sql",
+          "rawSql": "SELECT timestamp AS time,\n  avg(sendrate)*8 AS \"UP\", avg(receiverate)*8 AS \"DOWN\",\n  avg(downstreammax) AS \"DOWN Max\", avg(downstream_dsl_sync_max)*1000 AS \"DOWN DSL Sync\",\n  avg(downstreamphysicalmax) AS \"DOWN Physical Max\", avg(upstreammax) AS \"UP netto Max\",\n  avg(upstream_dsl_sync_max)*1000 AS \"UP DSL Sync\", avg(upstreamphysicalmax) AS \"UP Physical Max\"\nFROM ${measurement}\nWHERE $__timeFilter(timestamp)\n  AND box ~ '^${boxtag:regex}$'\n  AND (sendrate IS NOT NULL OR receiverate IS NOT NULL\n       OR downstreammax IS NOT NULL OR downstream_dsl_sync_max IS NOT NULL\n       OR upstreammax IS NOT NULL OR upstream_dsl_sync_max IS NOT NULL)\nSAMPLE BY $__sampleByInterval ALIGN TO CALENDAR",
+          "refId": "A",
+          "selectedFormat": 0
         },
         {
           "datasource": {
-            "type": "influxdb",
-            "uid": "${DS_INFLUXDB}"
+            "type": "questdb-questdb-datasource",
+            "uid": "${DS_QUESTDB}"
           },
-          "hide": false,
-          "query": "finalMap = (tables=<-) => tables\n  |> map(fn: (r) =>  ({\n        r with _field:\n          if r._field == \"crc_errors\" then \"CRC Errors\"\n          else if r._field == \"errored_seconds\" then \"Errored Seconds\"\n          else if r._field == \"severely_errored_seconds\" then \"Severely Errored Seconds\"\n          else r._field\n        })\n      )\n\nfrom(bucket: v.defaultBucket)\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"${measurement}\" and r.box == \"$boxtag\" and \n    (\n        r._field == \"crc_errors\" or\n        r._field == \"errored_seconds\" or\n        r._field == \"severely_errored_seconds\"\n    )\n  )\n  |> aggregateWindow(every: v.windowPeriod, fn: last, createEmpty: false)\n  |> derivative(unit: v.windowPeriod, nonNegative: true, columns: [\"_value\"], timeColumn: \"_time\")\n  |> drop(columns: [\"box\", \"_measurement\", \"_start\", \"_stop\"])\n  |> sort(columns: [\"_time\"], desc: false)\n  |> finalMap()",
-          "refId": "B"
+          "format": 0,
+          "queryType": "sql",
+          "rawSql": "SELECT timestamp AS time,\n  sum(crc_errors_delta) AS \"CRC Errors\",\n  sum(errored_seconds_delta) AS \"Errored Seconds\",\n  sum(severely_errored_seconds_delta) AS \"Severely Errored Seconds\"\nFROM (\n  SELECT timestamp,\n    CASE WHEN previous_crc_errors IS NULL THEN 0\n      WHEN crc_errors >= previous_crc_errors THEN crc_errors - previous_crc_errors\n      ELSE 0 END AS crc_errors_delta,\n    CASE WHEN previous_errored_seconds IS NULL THEN 0\n      WHEN errored_seconds >= previous_errored_seconds THEN errored_seconds - previous_errored_seconds\n      ELSE 0 END AS errored_seconds_delta,\n    CASE WHEN previous_severely_errored_seconds IS NULL THEN 0\n      WHEN severely_errored_seconds >= previous_severely_errored_seconds THEN severely_errored_seconds - previous_severely_errored_seconds\n      ELSE 0 END AS severely_errored_seconds_delta\n  FROM (\n    SELECT timestamp, box, crc_errors, errored_seconds, severely_errored_seconds, lag(crc_errors) OVER (PARTITION BY box ORDER BY timestamp) AS previous_crc_errors, lag(errored_seconds) OVER (PARTITION BY box ORDER BY timestamp) AS previous_errored_seconds, lag(severely_errored_seconds) OVER (PARTITION BY box ORDER BY timestamp) AS previous_severely_errored_seconds\n    FROM ${measurement}\n    WHERE $__timeFilter(timestamp)\n      AND box ~ '^${boxtag:regex}$'\n      AND (crc_errors IS NOT NULL OR errored_seconds IS NOT NULL OR severely_errored_seconds IS NOT NULL)\n  )\n)\nSAMPLE BY $__sampleByInterval ALIGN TO CALENDAR",
+          "refId": "B",
+          "selectedFormat": 0
         }
       ],
       "title": "Current UP/DOWN",
@@ -341,8 +340,8 @@
     },
     {
       "datasource": {
-        "type": "influxdb",
-        "uid": "${DS_INFLUXDB}"
+        "type": "questdb-questdb-datasource",
+        "uid": "${DS_QUESTDB}"
       },
       "gridPos": {
         "h": 5,
@@ -365,13 +364,14 @@
       "targets": [
         {
           "datasource": {
-            "type": "influxdb",
-            "uid": "${DS_INFLUXDB}"
+            "type": "questdb-questdb-datasource",
+            "uid": "${DS_QUESTDB}"
           },
-          "limit": "5",
-          "query": "from(bucket: v.defaultBucket)\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"${measurement}\" and r.box == \"${boxtag}\" and r._field == \"log_entry\" and r.log_type != \"FritzInfluxDB\")\n  |> sort(columns: [\"_time\"], desc: true)\n  |> drop(columns: [\"box\", \"_measurement\", \"_start\", \"_stop\", \"log_type\"])\n  |> limit(n:5, offset: 0)\n",
-          "rawQuery": false,
-          "refId": "A"
+          "format": 0,
+          "queryType": "sql",
+          "rawSql": "SELECT timestamp AS time, log_entry AS line, log_type\nFROM ${measurement}\nWHERE $__timeFilter(timestamp)\n  AND box ~ '^${boxtag:regex}$'\n  AND log_entry IS NOT NULL AND log_type != 'FritzInfluxDB'\nORDER BY timestamp DESC LIMIT 5",
+          "refId": "A",
+          "selectedFormat": 0
         }
       ],
       "timeFrom": "7d",
@@ -381,8 +381,8 @@
     },
     {
       "datasource": {
-        "type": "influxdb",
-        "uid": "${DS_INFLUXDB}"
+        "type": "questdb-questdb-datasource",
+        "uid": "${DS_QUESTDB}"
       },
       "description": "Is there a Fritz!OS update available",
       "fieldConfig": {
@@ -458,14 +458,14 @@
       "targets": [
         {
           "datasource": {
-            "type": "influxdb",
-            "uid": "${DS_INFLUXDB}"
+            "type": "questdb-questdb-datasource",
+            "uid": "${DS_QUESTDB}"
           },
-          "dsType": "influxdb",
-          "query": "from(bucket: v.defaultBucket)\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r[\"_measurement\"] == \"${measurement}\" and r[\"_field\"] == \"upgrade_available\" and r.box == \"${boxtag}\")\n  |> last()\n  |> keep(columns: [\"_value\"])",
-          "rawQuery": false,
+          "format": 1,
+          "queryType": "sql",
+          "rawSql": "SELECT timestamp AS time, upgrade_available AS \"Upgrade Available\"\nFROM ${measurement}\nWHERE $__timeFilter(timestamp)\n  AND box ~ '^${boxtag:regex}$'\n  AND upgrade_available IS NOT NULL\nORDER BY timestamp DESC\nLIMIT 1",
           "refId": "A",
-          "target": ""
+          "selectedFormat": 1
         }
       ],
       "title": "Update",
@@ -474,8 +474,8 @@
     },
     {
       "datasource": {
-        "type": "influxdb",
-        "uid": "${DS_INFLUXDB}"
+        "type": "questdb-questdb-datasource",
+        "uid": "${DS_QUESTDB}"
       },
       "fieldConfig": {
         "defaults": {
@@ -554,14 +554,14 @@
       "targets": [
         {
           "datasource": {
-            "type": "influxdb",
-            "uid": "${DS_INFLUXDB}"
+            "type": "questdb-questdb-datasource",
+            "uid": "${DS_QUESTDB}"
           },
-          "dsType": "influxdb",
-          "query": "from(bucket: v.defaultBucket)\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r[\"_measurement\"] == \"${measurement}\" and r[\"_field\"] == \"linkuptime\" and r.box == \"${boxtag}\")\n  |> last()\n  |> keep(columns: [\"_value\"])",
-          "rawQuery": false,
+          "format": 1,
+          "queryType": "sql",
+          "rawSql": "SELECT timestamp AS time, linkuptime AS \"Link Uptime (s)\"\nFROM ${measurement}\nWHERE $__timeFilter(timestamp)\n  AND box ~ '^${boxtag:regex}$'\n  AND linkuptime IS NOT NULL\nORDER BY timestamp DESC\nLIMIT 1",
           "refId": "A",
-          "target": ""
+          "selectedFormat": 1
         }
       ],
       "timeFrom": "5m",
@@ -570,8 +570,8 @@
     },
     {
       "datasource": {
-        "type": "influxdb",
-        "uid": "${DS_INFLUXDB}"
+        "type": "questdb-questdb-datasource",
+        "uid": "${DS_QUESTDB}"
       },
       "fieldConfig": {
         "defaults": {
@@ -626,14 +626,26 @@
         "showThresholdMarkers": false
       },
       "pluginVersion": "9.2.2",
-      "targets": [],
+      "targets": [
+        {
+          "datasource": {
+            "type": "questdb-questdb-datasource",
+            "uid": "${DS_QUESTDB}"
+          },
+          "format": 1,
+          "queryType": "sql",
+          "rawSql": "SELECT sum(receiverate) * 8 AS \"receiverate\"\nFROM (\n  SELECT box, receiverate\n  FROM ${measurement}\n  WHERE timestamp >= dateadd('m', -5, now())\n    AND box ~ '^${boxtag:regex}$'\n    AND receiverate IS NOT NULL\n  LATEST ON timestamp PARTITION BY box\n)",
+          "refId": "A",
+          "selectedFormat": 1
+        }
+      ],
       "title": "Current Download",
       "type": "gauge"
     },
     {
       "datasource": {
-        "type": "influxdb",
-        "uid": "${DS_INFLUXDB}"
+        "type": "questdb-questdb-datasource",
+        "uid": "${DS_QUESTDB}"
       },
       "fieldConfig": {
         "defaults": {
@@ -688,15 +700,27 @@
         "showThresholdMarkers": false
       },
       "pluginVersion": "9.2.2",
-      "targets": [],
+      "targets": [
+        {
+          "datasource": {
+            "type": "questdb-questdb-datasource",
+            "uid": "${DS_QUESTDB}"
+          },
+          "format": 1,
+          "queryType": "sql",
+          "rawSql": "SELECT sum(sendrate) * 8 AS \"sendrate\"\nFROM (\n  SELECT box, sendrate\n  FROM ${measurement}\n  WHERE timestamp >= dateadd('m', -5, now())\n    AND box ~ '^${boxtag:regex}$'\n    AND sendrate IS NOT NULL\n  LATEST ON timestamp PARTITION BY box\n)",
+          "refId": "A",
+          "selectedFormat": 1
+        }
+      ],
       "title": "Current Upload",
       "transformations": [],
       "type": "gauge"
     },
     {
       "datasource": {
-        "type": "influxdb",
-        "uid": "${DS_INFLUXDB}"
+        "type": "questdb-questdb-datasource",
+        "uid": "${DS_QUESTDB}"
       },
       "fieldConfig": {
         "defaults": {
@@ -754,11 +778,14 @@
       "targets": [
         {
           "datasource": {
-            "type": "influxdb",
-            "uid": "${DS_INFLUXDB}"
+            "type": "questdb-questdb-datasource",
+            "uid": "${DS_QUESTDB}"
           },
-          "query": "from(bucket: v.defaultBucket)\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r[\"_measurement\"] == \"${measurement}\" and r[\"_field\"] == \"cpu_temp\" and r.box == \"${boxtag}\")\n  |> aggregateWindow(every: v.windowPeriod, fn: mean, createEmpty: false)\n  |> keep(columns: [\"_value\"])",
-          "refId": "A"
+          "format": 1,
+          "queryType": "sql",
+          "rawSql": "SELECT timestamp AS time, cpu_temp AS \"CPU Temp (°C)\"\nFROM ${measurement}\nWHERE $__timeFilter(timestamp)\n  AND box ~ '^${boxtag:regex}$'\n  AND cpu_temp IS NOT NULL\nORDER BY timestamp DESC\nLIMIT 1",
+          "refId": "A",
+          "selectedFormat": 1
         }
       ],
       "title": "CPU Temp",
@@ -766,8 +793,8 @@
     },
     {
       "datasource": {
-        "type": "influxdb",
-        "uid": "${DS_INFLUXDB}"
+        "type": "questdb-questdb-datasource",
+        "uid": "${DS_QUESTDB}"
       },
       "fieldConfig": {
         "defaults": {
@@ -821,11 +848,14 @@
       "targets": [
         {
           "datasource": {
-            "type": "influxdb",
-            "uid": "${DS_INFLUXDB}"
+            "type": "questdb-questdb-datasource",
+            "uid": "${DS_QUESTDB}"
           },
-          "query": "from(bucket: v.defaultBucket)\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"${measurement}\" and r.box == \"${boxtag}\" and r._field == \"cpu_utilization\" )\n  |> last()\n  |> keep(columns: [\"_value\"])",
-          "refId": "A"
+          "format": 1,
+          "queryType": "sql",
+          "rawSql": "SELECT timestamp AS time, cpu_utilization AS \"CPU %\"\nFROM ${measurement}\nWHERE $__timeFilter(timestamp)\n  AND box ~ '^${boxtag:regex}$'\n  AND cpu_utilization IS NOT NULL\nORDER BY timestamp DESC\nLIMIT 1",
+          "refId": "A",
+          "selectedFormat": 1
         }
       ],
       "title": "CPU Utilization",
@@ -833,8 +863,8 @@
     },
     {
       "datasource": {
-        "type": "influxdb",
-        "uid": "${DS_INFLUXDB}"
+        "type": "questdb-questdb-datasource",
+        "uid": "${DS_QUESTDB}"
       },
       "description": "",
       "fieldConfig": {
@@ -890,12 +920,14 @@
       "targets": [
         {
           "datasource": {
-            "type": "influxdb",
-            "uid": "${DS_INFLUXDB}"
+            "type": "questdb-questdb-datasource",
+            "uid": "${DS_QUESTDB}"
           },
-          "query": "from(bucket: v.defaultBucket)\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r[\"_measurement\"] == \"${measurement}\" and r.box == \"${boxtag}\" and\n    (\n      r._field == \"ram_usage_fixed\" or r._field == \"ram_usage_dynamic\"\n    )\n  )\n  |> last()\n  |> keep(columns: [\"_value\"])",
-          "rawQuery": true,
-          "refId": "A"
+          "format": 1,
+          "queryType": "sql",
+          "rawSql": "SELECT timestamp AS time,\n  ram_usage_fixed AS \"RAM Fixed\", ram_usage_dynamic AS \"RAM Dynamic\"\nFROM ${measurement}\nWHERE $__timeFilter(timestamp)\n  AND box ~ '^${boxtag:regex}$'\n  AND (ram_usage_fixed IS NOT NULL OR ram_usage_dynamic IS NOT NULL)\nORDER BY timestamp DESC LIMIT 1",
+          "refId": "A",
+          "selectedFormat": 1
         }
       ],
       "title": "RAM Utilization",
@@ -903,8 +935,8 @@
     },
     {
       "datasource": {
-        "type": "influxdb",
-        "uid": "${DS_INFLUXDB}"
+        "type": "questdb-questdb-datasource",
+        "uid": "${DS_QUESTDB}"
       },
       "fieldConfig": {
         "defaults": {
@@ -965,14 +997,14 @@
       "targets": [
         {
           "datasource": {
-            "type": "influxdb",
-            "uid": "${DS_INFLUXDB}"
+            "type": "questdb-questdb-datasource",
+            "uid": "${DS_QUESTDB}"
           },
-          "dsType": "influxdb",
-          "query": "import \"timezone\"\noption location = timezone.location(name: \"${timezone}\")\nfrom(bucket: v.defaultBucket)\n  |> range(start: -1d)\n  |> filter(fn: (r) => r._measurement == \"${measurement}\" and r.box == \"${boxtag}\" and r._field == \"totalbytessent\" )\n  |> difference(nonNegative: true, columns: [\"_value\"])\n  |> cumulativeSum(columns: [\"_value\"])\n  |> aggregateWindow(every: 15m, fn: last, createEmpty: false)\n",
-          "rawQuery": true,
+          "format": 0,
+          "queryType": "sql",
+          "rawSql": "SELECT timestamp AS time, sum(delta) OVER (ORDER BY timestamp) AS \"Upload Last 24h\"\nFROM (\n  SELECT timestamp,\n    CASE WHEN previous_value IS NULL THEN 0\n      WHEN totalbytessent >= previous_value THEN totalbytessent - previous_value\n      ELSE 0\n    END AS delta\n  FROM (\n    SELECT timestamp, totalbytessent, lag(totalbytessent) OVER (PARTITION BY box ORDER BY timestamp) AS previous_value\n    FROM ${measurement}\n    WHERE timestamp >= dateadd('d', -1, now())\n      AND box ~ '^${boxtag:regex}$'\n      AND totalbytessent IS NOT NULL\n  )\n)",
           "refId": "A",
-          "target": ""
+          "selectedFormat": 0
         }
       ],
       "timeFrom": "1d",
@@ -981,8 +1013,8 @@
     },
     {
       "datasource": {
-        "type": "influxdb",
-        "uid": "${DS_INFLUXDB}"
+        "type": "questdb-questdb-datasource",
+        "uid": "${DS_QUESTDB}"
       },
       "fieldConfig": {
         "defaults": {
@@ -1047,14 +1079,14 @@
       "targets": [
         {
           "datasource": {
-            "type": "influxdb",
-            "uid": "${DS_INFLUXDB}"
+            "type": "questdb-questdb-datasource",
+            "uid": "${DS_QUESTDB}"
           },
-          "dsType": "influxdb",
-          "query": "import \"timezone\"\noption location = timezone.location(name: \"${timezone}\")\nfrom(bucket: v.defaultBucket)\n  |> range(start: -1d)\n  |> filter(fn: (r) => r._measurement == \"${measurement}\" and r.box == \"${boxtag}\" and r._field == \"totalbytesreceived\" )\n  |> difference(nonNegative: true, columns: [\"_value\"])\n  |> cumulativeSum(columns: [\"_value\"])\n  |> aggregateWindow(every: 15m, fn: last, createEmpty: false)\n",
-          "rawQuery": true,
+          "format": 0,
+          "queryType": "sql",
+          "rawSql": "SELECT timestamp AS time, sum(delta) OVER (ORDER BY timestamp) AS \"Download Last 24h\"\nFROM (\n  SELECT timestamp,\n    CASE WHEN previous_value IS NULL THEN 0\n      WHEN totalbytesreceived >= previous_value THEN totalbytesreceived - previous_value\n      ELSE 0\n    END AS delta\n  FROM (\n    SELECT timestamp, totalbytesreceived, lag(totalbytesreceived) OVER (PARTITION BY box ORDER BY timestamp) AS previous_value\n    FROM ${measurement}\n    WHERE timestamp >= dateadd('d', -1, now())\n      AND box ~ '^${boxtag:regex}$'\n      AND totalbytesreceived IS NOT NULL\n  )\n)",
           "refId": "A",
-          "target": ""
+          "selectedFormat": 0
         }
       ],
       "timeFrom": "1d",
@@ -1063,8 +1095,8 @@
     },
     {
       "datasource": {
-        "type": "influxdb",
-        "uid": "${DS_INFLUXDB}"
+        "type": "questdb-questdb-datasource",
+        "uid": "${DS_QUESTDB}"
       },
       "fieldConfig": {
         "defaults": {
@@ -1110,12 +1142,14 @@
       "targets": [
         {
           "datasource": {
-            "type": "influxdb",
-            "uid": "${DS_INFLUXDB}"
+            "type": "questdb-questdb-datasource",
+            "uid": "${DS_QUESTDB}"
           },
-          "query": "from(bucket: v.defaultBucket)\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r[\"_measurement\"] == \"${measurement}\" and r[\"_field\"] == \"num_active_host\" and r.box == \"${boxtag}\")\n  |> last()\n  |> keep(columns: [\"_value\"])",
-          "rawQuery": false,
-          "refId": "A"
+          "format": 1,
+          "queryType": "sql",
+          "rawSql": "SELECT timestamp AS time, num_active_host AS \"Active Hosts\"\nFROM ${measurement}\nWHERE $__timeFilter(timestamp)\n  AND box ~ '^${boxtag:regex}$'\n  AND num_active_host IS NOT NULL\nORDER BY timestamp DESC\nLIMIT 1",
+          "refId": "A",
+          "selectedFormat": 1
         }
       ],
       "title": "Active hosts",
@@ -1123,8 +1157,8 @@
     },
     {
       "datasource": {
-        "type": "influxdb",
-        "uid": "${DS_INFLUXDB}"
+        "type": "questdb-questdb-datasource",
+        "uid": "${DS_QUESTDB}"
       },
       "fieldConfig": {
         "defaults": {
@@ -1203,14 +1237,14 @@
       "targets": [
         {
           "datasource": {
-            "type": "influxdb",
-            "uid": "${DS_INFLUXDB}"
+            "type": "questdb-questdb-datasource",
+            "uid": "${DS_QUESTDB}"
           },
-          "dsType": "influxdb",
-          "query": "from(bucket: v.defaultBucket)\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r[\"_measurement\"] == \"${measurement}\" and r[\"_field\"] == \"systemuptime\" and r.box == \"${boxtag}\")\n  |> last()\n  |> keep(columns: [\"_value\"])",
-          "rawQuery": false,
+          "format": 1,
+          "queryType": "sql",
+          "rawSql": "SELECT timestamp AS time, systemuptime AS \"System Uptime (s)\"\nFROM ${measurement}\nWHERE $__timeFilter(timestamp)\n  AND box ~ '^${boxtag:regex}$'\n  AND systemuptime IS NOT NULL\nORDER BY timestamp DESC\nLIMIT 1",
           "refId": "A",
-          "target": ""
+          "selectedFormat": 1
         }
       ],
       "timeFrom": "5m",
@@ -1229,8 +1263,8 @@
       "panels": [
         {
           "datasource": {
-            "type": "influxdb",
-            "uid": "${DS_INFLUXDB}"
+            "type": "questdb-questdb-datasource",
+            "uid": "${DS_QUESTDB}"
           },
           "fieldConfig": {
             "defaults": {
@@ -1346,12 +1380,14 @@
           "targets": [
             {
               "datasource": {
-                "type": "influxdb",
-                "uid": "${DS_INFLUXDB}"
+                "type": "questdb-questdb-datasource",
+                "uid": "${DS_QUESTDB}"
               },
-              "hide": false,
-              "query": "import \"date\"\nimport \"timezone\"\noption location = timezone.location(name: \"${timezone}\")\nfrom(bucket: v.defaultBucket)\n  |> range(start: -7d, stop: date.add(d: 1d, to: date.truncate(t: now(), unit: 1d)))\n  |> filter(fn: (r) => r._measurement == \"${measurement}\" and r.box == \"${boxtag}\" and \n    (\n      r._field == \"totalbytesreceived\" or\n      r._field == \"totalbytessent\"\n    )\n  )\n  |> difference(nonNegative: true, columns: [\"_value\"])\n  |> fill(column: \"_value\", usePrevious: true)\n  |> cumulativeSum(columns: [\"_value\"])\n  |> aggregateWindow(every: 1d, fn: last, createEmpty: false)\n  |> difference(nonNegative: true, columns: [\"_value\"])\n  |> drop(columns: [\"box\", \"_measurement\", \"_start\", \"_stop\"])\n  |> sort(columns: [\"_time\"], desc: false)\n  |> truncateTimeColumn(unit: 1h)\n  |> timeShift(duration: -1d, columns: [\"_time\"])\n\n",
-              "refId": "B"
+              "format": 0,
+              "queryType": "sql",
+              "rawSql": "SELECT timestamp AS time,\n  sum(totalbytessent_delta) AS \"Upload\",\n  sum(totalbytesreceived_delta) AS \"Download\"\nFROM (\n  SELECT timestamp,\n    CASE WHEN previous_totalbytessent IS NULL THEN 0\n      WHEN totalbytessent >= previous_totalbytessent THEN totalbytessent - previous_totalbytessent\n      ELSE 0 END AS totalbytessent_delta,\n    CASE WHEN previous_totalbytesreceived IS NULL THEN 0\n      WHEN totalbytesreceived >= previous_totalbytesreceived THEN totalbytesreceived - previous_totalbytesreceived\n      ELSE 0 END AS totalbytesreceived_delta\n  FROM (\n    SELECT timestamp, box, totalbytessent, totalbytesreceived, lag(totalbytessent) OVER (PARTITION BY box ORDER BY timestamp) AS previous_totalbytessent, lag(totalbytesreceived) OVER (PARTITION BY box ORDER BY timestamp) AS previous_totalbytesreceived\n    FROM ${measurement}\n    WHERE timestamp >= dateadd('d', -7, now())\n      AND box ~ '^${boxtag:regex}$'\n      AND (totalbytessent IS NOT NULL OR totalbytesreceived IS NOT NULL)\n  )\n)\nSAMPLE BY 1d ALIGN TO CALENDAR",
+              "refId": "B",
+              "selectedFormat": 0
             }
           ],
           "timeFrom": "7d",
@@ -1360,8 +1396,8 @@
         },
         {
           "datasource": {
-            "type": "influxdb",
-            "uid": "${DS_INFLUXDB}"
+            "type": "questdb-questdb-datasource",
+            "uid": "${DS_QUESTDB}"
           },
           "fieldConfig": {
             "defaults": {
@@ -1483,21 +1519,14 @@
           "targets": [
             {
               "datasource": {
-                "type": "influxdb",
-                "uid": "${DS_INFLUXDB}"
+                "type": "questdb-questdb-datasource",
+                "uid": "${DS_QUESTDB}"
               },
-              "dsType": "influxdb",
-              "fields": [
-                {
-                  "func": "mean",
-                  "name": "value"
-                }
-              ],
-              "groupByTags": [],
-              "query": "import \"date\"\nfrom(bucket: v.defaultBucket)\n  |> range(start: -1d, stop: date.add(d: 1h, to: date.truncate(t: now(), unit: 1h)))\n  |> filter(fn: (r) => r._measurement == \"${measurement}\" and r.box == \"${boxtag}\" and \n    (\n      r._field == \"totalbytesreceived\" or \n      r._field == \"totalbytessent\"\n    )\n  )\n  |> difference(nonNegative: true, columns: [\"_value\"])\n  |> cumulativeSum(columns: [\"_value\"])\n  |> aggregateWindow(every: v.windowPeriod, fn: last, createEmpty: false)\n  |> difference(nonNegative: true, columns: [\"_value\"])\n  |> drop(columns: [\"box\", \"_measurement\"])\n  |> truncateTimeColumn(unit: 1h)\n  |> timeShift(duration: -1h)",
-              "rawQuery": true,
+              "format": 0,
+              "queryType": "sql",
+              "rawSql": "SELECT timestamp AS time,\n  sum(totalbytessent_delta) AS \"Upload\",\n  sum(totalbytesreceived_delta) AS \"Download\"\nFROM (\n  SELECT timestamp,\n    CASE WHEN previous_totalbytessent IS NULL THEN 0\n      WHEN totalbytessent >= previous_totalbytessent THEN totalbytessent - previous_totalbytessent\n      ELSE 0 END AS totalbytessent_delta,\n    CASE WHEN previous_totalbytesreceived IS NULL THEN 0\n      WHEN totalbytesreceived >= previous_totalbytesreceived THEN totalbytesreceived - previous_totalbytesreceived\n      ELSE 0 END AS totalbytesreceived_delta\n  FROM (\n    SELECT timestamp, box, totalbytessent, totalbytesreceived, lag(totalbytessent) OVER (PARTITION BY box ORDER BY timestamp) AS previous_totalbytessent, lag(totalbytesreceived) OVER (PARTITION BY box ORDER BY timestamp) AS previous_totalbytesreceived\n    FROM ${measurement}\n    WHERE $__timeFilter(timestamp)\n      AND box ~ '^${boxtag:regex}$'\n      AND (totalbytessent IS NOT NULL OR totalbytesreceived IS NOT NULL)\n  )\n)\nSAMPLE BY $__sampleByInterval ALIGN TO CALENDAR",
               "refId": "A",
-              "target": "alias(summarize(nonNegativeDerivative(collectd.squirrel.fritzbox.bytes-totalbytesreceived, 0), '1h', 'sum'), 'download')"
+              "selectedFormat": 0
             }
           ],
           "timeFrom": "1d",
@@ -1506,8 +1535,8 @@
         },
         {
           "datasource": {
-            "type": "influxdb",
-            "uid": "${DS_INFLUXDB}"
+            "type": "questdb-questdb-datasource",
+            "uid": "${DS_QUESTDB}"
           },
           "fieldConfig": {
             "defaults": {
@@ -1604,14 +1633,14 @@
           "targets": [
             {
               "datasource": {
-                "type": "influxdb",
-                "uid": "${DS_INFLUXDB}"
+                "type": "questdb-questdb-datasource",
+                "uid": "${DS_QUESTDB}"
               },
-              "dsType": "influxdb",
-              "query": "import \"timezone\"\noption location = timezone.location(name: \"${timezone}\")\nfrom(bucket: v.defaultBucket)\n  |> range(start: -7d)\n  |> filter(fn: (r) => r._measurement == \"${measurement}\" and r.box == \"${boxtag}\" and \n    (\n      r._field == \"totalbytesreceived\" or\n      r._field == \"totalbytessent\"\n    )\n  )\n  |> difference(nonNegative: true, columns: [\"_value\"])\n  |> fill(column: \"_value\", usePrevious: true)\n  |> cumulativeSum(columns: [\"_value\"])\n  |> aggregateWindow(every: 1d, fn: last, createEmpty: false)\n  |> timeShift(duration: -1ns, columns: [\"_time\"])\n  |> difference(nonNegative: true, columns: [\"_value\"])\n  |> drop(columns: [\"box\", \"_measurement\"])\n  |> truncateTimeColumn(unit: 1m)\n  |> timeShift(duration: 1ns, columns: [\"_time\"])",
-              "rawQuery": true,
+              "format": 1,
+              "queryType": "sql",
+              "rawSql": "SELECT timestamp AS day,\n  sum(totalbytessent_delta) AS \"Upload\",\n  sum(totalbytesreceived_delta) AS \"Download\"\nFROM (\n  SELECT timestamp,\n    CASE WHEN previous_totalbytessent IS NULL THEN 0\n      WHEN totalbytessent >= previous_totalbytessent THEN totalbytessent - previous_totalbytessent\n      ELSE 0 END AS totalbytessent_delta,\n    CASE WHEN previous_totalbytesreceived IS NULL THEN 0\n      WHEN totalbytesreceived >= previous_totalbytesreceived THEN totalbytesreceived - previous_totalbytesreceived\n      ELSE 0 END AS totalbytesreceived_delta\n  FROM (\n    SELECT timestamp, box, totalbytessent, totalbytesreceived, lag(totalbytessent) OVER (PARTITION BY box ORDER BY timestamp) AS previous_totalbytessent, lag(totalbytesreceived) OVER (PARTITION BY box ORDER BY timestamp) AS previous_totalbytesreceived\n    FROM ${measurement}\n    WHERE timestamp >= dateadd('d', -7, now())\n      AND box ~ '^${boxtag:regex}$'\n      AND (totalbytessent IS NOT NULL OR totalbytesreceived IS NOT NULL)\n  )\n)\nSAMPLE BY 1d ALIGN TO CALENDAR",
               "refId": "A",
-              "target": ""
+              "selectedFormat": 1
             }
           ],
           "timeFrom": "7d",
@@ -1641,8 +1670,8 @@
         },
         {
           "datasource": {
-            "type": "influxdb",
-            "uid": "${DS_INFLUXDB}"
+            "type": "questdb-questdb-datasource",
+            "uid": "${DS_QUESTDB}"
           },
           "fieldConfig": {
             "defaults": {
@@ -1706,14 +1735,14 @@
           "targets": [
             {
               "datasource": {
-                "type": "influxdb",
-                "uid": "${DS_INFLUXDB}"
+                "type": "questdb-questdb-datasource",
+                "uid": "${DS_QUESTDB}"
               },
-              "dsType": "influxdb",
-              "query": "from(bucket: v.defaultBucket)\n  |> range(start: -1d)\n  |> filter(fn: (r) => r._measurement == \"${measurement}\" and r.box == \"${boxtag}\" and r._field == \"totalbytessent\" )\n  |> aggregateWindow(every: 15m, fn: last, createEmpty: false)",
-              "rawQuery": false,
+              "format": 1,
+              "queryType": "sql",
+              "rawSql": "SELECT last(totalbytessent) AS \"Upload Since Connection\"\nFROM ${measurement}\nWHERE timestamp >= dateadd('d', -1, now())\n  AND box ~ '^${boxtag:regex}$'\n  AND totalbytessent IS NOT NULL",
               "refId": "A",
-              "target": ""
+              "selectedFormat": 1
             }
           ],
           "timeFrom": "24h",
@@ -1722,8 +1751,8 @@
         },
         {
           "datasource": {
-            "type": "influxdb",
-            "uid": "${DS_INFLUXDB}"
+            "type": "questdb-questdb-datasource",
+            "uid": "${DS_QUESTDB}"
           },
           "fieldConfig": {
             "defaults": {
@@ -1786,15 +1815,14 @@
           "targets": [
             {
               "datasource": {
-                "type": "influxdb",
-                "uid": "${DS_INFLUXDB}"
+                "type": "questdb-questdb-datasource",
+                "uid": "${DS_QUESTDB}"
               },
-              "dsType": "influxdb",
-              "hide": false,
-              "query": "from(bucket: v.defaultBucket)\n  |> range(start: -1d)\n  |> filter(fn: (r) => r._measurement == \"${measurement}\" and r.box == \"${boxtag}\" and r._field == \"totalbytesreceived\" )\n  |> aggregateWindow(every: 15m, fn: last, createEmpty: false)\n",
-              "rawQuery": false,
+              "format": 1,
+              "queryType": "sql",
+              "rawSql": "SELECT last(totalbytesreceived) AS \"Download Since Connection\"\nFROM ${measurement}\nWHERE timestamp >= dateadd('d', -1, now())\n  AND box ~ '^${boxtag:regex}$'\n  AND totalbytesreceived IS NOT NULL",
               "refId": "A",
-              "target": ""
+              "selectedFormat": 1
             }
           ],
           "timeFrom": "24h",
@@ -1818,8 +1846,8 @@
       "panels": [
         {
           "datasource": {
-            "type": "influxdb",
-            "uid": "${DS_INFLUXDB}"
+            "type": "questdb-questdb-datasource",
+            "uid": "${DS_QUESTDB}"
           },
           "fieldConfig": {
             "defaults": {
@@ -1917,12 +1945,14 @@
           "targets": [
             {
               "datasource": {
-                "type": "influxdb",
-                "uid": "${DS_INFLUXDB}"
+                "type": "questdb-questdb-datasource",
+                "uid": "${DS_QUESTDB}"
               },
-              "query": "from(bucket: v.defaultBucket)\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"${measurement}\" and r.box == \"${boxtag}\" and r._field =~ /^wlan._associations$/)\n  |> aggregateWindow(every: v.windowPeriod, fn: mean, createEmpty: false)\n  |> drop(columns: [\"box\", \"_measurement\", \"_start\", \"_stop\"])\n\n",
-              "rawQuery": false,
-              "refId": "A"
+              "format": 0,
+              "queryType": "sql",
+              "rawSql": "SELECT timestamp AS time,\n  avg(wlan1_associations) AS \"wlan1_associations\",\n  avg(wlan2_associations) AS \"wlan2_associations\",\n  avg(wlan3_associations) AS \"wlan3_associations\"\nFROM ${measurement}\nWHERE $__timeFilter(timestamp)\n  AND box ~ '^${boxtag:regex}$'\n  AND (wlan1_associations IS NOT NULL OR wlan2_associations IS NOT NULL OR wlan3_associations IS NOT NULL)\nSAMPLE BY $__sampleByInterval ALIGN TO CALENDAR",
+              "refId": "A",
+              "selectedFormat": 0
             }
           ],
           "title": "WLAN Clients",
@@ -1962,8 +1992,8 @@
         },
         {
           "datasource": {
-            "type": "influxdb",
-            "uid": "${DS_INFLUXDB}"
+            "type": "questdb-questdb-datasource",
+            "uid": "${DS_QUESTDB}"
           },
           "description": "",
           "fieldConfig": {
@@ -2059,12 +2089,14 @@
           "targets": [
             {
               "datasource": {
-                "type": "influxdb",
-                "uid": "${DS_INFLUXDB}"
+                "type": "questdb-questdb-datasource",
+                "uid": "${DS_QUESTDB}"
               },
-              "query": "from(bucket: v.defaultBucket)\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"${measurement}\" and r.box == \"${boxtag}\" and r._field =~ /^wlan._channel$/)\n  |> aggregateWindow(every: v.windowPeriod, fn: mean, createEmpty: false)\n  |> drop(columns: [\"box\", \"_measurement\", \"_start\", \"_stop\"])\n",
-              "rawQuery": false,
-              "refId": "A"
+              "format": 0,
+              "queryType": "sql",
+              "rawSql": "SELECT timestamp AS time,\n  avg(wlan1_channel) AS \"wlan1_channel\",\n  avg(wlan2_channel) AS \"wlan2_channel\",\n  avg(wlan3_channel) AS \"wlan3_channel\"\nFROM ${measurement}\nWHERE $__timeFilter(timestamp)\n  AND box ~ '^${boxtag:regex}$'\n  AND (wlan1_channel IS NOT NULL OR wlan2_channel IS NOT NULL OR wlan3_channel IS NOT NULL)\nSAMPLE BY $__sampleByInterval ALIGN TO CALENDAR",
+              "refId": "A",
+              "selectedFormat": 0
             }
           ],
           "title": "WLAN Channel",
@@ -2093,8 +2125,8 @@
         },
         {
           "datasource": {
-            "type": "influxdb",
-            "uid": "${DS_INFLUXDB}"
+            "type": "questdb-questdb-datasource",
+            "uid": "${DS_QUESTDB}"
           },
           "fieldConfig": {
             "defaults": {
@@ -2140,62 +2172,18 @@
           "targets": [
             {
               "datasource": {
-                "type": "influxdb",
-                "uid": "${DS_INFLUXDB}"
+                "type": "questdb-questdb-datasource",
+                "uid": "${DS_QUESTDB}"
               },
-              "hide": false,
-              "limit": "1",
-              "query": "finalMap = (tables=<-) => tables\n  |> map(fn: (r) =>  ({\n        r with _field:\n          if r._field =~ /.*ssid/ then \"Name\"\n          else if r._field =~ /.*status/ then \"Status\"\n          else if r._field =~ /.*standard/ then \"Standard\"\n          else if r._field =~ /.*channel/ then \"Channel\"\n          else if r._field =~ /.*associations/ then \"Clients\"\n          else r._field\n        })\n      )\n\n\nfrom(bucket: v.defaultBucket)\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"${measurement}\" and r.box == \"${boxtag}\" and r._field =~ /^wlan1.*$/)\n  |> last()\n  |> toString()\n  |> drop(columns: [\"box\", \"_measurement\", \"_start\", \"_stop\"])\n  |> truncateTimeColumn(unit: 1h)\n  |> finalMap()\n",
-              "rawQuery": false,
-              "refId": "A"
-            },
-            {
-              "datasource": {
-                "type": "influxdb",
-                "uid": "${DS_INFLUXDB}"
-              },
-              "hide": false,
-              "limit": "1",
-              "query": "finalMap = (tables=<-) => tables\n  |> map(fn: (r) =>  ({\n        r with _field:\n          if r._field =~ /.*ssid/ then \"Name\"\n          else if r._field =~ /.*status/ then \"Status\"\n          else if r._field =~ /.*standard/ then \"Standard\"\n          else if r._field =~ /.*channel/ then \"Channel\"\n          else if r._field =~ /.*associations/ then \"Clients\"\n          else r._field\n        })\n      )\n\n\nfrom(bucket: v.defaultBucket)\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"${measurement}\" and r.box == \"${boxtag}\" and r._field =~ /^wlan2.*$/)\n  |> last()\n  |> toString()\n  |> drop(columns: [\"box\", \"_measurement\", \"_start\", \"_stop\"])\n  |> truncateTimeColumn(unit: 1h)\n  |> finalMap()",
-              "rawQuery": false,
-              "refId": "B"
-            },
-            {
-              "datasource": {
-                "type": "influxdb",
-                "uid": "${DS_INFLUXDB}"
-              },
-              "hide": false,
-              "limit": "1",
-              "query": "finalMap = (tables=<-) => tables\n  |> map(fn: (r) =>  ({\n        r with _field:\n          if r._field =~ /.*ssid/ then \"Name\"\n          else if r._field =~ /.*status/ then \"Status\"\n          else if r._field =~ /.*standard/ then \"Standard\"\n          else if r._field =~ /.*channel/ then \"Channel\"\n          else if r._field =~ /.*associations/ then \"Clients\"\n          else r._field\n        })\n      )\n\n\nfrom(bucket: v.defaultBucket)\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"${measurement}\" and r.box == \"${boxtag}\" and r._field =~ /^wlan3.*$/)\n  |> last()\n  |> toString()\n  |> drop(columns: [\"box\", \"_measurement\", \"_start\", \"_stop\"])\n  |> truncateTimeColumn(unit: 1h)\n  |> finalMap()\n",
-              "rawQuery": false,
-              "refId": "C"
+              "format": 1,
+              "queryType": "sql",
+              "rawSql": "SELECT * FROM (\n  SELECT last_not_null(wlan1_ssid) AS \"Name\", last_not_null(wlan1_status) AS \"Status\",\n  last_not_null(wlan1_802_11_standard) AS \"Standard\", last_not_null(wlan1_channel) AS \"Channel\",\n  last_not_null(wlan1_associations) AS \"Clients\", '2.4 GHz' AS \"Band\"\n  FROM ${measurement}\n  WHERE $__timeFilter(timestamp)\n    AND box ~ '^${boxtag:regex}$'\n) WHERE \"Name\" IS NOT NULL OR \"Status\" IS NOT NULL OR \"Standard\" IS NOT NULL\n  OR \"Channel\" IS NOT NULL OR \"Clients\" IS NOT NULL\nUNION ALL\nSELECT * FROM (\n  SELECT last_not_null(wlan2_ssid) AS \"Name\", last_not_null(wlan2_status) AS \"Status\",\n  last_not_null(wlan2_802_11_standard) AS \"Standard\", last_not_null(wlan2_channel) AS \"Channel\",\n  last_not_null(wlan2_associations) AS \"Clients\", '5 GHz' AS \"Band\"\n  FROM ${measurement}\n  WHERE $__timeFilter(timestamp)\n    AND box ~ '^${boxtag:regex}$'\n) WHERE \"Name\" IS NOT NULL OR \"Status\" IS NOT NULL OR \"Standard\" IS NOT NULL\n  OR \"Channel\" IS NOT NULL OR \"Clients\" IS NOT NULL\nUNION ALL\nSELECT * FROM (\n  SELECT last_not_null(wlan3_ssid) AS \"Name\", last_not_null(wlan3_status) AS \"Status\",\n  last_not_null(wlan3_802_11_standard) AS \"Standard\", last_not_null(wlan3_channel) AS \"Channel\",\n  last_not_null(wlan3_associations) AS \"Clients\", 'Guest' AS \"Band\"\n  FROM ${measurement}\n  WHERE $__timeFilter(timestamp)\n    AND box ~ '^${boxtag:regex}$'\n) WHERE \"Name\" IS NOT NULL OR \"Status\" IS NOT NULL OR \"Standard\" IS NOT NULL\n  OR \"Channel\" IS NOT NULL OR \"Clients\" IS NOT NULL",
+              "refId": "A",
+              "selectedFormat": 1
             }
           ],
           "title": "WLAN Info",
-          "transformations": [
-            {
-              "id": "merge",
-              "options": {}
-            },
-            {
-              "id": "organize",
-              "options": {
-                "excludeByName": {
-                  "Time": true
-                },
-                "indexByName": {
-                  "Channel": 4,
-                  "Clients": 5,
-                  "Name": 1,
-                  "Standard": 3,
-                  "Status": 2,
-                  "Time": 0
-                },
-                "renameByName": {}
-              }
-            }
-          ],
+          "transformations": [],
           "type": "table"
         }
       ],
@@ -2214,8 +2202,8 @@
       "panels": [
         {
           "datasource": {
-            "type": "influxdb",
-            "uid": "${DS_INFLUXDB}"
+            "type": "questdb-questdb-datasource",
+            "uid": "${DS_QUESTDB}"
           },
           "description": "",
           "fieldConfig": {
@@ -2308,11 +2296,14 @@
           "targets": [
             {
               "datasource": {
-                "type": "influxdb",
-                "uid": "${DS_INFLUXDB}"
+                "type": "questdb-questdb-datasource",
+                "uid": "${DS_QUESTDB}"
               },
-              "query": "from(bucket: v.defaultBucket)\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"${measurement}\" and r.box == \"${boxtag}\" and r._field == \"cpu_utilization\")\n  |> aggregateWindow(every: v.windowPeriod, fn: mean, createEmpty: false)\n  |> drop(columns: [\"box\", \"_measurement\", \"_start\", \"_stop\"])\n\n",
-              "refId": "A"
+              "format": 0,
+              "queryType": "sql",
+              "rawSql": "SELECT timestamp AS time,\n  avg(cpu_utilization) AS \"cpu_utilization\"\nFROM ${measurement}\nWHERE $__timeFilter(timestamp)\n  AND box ~ '^${boxtag:regex}$'\n  AND (cpu_utilization IS NOT NULL)\nSAMPLE BY $__sampleByInterval ALIGN TO CALENDAR",
+              "refId": "A",
+              "selectedFormat": 0
             }
           ],
           "title": "CPU Utilization",
@@ -2320,8 +2311,8 @@
         },
         {
           "datasource": {
-            "type": "influxdb",
-            "uid": "${DS_INFLUXDB}"
+            "type": "questdb-questdb-datasource",
+            "uid": "${DS_QUESTDB}"
           },
           "description": "",
           "fieldConfig": {
@@ -2454,30 +2445,36 @@
           "targets": [
             {
               "datasource": {
-                "type": "influxdb",
-                "uid": "${DS_INFLUXDB}"
+                "type": "questdb-questdb-datasource",
+                "uid": "${DS_QUESTDB}"
               },
-              "hide": false,
-              "query": "from(bucket: v.defaultBucket)\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"${measurement}\" and r.box == \"${boxtag}\" and r._field == \"ram_usage_fixed\" )\n  |> aggregateWindow(every: v.windowPeriod, fn: mean, createEmpty: false)\n  |> drop(columns: [\"box\", \"_measurement\", \"_start\", \"_stop\"])\n",
-              "refId": "A"
+              "format": 0,
+              "queryType": "sql",
+              "rawSql": "SELECT timestamp AS time,\n  avg(ram_usage_fixed) AS \"ram_usage_fixed\"\nFROM ${measurement}\nWHERE $__timeFilter(timestamp)\n  AND box ~ '^${boxtag:regex}$'\n  AND (ram_usage_fixed IS NOT NULL)\nSAMPLE BY $__sampleByInterval ALIGN TO CALENDAR",
+              "refId": "A",
+              "selectedFormat": 0
             },
             {
               "datasource": {
-                "type": "influxdb",
-                "uid": "${DS_INFLUXDB}"
+                "type": "questdb-questdb-datasource",
+                "uid": "${DS_QUESTDB}"
               },
-              "hide": false,
-              "query": "from(bucket: v.defaultBucket)\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"${measurement}\" and r.box == \"${boxtag}\" and r._field == \"ram_usage_dynamic\")\n  |> aggregateWindow(every: v.windowPeriod, fn: mean, createEmpty: false)\n  |> drop(columns: [\"box\", \"_measurement\", \"_start\", \"_stop\"])\n",
-              "refId": "B"
+              "format": 0,
+              "queryType": "sql",
+              "rawSql": "SELECT timestamp AS time,\n  avg(ram_usage_dynamic) AS \"ram_usage_dynamic\"\nFROM ${measurement}\nWHERE $__timeFilter(timestamp)\n  AND box ~ '^${boxtag:regex}$'\n  AND (ram_usage_dynamic IS NOT NULL)\nSAMPLE BY $__sampleByInterval ALIGN TO CALENDAR",
+              "refId": "B",
+              "selectedFormat": 0
             },
             {
               "datasource": {
-                "type": "influxdb",
-                "uid": "${DS_INFLUXDB}"
+                "type": "questdb-questdb-datasource",
+                "uid": "${DS_QUESTDB}"
               },
-              "hide": false,
-              "query": "from(bucket: v.defaultBucket)\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"${measurement}\" and r.box == \"${boxtag}\" and r._field == \"ram_usage_free\")\n  |> aggregateWindow(every: v.windowPeriod, fn: mean, createEmpty: false)\n  |> drop(columns: [\"box\", \"_measurement\", \"_start\", \"_stop\"])\n",
-              "refId": "C"
+              "format": 0,
+              "queryType": "sql",
+              "rawSql": "SELECT timestamp AS time,\n  avg(ram_usage_free) AS \"ram_usage_free\"\nFROM ${measurement}\nWHERE $__timeFilter(timestamp)\n  AND box ~ '^${boxtag:regex}$'\n  AND (ram_usage_free IS NOT NULL)\nSAMPLE BY $__sampleByInterval ALIGN TO CALENDAR",
+              "refId": "C",
+              "selectedFormat": 0
             }
           ],
           "title": "RAM usage",
@@ -2486,8 +2483,8 @@
         },
         {
           "datasource": {
-            "type": "influxdb",
-            "uid": "${DS_INFLUXDB}"
+            "type": "questdb-questdb-datasource",
+            "uid": "${DS_QUESTDB}"
           },
           "description": "",
           "fieldConfig": {
@@ -2565,11 +2562,14 @@
           "targets": [
             {
               "datasource": {
-                "type": "influxdb",
-                "uid": "${DS_INFLUXDB}"
+                "type": "questdb-questdb-datasource",
+                "uid": "${DS_QUESTDB}"
               },
-              "query": "from(bucket: v.defaultBucket)\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"${measurement}\" and r.box == \"${boxtag}\" and r._field == \"cpu_temp\")\n  |> aggregateWindow(every: v.windowPeriod, fn: mean, createEmpty: false)\n  |> drop(columns: [\"box\", \"_measurement\", \"_start\", \"_stop\"])\n\n",
-              "refId": "A"
+              "format": 0,
+              "queryType": "sql",
+              "rawSql": "SELECT timestamp AS time,\n  avg(cpu_temp) AS \"cpu_temp\"\nFROM ${measurement}\nWHERE $__timeFilter(timestamp)\n  AND box ~ '^${boxtag:regex}$'\n  AND (cpu_temp IS NOT NULL)\nSAMPLE BY $__sampleByInterval ALIGN TO CALENDAR",
+              "refId": "A",
+              "selectedFormat": 0
             }
           ],
           "title": "CPU Temperature",
@@ -2577,8 +2577,8 @@
         },
         {
           "datasource": {
-            "type": "influxdb",
-            "uid": "${DS_INFLUXDB}"
+            "type": "questdb-questdb-datasource",
+            "uid": "${DS_QUESTDB}"
           },
           "description": "",
           "fieldConfig": {
@@ -2633,11 +2633,14 @@
           "targets": [
             {
               "datasource": {
-                "type": "influxdb",
-                "uid": "${DS_INFLUXDB}"
+                "type": "questdb-questdb-datasource",
+                "uid": "${DS_QUESTDB}"
               },
-              "query": "from(bucket: v.defaultBucket)\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"${measurement}\" and r.box == \"${boxtag}\" and r._field == \"energy_consumption\")\n  |> last()",
-              "refId": "A"
+              "format": 1,
+              "queryType": "sql",
+              "rawSql": "SELECT timestamp AS time, energy_consumption AS \"Energy (W)\"\nFROM ${measurement}\nWHERE $__timeFilter(timestamp)\n  AND box ~ '^${boxtag:regex}$'\n  AND energy_consumption IS NOT NULL\nORDER BY timestamp DESC\nLIMIT 1",
+              "refId": "A",
+              "selectedFormat": 1
             }
           ],
           "title": "System Energy Consumption",
@@ -2654,8 +2657,8 @@
         },
         {
           "datasource": {
-            "type": "influxdb",
-            "uid": "${DS_INFLUXDB}"
+            "type": "questdb-questdb-datasource",
+            "uid": "${DS_QUESTDB}"
           },
           "fieldConfig": {
             "defaults": {
@@ -2724,55 +2727,30 @@
               ],
               "show": false
             },
-            "showHeader": false
+            "showHeader": true
           },
           "pluginVersion": "9.2.2",
           "targets": [
             {
               "datasource": {
-                "type": "influxdb",
-                "uid": "${DS_INFLUXDB}"
+                "type": "questdb-questdb-datasource",
+                "uid": "${DS_QUESTDB}"
               },
-              "hide": false,
-              "query": "from(bucket: v.defaultBucket)\n  |> range(start: -1d)\n  |> filter(fn: (r) => r._measurement == \"${measurement}\" and r.box == \"${boxtag}\" and\n    (\n      r._field == \"external_ip\" or\n      r._field == \"external_ipv6\" or\n      r._field == \"ipv6_prefix\" or\n      r._field == \"ipv6_prefix_length\" or\n      r._field == \"model\" or\n      r._field == \"serialnumber\" or\n      r._field == \"softwareversion\" or\n      r._field == \"last_auth_error\" or\n      r._field == \"myfritz_host_name\"\n    ) \n  )\n  |> last()\n  |> toString()\n  |> drop(columns: [\"box\", \"_measurement\", \"_start\", \"_stop\", \"_time\"])\n  |> map(fn: (r) =>  ({\n        r with _field:\n          if r._field == \"external_ip\" then \"IPv4\"\n          else if r._field == \"external_ipv6\" then \"IPv6\"\n          else if r._field == \"ipv6_prefix\" then \"IPv6 Prefix\"\n          else if r._field == \"ipv6_prefix_length\" then \"IPv6 Prefix Length\"\n          else if r._field == \"model\" then \"Model\"\n          else if r._field == \"serialnumber\" then \"Serial\"\n          else if r._field == \"softwareversion\" then \"SW Version\"\n          else if r._field == \"last_auth_error\" then \"Last Auth Error\"\n          else if r._field == \"myfritz_host_name\" then \"MyFritz Hostname\"\n          else r._field\n        })\n      )\n",
-              "refId": "B"
+              "format": 1,
+              "queryType": "sql",
+              "rawSql": "SELECT last_not_null(external_ip) AS \"IPv4\", last_not_null(external_ipv6) AS \"IPv6\",\n  last_not_null(ipv6_prefix) AS \"IPv6 Prefix\", last_not_null(ipv6_prefix_length) AS \"IPv6 Prefix Length\",\n  last_not_null(model) AS \"Model\", last_not_null(serialnumber) AS \"Serial\",\n  last_not_null(softwareversion) AS \"SW Version\", last_not_null(last_auth_error) AS \"Last Auth Error\",\n  last_not_null(CASE WHEN myfritz_host_name = '' THEN NULL ELSE myfritz_host_name END) AS \"MyFritz Hostname\"\nFROM ${measurement}\nWHERE timestamp >= dateadd('d', -1, now())\n  AND box ~ '^${boxtag:regex}$'",
+              "refId": "B",
+              "selectedFormat": 1
             }
           ],
           "title": "FritzBox Info",
-          "transformations": [
-            {
-              "id": "labelsToFields",
-              "options": {
-                "mode": "columns"
-              }
-            },
-            {
-              "id": "merge",
-              "options": {}
-            },
-            {
-              "id": "organize",
-              "options": {
-                "excludeByName": {
-                  "Time": true
-                },
-                "indexByName": {
-                  "_field": 0,
-                  "_value": 1
-                },
-                "renameByName": {
-                  "_field": "Metric",
-                  "_value": "Value"
-                }
-              }
-            }
-          ],
+          "transformations": [],
           "type": "table"
         },
         {
           "datasource": {
-            "type": "influxdb",
-            "uid": "${DS_INFLUXDB}"
+            "type": "questdb-questdb-datasource",
+            "uid": "${DS_QUESTDB}"
           },
           "fieldConfig": {
             "defaults": {
@@ -2840,124 +2818,24 @@
               ],
               "show": false
             },
-            "showHeader": false
+            "showHeader": true
           },
           "pluginVersion": "9.2.2",
           "targets": [
             {
               "datasource": {
-                "type": "influxdb",
-                "uid": "${DS_INFLUXDB}"
+                "type": "questdb-questdb-datasource",
+                "uid": "${DS_QUESTDB}"
               },
-              "hide": false,
-              "query": "from(bucket: v.defaultBucket)\n  |> range(start: -1d)\n  |> filter(fn: (r) => r._measurement == \"${measurement}\" and r.box == \"${boxtag}\" and\n    (\n      r._field == \"physicallinktype\" or\n      r._field == \"dsl_line_length\" or\n      r._field == \"dsl_dslam_vendor\" or\n      r._field == \"dsl_dslam_sw_version\" or\n      r._field == \"dsl_line_mode\" or\n      r._field == \"cable_cmts_vendor\" or\n      r._field == \"cable_line_mode\" or\n      r._field == \"cable_modem_version\" or\n      r._field == \"cable_num_ds_channels\" or\n      r._field == \"cable_num_us_channels\" or\n      r._field == \"connection_status\" or\n      r._field == \"last_connection_error\" or\n      r._field == \"remote_pop\" or\n      r._field == \"physical_connection_status\"\n    ) \n  )\n  |> last()\n  |> toString()\n  |> drop(columns: [\"box\", \"_measurement\", \"_start\", \"_stop\", \"_time\"])\n  |> map(fn: (r) =>  ({\n        r with _field:\n          if r._field == \"physicallinktype\" then \"Link Type\"\n          else if r._field == \"dsl_line_length\" then \"DSL Line Length\"\n          else if r._field == \"dsl_dslam_vendor\" then \"DSL DSLAM Vendor\"\n          else if r._field == \"dsl_dslam_sw_version\" then \"DSL Model Version\"\n          else if r._field == \"dsl_line_mode\" then \"DSL Line Mode\"\n          else if r._field == \"cable_cmts_vendor\" then \"Cable Vendor\"\n          else if r._field == \"cable_line_mode\" then \"Cable Line Mode\"\n          else if r._field == \"cable_modem_version\" then \"Cable Modem Version\"\n          else if r._field == \"cable_num_ds_channels\" then \"Cable Downstream Channels\"\n          else if r._field == \"cable_num_us_channels\" then \"Cable Upstream Channels\"\n          else if r._field == \"connection_status\" then \"IP Connection Status\"\n          else if r._field == \"last_connection_error\" then \"Last Connection Error\"\n          else if r._field == \"remote_pop\" then \"Remote Pop\"\n          else if r._field == \"physical_connection_status\" then \"Link Connection Status\"\n          else r._field\n        })\n      )\n",
-              "refId": "B"
+              "format": 1,
+              "queryType": "sql",
+              "rawSql": "SELECT last_not_null(physicallinktype) AS \"Link Type\", last_not_null(dsl_line_length) AS \"DSL Line Length\",\n  last_not_null(dsl_dslam_vendor) AS \"DSL DSLAM Vendor\", last_not_null(dsl_dslam_sw_version) AS \"DSL Model Version\",\n  last_not_null(dsl_line_mode) AS \"DSL Line Mode\", last_not_null(cable_cmts_vendor) AS \"Cable Vendor\",\n  last_not_null(cable_line_mode) AS \"Cable Line Mode\", last_not_null(cable_modem_version) AS \"Cable Modem Version\",\n  last_not_null(cable_num_ds_channels) AS \"Cable Downstream Channels\", last_not_null(cable_num_us_channels) AS \"Cable Upstream Channels\",\n  last_not_null(connection_status) AS \"IP Connection Status\", last_not_null(last_connection_error) AS \"Last Connection Error\",\n  last_not_null(remote_pop) AS \"Remote Pop\", last_not_null(physical_connection_status) AS \"Link Connection Status\"\nFROM ${measurement}\nWHERE timestamp >= dateadd('d', -1, now())\n  AND box ~ '^${boxtag:regex}$'",
+              "refId": "B",
+              "selectedFormat": 1
             }
           ],
           "title": "Connection Info",
-          "transformations": [
-            {
-              "id": "labelsToFields",
-              "options": {}
-            },
-            {
-              "id": "merge",
-              "options": {}
-            },
-            {
-              "id": "organize",
-              "options": {
-                "excludeByName": {},
-                "indexByName": {
-                  "_field": 0,
-                  "_value": 1
-                },
-                "renameByName": {
-                  "_field": "Metric",
-                  "_value": "Value"
-                }
-              }
-            },
-            {
-              "id": "filterByValue",
-              "options": {
-                "filters": [
-                  {
-                    "config": {
-                      "id": "regex",
-                      "options": {
-                        "value": "Cable.*Channels"
-                      }
-                    },
-                    "fieldName": "Metric"
-                  },
-                  {
-                    "config": {
-                      "id": "equal",
-                      "options": {
-                        "value": "0"
-                      }
-                    },
-                    "fieldName": "Value"
-                  }
-                ],
-                "match": "all",
-                "type": "exclude"
-              }
-            },
-            {
-              "id": "filterByValue",
-              "options": {
-                "filters": [
-                  {
-                    "config": {
-                      "id": "regex",
-                      "options": {
-                        "value": "^Cable.*"
-                      }
-                    },
-                    "fieldName": "Metric"
-                  },
-                  {
-                    "config": {
-                      "id": "isNull",
-                      "options": {}
-                    },
-                    "fieldName": "Value"
-                  }
-                ],
-                "match": "all",
-                "type": "exclude"
-              }
-            },
-            {
-              "id": "filterByValue",
-              "options": {
-                "filters": [
-                  {
-                    "config": {
-                      "id": "regex",
-                      "options": {
-                        "value": "^DSL.*"
-                      }
-                    },
-                    "fieldName": "Metric"
-                  },
-                  {
-                    "config": {
-                      "id": "greater",
-                      "options": {
-                        "value": 0
-                      }
-                    },
-                    "fieldName": "Value"
-                  }
-                ],
-                "match": "all",
-                "type": "exclude"
-              }
-            }
-          ],
+          "transformations": [],
           "type": "table"
         }
       ],
@@ -2976,8 +2854,8 @@
       "panels": [
         {
           "datasource": {
-            "type": "influxdb",
-            "uid": "${DS_INFLUXDB}"
+            "type": "questdb-questdb-datasource",
+            "uid": "${DS_QUESTDB}"
           },
           "fieldConfig": {
             "defaults": {
@@ -3054,11 +2932,14 @@
           "targets": [
             {
               "datasource": {
-                "type": "influxdb",
-                "uid": "${DS_INFLUXDB}"
+                "type": "questdb-questdb-datasource",
+                "uid": "${DS_QUESTDB}"
               },
-              "query": "from(bucket: v.defaultBucket)\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"${measurement}\" and r.box == \"${boxtag}\" and r._field == \"vpn_user_num_active\")\n  |> aggregateWindow(every: v.windowPeriod, fn: mean, createEmpty: false)\n  |> drop(columns: [\"box\", \"_measurement\", \"_start\", \"_stop\"])",
-              "refId": "A"
+              "format": 0,
+              "queryType": "sql",
+              "rawSql": "SELECT timestamp AS time,\n  avg(vpn_user_num_active) AS \"vpn_user_num_active\"\nFROM ${measurement}\nWHERE $__timeFilter(timestamp)\n  AND box ~ '^${boxtag:regex}$'\n  AND (vpn_user_num_active IS NOT NULL)\nSAMPLE BY $__sampleByInterval ALIGN TO CALENDAR",
+              "refId": "A",
+              "selectedFormat": 0
             }
           ],
           "title": "Active VPN User",
@@ -3078,8 +2959,8 @@
         },
         {
           "datasource": {
-            "type": "influxdb",
-            "uid": "${DS_INFLUXDB}"
+            "type": "questdb-questdb-datasource",
+            "uid": "${DS_QUESTDB}"
           },
           "fieldConfig": {
             "defaults": {
@@ -3123,51 +3004,30 @@
               ],
               "show": false
             },
-            "showHeader": false
+            "showHeader": true
           },
           "pluginVersion": "9.2.2",
           "targets": [
             {
               "datasource": {
-                "type": "influxdb",
-                "uid": "${DS_INFLUXDB}"
+                "type": "questdb-questdb-datasource",
+                "uid": "${DS_QUESTDB}"
               },
-              "query": "from(bucket: v.defaultBucket)\n  |> range(start: -1d)\n  |> filter(fn: (r) => r._measurement == \"${measurement}\" and r.box == \"${boxtag}\" and\n    (\n      r._field == \"myfritz_host_name\" or\n      r._field == \"vpn_type\" or\n      r._field == \"vpn_user_num_active\"\n    ) \n  )\n  |> last()\n  |> toString()\n  |> drop(columns: [\"box\", \"_measurement\", \"_start\", \"_stop\", \"_time\"])\n  |> map(fn: (r) =>  ({\n        r with _field:\n          if r._field == \"myfritz_host_name\" then \"MyFritz Hostname\"\n          else if r._field == \"vpn_type\" then \"VPN Type\"\n          else if r._field == \"vpn_user_num_active\" then \"VPN User Active\"\n          else r._field\n        })\n      )\n",
-              "refId": "A"
+              "format": 1,
+              "queryType": "sql",
+              "rawSql": "SELECT last_not_null(vpn_type) AS \"VPN Type\", last_not_null(vpn_user_num_active) AS \"VPN User Active\"\nFROM ${measurement}\nWHERE timestamp >= dateadd('d', -1, now())\n  AND box ~ '^${boxtag:regex}$'\n  AND (vpn_type IS NOT NULL OR vpn_user_num_active IS NOT NULL)",
+              "refId": "A",
+              "selectedFormat": 1
             }
           ],
           "title": "VPN Infos",
-          "transformations": [
-            {
-              "id": "labelsToFields",
-              "options": {
-                "mode": "columns"
-              }
-            },
-            {
-              "id": "merge",
-              "options": {}
-            },
-            {
-              "id": "organize",
-              "options": {
-                "excludeByName": {
-                  "Time": true
-                },
-                "indexByName": {
-                  "_field": 0,
-                  "_value": 1
-                },
-                "renameByName": {}
-              }
-            }
-          ],
+          "transformations": [],
           "type": "table"
         },
         {
           "datasource": {
-            "type": "influxdb",
-            "uid": "${DS_INFLUXDB}"
+            "type": "questdb-questdb-datasource",
+            "uid": "${DS_QUESTDB}"
           },
           "description": "",
           "fieldConfig": {
@@ -3212,235 +3072,30 @@
               ],
               "show": false
             },
-            "showHeader": false
+            "showHeader": true
           },
           "pluginVersion": "9.2.2",
           "targets": [
             {
               "datasource": {
-                "type": "influxdb",
-                "uid": "${DS_INFLUXDB}"
+                "type": "questdb-questdb-datasource",
+                "uid": "${DS_QUESTDB}"
               },
-              "limit": "1",
-              "query": "from(bucket: v.defaultBucket)\n  |> range(start: -1d)\n  |> filter(fn: (r) => r._measurement == \"${measurement}\" and r.box == \"${boxtag}\" and\n    (\n      r._field == \"ddns_domain\" or\n      r._field == \"ddns_enabled\" or\n      r._field == \"ddns_mode\" or\n      r._field == \"ddns_provider_name\" or\n      r._field == \"ddns_status_ipv4\" or\n      r._field == \"ddns_status_ipv6\"\n    ) \n  )\n  |> last()\n  |> toString()\n  |> drop(columns: [\"box\", \"_measurement\", \"_start\", \"_stop\", \"_time\"])\n  |> map(fn: (r) =>  ({\n        r with _field:\n          if r._field == \"ddns_domain\" then \"Domain\"\n          else if r._field == \"ddns_enabled\" then \"Enabled\"\n          else if r._field == \"ddns_mode\" then \"Mode\"\n          else if r._field == \"ddns_provider_name\" then \"Provider\"\n          else if r._field == \"ddns_status_ipv4\" then \"Status IPv4\"\n          else if r._field == \"ddns_status_ipv6\" then \"Status IPv6\"\n          else r._field\n        })\n      )\n",
-              "refId": "A"
-            },
-            {
-              "datasource": {
-                "type": "influxdb",
-                "uid": "${DS_INFLUXDB}"
-              },
-              "groupBy": [],
-              "hide": false,
-              "limit": "1",
-              "measurement": "/^$measurement$/",
-              "orderByTime": "ASC",
-              "policy": "default",
-              "refId": "B",
-              "resultFormat": "table",
-              "select": [
-                [
-                  {
-                    "params": [
-                      "ddns_enabled"
-                    ],
-                    "type": "field"
-                  },
-                  {
-                    "params": [
-                      "Enabled"
-                    ],
-                    "type": "alias"
-                  }
-                ]
-              ],
-              "tags": [
-                {
-                  "key": "box",
-                  "operator": "=~",
-                  "value": "/^$boxtag$/"
-                }
-              ]
-            },
-            {
-              "datasource": {
-                "type": "influxdb",
-                "uid": "${DS_INFLUXDB}"
-              },
-              "groupBy": [],
-              "hide": false,
-              "limit": "1",
-              "measurement": "/^$measurement$/",
-              "orderByTime": "ASC",
-              "policy": "default",
-              "refId": "C",
-              "resultFormat": "table",
-              "select": [
-                [
-                  {
-                    "params": [
-                      "ddns_mode"
-                    ],
-                    "type": "field"
-                  },
-                  {
-                    "params": [
-                      "Mode"
-                    ],
-                    "type": "alias"
-                  }
-                ]
-              ],
-              "tags": [
-                {
-                  "key": "box",
-                  "operator": "=~",
-                  "value": "/^$boxtag$/"
-                }
-              ]
-            },
-            {
-              "datasource": {
-                "type": "influxdb",
-                "uid": "${DS_INFLUXDB}"
-              },
-              "groupBy": [],
-              "hide": false,
-              "limit": "1",
-              "measurement": "/^$measurement$/",
-              "orderByTime": "ASC",
-              "policy": "default",
-              "refId": "D",
-              "resultFormat": "table",
-              "select": [
-                [
-                  {
-                    "params": [
-                      "ddns_provider_name"
-                    ],
-                    "type": "field"
-                  },
-                  {
-                    "params": [
-                      "Provider"
-                    ],
-                    "type": "alias"
-                  }
-                ]
-              ],
-              "tags": [
-                {
-                  "key": "box",
-                  "operator": "=~",
-                  "value": "/^$boxtag$/"
-                }
-              ]
-            },
-            {
-              "datasource": {
-                "type": "influxdb",
-                "uid": "${DS_INFLUXDB}"
-              },
-              "groupBy": [],
-              "hide": false,
-              "limit": "1",
-              "measurement": "/^$measurement$/",
-              "orderByTime": "ASC",
-              "policy": "default",
-              "refId": "E",
-              "resultFormat": "table",
-              "select": [
-                [
-                  {
-                    "params": [
-                      "ddns_status_ipv4"
-                    ],
-                    "type": "field"
-                  },
-                  {
-                    "params": [
-                      "Status IPv4"
-                    ],
-                    "type": "alias"
-                  }
-                ]
-              ],
-              "tags": [
-                {
-                  "key": "box",
-                  "operator": "=~",
-                  "value": "/^$boxtag$/"
-                }
-              ]
-            },
-            {
-              "datasource": {
-                "type": "influxdb",
-                "uid": "${DS_INFLUXDB}"
-              },
-              "groupBy": [],
-              "hide": false,
-              "limit": "1",
-              "measurement": "/^$measurement$/",
-              "orderByTime": "ASC",
-              "policy": "default",
-              "refId": "F",
-              "resultFormat": "table",
-              "select": [
-                [
-                  {
-                    "params": [
-                      "ddns_status_ipv6"
-                    ],
-                    "type": "field"
-                  },
-                  {
-                    "params": [
-                      "Status IPv6"
-                    ],
-                    "type": "alias"
-                  }
-                ]
-              ],
-              "tags": [
-                {
-                  "key": "box",
-                  "operator": "=~",
-                  "value": "/^$boxtag$/"
-                }
-              ]
+              "format": 1,
+              "queryType": "sql",
+              "rawSql": "SELECT last_not_null(ddns_domain) AS \"Domain\",\n  last_not_null(CASE WHEN ddns_enabled IS NULL THEN NULL WHEN ddns_enabled THEN 'True' ELSE 'False' END) AS \"Enabled\",\n  last_not_null(ddns_mode) AS \"Mode\", last_not_null(ddns_provider_name) AS \"Provider\",\n  last_not_null(ddns_status_ipv4) AS \"Status IPv4\", last_not_null(ddns_status_ipv6) AS \"Status IPv6\"\nFROM ${measurement}\nWHERE timestamp >= dateadd('d', -1, now())\n  AND box ~ '^${boxtag:regex}$'\n  AND (ddns_domain IS NOT NULL OR ddns_enabled IS NOT NULL OR ddns_mode IS NOT NULL\n       OR ddns_provider_name IS NOT NULL OR ddns_status_ipv4 IS NOT NULL OR ddns_status_ipv6 IS NOT NULL)",
+              "refId": "A",
+              "selectedFormat": 1
             }
           ],
           "title": "DynDNS Info",
-          "transformations": [
-            {
-              "id": "labelsToFields",
-              "options": {}
-            },
-            {
-              "id": "merge",
-              "options": {}
-            },
-            {
-              "id": "organize",
-              "options": {
-                "excludeByName": {
-                  "Time": true
-                },
-                "indexByName": {
-                  "_field": 0,
-                  "_value": 1
-                },
-                "renameByName": {}
-              }
-            }
-          ],
+          "transformations": [],
           "type": "table"
         },
         {
           "datasource": {
-            "type": "influxdb",
-            "uid": "${DS_INFLUXDB}"
+            "type": "questdb-questdb-datasource",
+            "uid": "${DS_QUESTDB}"
           },
           "description": "",
           "fieldConfig": {
@@ -3537,58 +3192,18 @@
           "targets": [
             {
               "datasource": {
-                "type": "influxdb",
-                "uid": "${DS_INFLUXDB}"
+                "type": "questdb-questdb-datasource",
+                "uid": "${DS_QUESTDB}"
               },
-              "limit": "1",
-              "query": "from(bucket: v.defaultBucket)\n  |> range(start: -1d)\n  |> filter(fn: (r) => r._measurement == \"${measurement}\" and r.box == \"${boxtag}\" and\n    (\n      r._field == \"vpn_user_active\" or\n      r._field == \"vpn_user_connected\" or\n      r._field == \"vpn_user_virtual_address\" or\n      r._field == \"vpn_user_remote_address\"\n    ) \n  )\n  |> last()\n  |> drop(columns: [\"box\", \"_measurement\", \"_start\", \"_stop\", \"_time\"])\n\n",
-              "refId": "A"
+              "format": 1,
+              "queryType": "sql",
+              "rawSql": "SELECT name AS \"Name\", vpn_type AS \"Type\",\n  last_not_null(CASE WHEN vpn_user_active IS NULL THEN NULL WHEN vpn_user_active THEN 'True' ELSE 'False' END) AS \"Active\", last_not_null(CASE WHEN vpn_user_connected IS NULL THEN NULL WHEN vpn_user_connected THEN 'True' ELSE 'False' END) AS \"Connected\",\n  last_not_null(vpn_user_virtual_address) AS \"Virtual Address\", last_not_null(vpn_user_remote_address) AS \"Remote Address\"\nFROM ${measurement}\nWHERE timestamp >= dateadd('d', -1, now())\n  AND box ~ '^${boxtag:regex}$'\n  AND name IS NOT NULL\n  AND (vpn_user_active IS NOT NULL OR vpn_user_connected IS NOT NULL OR vpn_user_virtual_address IS NOT NULL OR vpn_user_remote_address IS NOT NULL)\nGROUP BY name, vpn_type\nORDER BY name",
+              "refId": "A",
+              "selectedFormat": 1
             }
           ],
           "title": "VPN User Overview",
-          "transformations": [
-            {
-              "id": "joinByLabels",
-              "options": {
-                "value": "_field"
-              }
-            },
-            {
-              "id": "organize",
-              "options": {
-                "excludeByName": {
-                  "Time": true
-                },
-                "indexByName": {
-                  "name": 0,
-                  "vpn_user_active": 1,
-                  "vpn_user_connected": 2,
-                  "vpn_user_remote_address": 4,
-                  "vpn_user_virtual_address": 3
-                },
-                "renameByName": {
-                  "Active": "",
-                  "name": "Name",
-                  "vpn_type": "Type",
-                  "vpn_user_active": "Active",
-                  "vpn_user_connected": "Connected",
-                  "vpn_user_remote_address": "Remote Address",
-                  "vpn_user_virtual_address": "Virtual Address"
-                }
-              }
-            },
-            {
-              "id": "sortBy",
-              "options": {
-                "fields": {},
-                "sort": [
-                  {
-                    "field": "Name"
-                  }
-                ]
-              }
-            }
-          ],
+          "transformations": [],
           "type": "table"
         }
       ],
@@ -3607,8 +3222,8 @@
       "panels": [
         {
           "datasource": {
-            "type": "influxdb",
-            "uid": "${DS_INFLUXDB}"
+            "type": "questdb-questdb-datasource",
+            "uid": "${DS_QUESTDB}"
           },
           "description": "",
           "fieldConfig": {
@@ -3737,11 +3352,14 @@
           "targets": [
             {
               "datasource": {
-                "type": "influxdb",
-                "uid": "${DS_INFLUXDB}"
+                "type": "questdb-questdb-datasource",
+                "uid": "${DS_QUESTDB}"
               },
-              "query": "from(bucket: v.defaultBucket)\n  |> range(start: -1h)\n  |> filter(fn: (r) => r._measurement == \"${measurement}\" and r.box == \"${boxtag}\" and r._field =~ /active_hosts_(name|mac|type|parent|port|ipv4.*|additional_text)/ )\n  |> last()\n  |> drop(columns: [\"box\", \"_measurement\", \"_start\", \"_stop\", \"_time\", \"name\"])\n",
-              "refId": "A"
+              "format": 1,
+              "queryType": "sql",
+              "rawSql": "SELECT timestamp AS time, active_hosts_name AS \"Name\",\n  active_hosts_mac AS \"MAC\", active_hosts_ipv4 AS \"IPv4\",\n  active_hosts_type AS \"Type\", active_hosts_parent AS \"Parent\",\n  active_hosts_port AS \"Port\", active_hosts_additional_text AS \"Info\",\n  active_hosts_ipv4_last_used AS \"Last seen\"\nFROM ${measurement}\nWHERE timestamp >= dateadd('h', -1, now())\n  AND box ~ '^${boxtag:regex}$'\n  AND active_hosts_name IS NOT NULL\nORDER BY timestamp DESC",
+              "refId": "A",
+              "selectedFormat": 1
             }
           ],
           "title": "Active Hosts",
@@ -3837,8 +3455,8 @@
         },
         {
           "datasource": {
-            "type": "influxdb",
-            "uid": "${DS_INFLUXDB}"
+            "type": "questdb-questdb-datasource",
+            "uid": "${DS_QUESTDB}"
           },
           "description": "",
           "fieldConfig": {
@@ -3888,11 +3506,14 @@
           "targets": [
             {
               "datasource": {
-                "type": "influxdb",
-                "uid": "${DS_INFLUXDB}"
+                "type": "questdb-questdb-datasource",
+                "uid": "${DS_QUESTDB}"
               },
-              "query": "from(bucket: v.defaultBucket)\n  |> range(start: -1h)\n  |> filter(fn: (r) => r._measurement == \"${measurement}\" and r.box == \"${boxtag}\" and r._field =~ /passive_hosts_.*/ )\n  |> last()\n  |> drop(columns: [\"box\", \"_measurement\", \"_start\", \"_stop\", \"_time\"])\n",
-              "refId": "A"
+              "format": 1,
+              "queryType": "sql",
+              "rawSql": "SELECT timestamp AS time, passive_hosts_name AS \"Name\",\n  passive_hosts_mac AS \"MAC\", passive_hosts_ipv4 AS \"IPv4\",\n  passive_hosts_port AS \"Port\"\nFROM ${measurement}\nWHERE timestamp >= dateadd('h', -1, now())\n  AND box ~ '^${boxtag:regex}$'\n  AND passive_hosts_name IS NOT NULL\nORDER BY timestamp DESC",
+              "refId": "A",
+              "selectedFormat": 1
             }
           ],
           "title": "Passive Hosts",
@@ -3953,67 +3574,71 @@
     "list": [
       {
         "description": "Measurement name for the fritzflux data",
-        "hide": 2,
-        "label": "InfluxDB measurement",
+        "hide": 0,
+        "label": "FritzBox",
         "name": "measurement",
-        "query": "${VAR_MEASUREMENT}",
+        "query": "SELECT table_name FROM tables() WHERE table_name LIKE 'fritzbox%' ORDER BY table_name",
         "skipUrlSync": false,
-        "type": "constant",
+        "type": "query",
         "current": {
-          "value": "${VAR_MEASUREMENT}",
-          "text": "${VAR_MEASUREMENT}",
-          "selected": false
+          "selected": false,
+          "text": "",
+          "value": ""
         },
-        "options": [
-          {
-            "value": "${VAR_MEASUREMENT}",
-            "text": "${VAR_MEASUREMENT}",
-            "selected": false
-          }
-        ]
+        "options": [],
+        "datasource": {
+          "type": "questdb-questdb-datasource",
+          "uid": "${DS_QUESTDB}"
+        },
+        "definition": "SELECT table_name FROM tables() WHERE table_name LIKE 'fritzbox%' ORDER BY table_name",
+        "includeAll": false,
+        "multi": false,
+        "refresh": 1,
+        "sort": 1
       },
       {
         "current": {
-          "selected": true,
-          "text": "All",
-          "value": "$__all"
+          "selected": false,
+          "text": "fritz.box",
+          "value": "fritz.box"
         },
         "datasource": {
-          "type": "influxdb",
-          "uid": "${DS_INFLUXDB}"
+          "type": "questdb-questdb-datasource",
+          "uid": "${DS_QUESTDB}"
         },
-        "definition": "from(bucket: v.defaultBucket)\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"$measurement\" and r._field == \"linkuptime\")\n  |> keyValues(keyColumns: [\"box\"])\n  |> group()\n  |> keep(columns: [\"box\"])\n  |> distinct(column: \"box\")",
+        "definition": "SELECT DISTINCT box\nFROM ${measurement}\nWHERE $__timeFilter(timestamp)\n  AND box IS NOT NULL\nORDER BY box",
         "hide": 0,
         "includeAll": false,
         "label": "FritzBox",
         "multi": false,
         "name": "boxtag",
         "options": [],
-        "query": "from(bucket: v.defaultBucket)\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"$measurement\" and r._field == \"linkuptime\")\n  |> keyValues(keyColumns: [\"box\"])\n  |> group()\n  |> keep(columns: [\"box\"])\n  |> distinct(column: \"box\")",
+        "query": "SELECT DISTINCT box\nFROM ${measurement}\nWHERE $__timeFilter(timestamp)\n  AND box IS NOT NULL\nORDER BY box",
         "refresh": 1,
         "regex": "",
         "skipUrlSync": false,
-        "sort": 0,
-        "type": "query"
+        "sort": 1,
+        "type": "query",
+        "allValue": ""
       },
       {
         "allValue": "",
         "current": {
-          "selected": true,
-          "text": "Etc/UTC",
-          "value": "Etc/UTC"
+          "selected": false,
+          "text": "Europe/Berlin",
+          "value": "Europe/Berlin"
         },
         "datasource": {
-          "type": "influxdb",
-          "uid": "${DS_INFLUXDB}"
+          "type": "questdb-questdb-datasource",
+          "uid": "${DS_QUESTDB}"
         },
-        "definition": "import \"sampledata\"\nimport \"date\"\n// generate default timezone entry\ndefault = sampledata.string()\n  |> map(fn: (r) => ({_value: \"Europe/Berlin\", _time: date.time(t: 1990-01-01) }))\n  |> last()\n\n// query actual entry\nquery = from(bucket: v.defaultBucket)\n  |> range(start: -2d)\n  |> filter(fn: (r) => r._measurement == \"${measurement}\" and r.box == \"${boxtag}\" and r._field == \"fritzfluxdb_setting_timezone\")\n  |> last()\n  |> keep(columns: [\"_time\", \"_value\"])\n\n// join result and keep the latest (query) result\nunion(tables: [default, query])\n  |> sort(columns: [\"_time\"], desc: false)\n  |> last()\n",
-        "hide": 2,
+        "definition": "SELECT fritzfluxdb_setting_timezone\nFROM ${measurement}\nWHERE timestamp >= dateadd('d', -2, now())\n  AND box ~ '^${boxtag:regex}$'\n  AND fritzfluxdb_setting_timezone IS NOT NULL\nORDER BY timestamp DESC LIMIT 1",
+        "hide": 0,
         "includeAll": false,
         "multi": false,
         "name": "timezone",
         "options": [],
-        "query": "import \"sampledata\"\nimport \"date\"\n// generate default timezone entry\ndefault = sampledata.string()\n  |> map(fn: (r) => ({_value: \"Europe/Berlin\", _time: date.time(t: 1990-01-01) }))\n  |> last()\n\n// query actual entry\nquery = from(bucket: v.defaultBucket)\n  |> range(start: -2d)\n  |> filter(fn: (r) => r._measurement == \"${measurement}\" and r.box == \"${boxtag}\" and r._field == \"fritzfluxdb_setting_timezone\")\n  |> last()\n  |> keep(columns: [\"_time\", \"_value\"])\n\n// join result and keep the latest (query) result\nunion(tables: [default, query])\n  |> sort(columns: [\"_time\"], desc: false)\n  |> last()\n",
+        "query": "SELECT fritzfluxdb_setting_timezone\nFROM ${measurement}\nWHERE timestamp >= dateadd('d', -2, now())\n  AND box ~ '^${boxtag:regex}$'\n  AND fritzfluxdb_setting_timezone IS NOT NULL\nORDER BY timestamp DESC LIMIT 1",
         "refresh": 1,
         "regex": "",
         "skipUrlSync": false,
@@ -4052,8 +3677,8 @@
     ]
   },
   "timezone": "",
-  "title": "FRITZ!Box Router Status",
-  "uid": "fritzbox-system-flux",
+  "title": "FRITZ!Box Router System (QuestDB)",
+  "uid": "fritzbox-system-questdb",
   "version": 8,
   "weekStart": ""
 }

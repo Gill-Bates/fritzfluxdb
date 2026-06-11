@@ -232,7 +232,7 @@ def prepare_response_data(response):
 
     Parameters
     ----------
-    response: requests.response
+    response: httpx.Response
         the FritzBox request response
 
     Return
