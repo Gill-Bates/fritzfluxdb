@@ -1,3 +1,10 @@
+## [v1.3] - 2026-xx-xx
+
+
+<details markdown="1">
+<summary>Previous versions...</summary>
+
+
 ## [v1.2] - 2026-06-11
 
 - ``New`` **QuestDB support.** QuestDB can now be used as storage backend alongside InfluxDB v1/v2 — configured via `QUESTDB_*` variables and a ready-to-use `docker-compose.questdb.yml`.
@@ -20,10 +27,6 @@
 - ``Fix`` QuestDB column names containing dots (e.g. WLAN `802.11` metrics) are now sanitised automatically — dots are replaced with underscores before writing.
 - ``Fix`` Cable-specific services (e.g. cable channel info) are no longer logged as warnings on DSL devices — the message is suppressed after the first discovery pass.
 
-
-
-<details markdown="1">
-<summary>Previous versions...</summary>
 
 ## [v1.1] - 2026-06-09
 
