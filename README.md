@@ -46,7 +46,8 @@
 ## 🔀 Why this fork?
 
 The original project is excellent and battle-tested. This fork modernises the codebase and
-focuses on **operational reliability** and a **smaller, container-first footprint**.
+focuses on **operational reliability**, a **smaller, container-first footprint**, and adds
+**QuestDB** as a third storage backend alongside InfluxDB v1/v2.
 
 | | `fritzFluxDB` (this fork) | `fritzinfluxdb` (original) |
 |---|---|---|

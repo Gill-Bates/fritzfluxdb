@@ -28,6 +28,17 @@ def _format_url_host(hostname: str) -> str:
         pass
     return hostname
 
+
+def _format_exc(exc: BaseException) -> str:
+    """Render an exception for logging, including its type name.
+
+    Several httpx transport errors (e.g. ConnectError, ReadTimeout) have an
+    empty str(), which would otherwise produce uninformative messages like
+    'unreachable: '. Always surface the exception class so the cause is visible.
+    """
+    text = str(exc)
+    return f"{type(exc).__name__}: {text}" if text else type(exc).__name__
+
 log = get_logger()
 
 
@@ -152,6 +163,7 @@ class InfluxHandler:
             self.name = f"InfluxDB v{self.version}"
 
         self.questdb_version: str | None = None
+        self.questdb_schema_ensured = False
         self.client: httpx.AsyncClient | None = None
         self.init_successful = False
         self.connection_lost = False
@@ -230,10 +242,17 @@ class InfluxHandler:
                 except Exception as exc:
                     log.debug("Failed to parse QuestDB version response: %s", exc)
                     self.questdb_version = "unknown version"
-                try:
-                    await self._ensure_questdb_schema(auth=auth)
-                except Exception as exc:
-                    log.error("Failed to ensure QuestDB schema for '%s': %s", self.config.measurement_name, exc)
+                # Schema only needs to be ensured once per process; QuestDB's ILP
+                # /write auto-creates columns afterwards. Re-running it on every
+                # reconnect would replay dozens of ALTER TABLE statements during a
+                # connection flap, so only retry until it first succeeds.
+                if not self.questdb_schema_ensured:
+                    try:
+                        await self._ensure_questdb_schema(auth=auth)
+                        self.questdb_schema_ensured = True
+                    except Exception as exc:
+                        log.error("Failed to ensure QuestDB schema for '%s': %s",
+                                  self.config.measurement_name, _format_exc(exc))
             else:
                 resp = await self.client.get("/ping")
                 resp.raise_for_status()
@@ -242,7 +261,7 @@ class InfluxHandler:
             if not self.connection_lost:
                 log.error(
                     "%s '%s' unreachable: %s — buffering data until connection is restored",
-                    self.name, self.config.hostname, exc,
+                    self.name, self.config.hostname, _format_exc(exc),
                 )
                 self.last_connection_warning = now
             elif (
@@ -556,7 +575,7 @@ class InfluxHandler:
             now = datetime.now(UTC)
             if not self.connection_lost:
                 log.error("%s '%s' unreachable: %s — buffering data until connection is restored",
-                          self.name, self.config.hostname, exc)
+                          self.name, self.config.hostname, _format_exc(exc))
                 self.last_connection_warning = now
             elif (
                 self.last_connection_warning is None
