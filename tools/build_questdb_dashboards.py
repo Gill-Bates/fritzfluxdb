@@ -1,4 +1,9 @@
 #!/usr/bin/env python3
+#
+# tools/build_questdb_dashboards.py
+# Copyright (C) 2026 Gill-Bates http://github.com/Gill-Bates
+#
+
 """
 Generates QuestDB (official QuestDB datasource) Grafana dashboards
 from the influx2 source dashboards.

@@ -1,3 +1,13 @@
+## [v1.3] - 2026-06-15
+
+- ``Fix`` Database connection errors now name the underlying cause (e.g. `ConnectError`, `ReadTimeout`) instead of logging an empty message — several httpx transport errors have a blank text, which previously produced uninformative lines like `unreachable: `.
+- ``Fix`` The QuestDB schema is now ensured only once per process instead of on every reconnect. During a flaky connection this avoids replaying dozens of `ALTER TABLE` statements on each connection flap; columns are auto-created by QuestDB's line-protocol writes anyway.
+
+
+<details markdown="1">
+<summary>Previous versions...</summary>
+
+
 ## [v1.2] - 2026-06-11
 
 - ``New`` **QuestDB support.** QuestDB can now be used as storage backend alongside InfluxDB v1/v2 — configured via `QUESTDB_*` variables and a ready-to-use `docker-compose.questdb.yml`.
@@ -20,10 +30,6 @@
 - ``Fix`` QuestDB column names containing dots (e.g. WLAN `802.11` metrics) are now sanitised automatically — dots are replaced with underscores before writing.
 - ``Fix`` Cable-specific services (e.g. cable channel info) are no longer logged as warnings on DSL devices — the message is suppressed after the first discovery pass.
 
-
-
-<details markdown="1">
-<summary>Previous versions...</summary>
 
 ## [v1.1] - 2026-06-09
 
