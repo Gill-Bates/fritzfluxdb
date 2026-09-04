@@ -445,6 +445,7 @@ class InfluxHandler:
 
         payload = "\n".join(data_lines)
         write_successful = False
+        _interval_updated = False
         self.last_write_retry = datetime.now(UTC)
 
         try:
@@ -532,6 +533,7 @@ class InfluxHandler:
                         self.current_retry_interval = min(
                             self.current_retry_interval * 2, self.max_retry_interval
                         )
+                    _interval_updated = True
                     log.error(
                         "Retryable %s write failure for '%s': %s: %.500s — retrying in %ss",
                         self.name,
@@ -541,6 +543,8 @@ class InfluxHandler:
                         self.current_retry_interval,
                     )
                     self.connection_lost = True
+                    await self.client.aclose()
+                    self.client = None
                 elif resp.status_code in {401, 403, 404}:
                     log.error(
                         "Non-retryable %s auth/config failure for '%s': %s: %.500s — "
@@ -607,7 +611,7 @@ class InfluxHandler:
                     "%s '%s' connection restored — flushing %s buffered measurements",
                     self.name,
                     self.config.hostname,
-                    len(self.buffer),
+                    len(self.buffer) - len(local_buffer),
                 )
             self.last_connection_warning = None
             log.debug("Successfully wrote %s measurements to %s", len(local_buffer), self.name)
@@ -619,9 +623,8 @@ class InfluxHandler:
             self.retention_buffer_sorted = False
             self.set_num_current_measurements_to_write(self.current_measurements_per_write * 4)
         else:
-            if self.connection_lost and self.client is None:
-                # Transport error: use a fixed backoff step instead of a second
-                # doubling (HTTP-level errors already doubled the interval above).
+            if self.connection_lost and self.client is None and not _interval_updated:
+                # Transport error: interval not yet updated above; double it now.
                 self.current_retry_interval = min(
                     self.current_retry_interval * 2, self.max_retry_interval
                 )

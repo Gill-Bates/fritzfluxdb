@@ -31,24 +31,17 @@ on:
         options:
           - 'true'
           - 'false'
-      allow_overwrite:
-        description: 'Allow overwriting existing Docker tags'
-        required: false
-        default: 'false'
-        type: choice
-        options:
-          - 'true'
-          - 'false'
 
 env:
   REGISTRY: docker.io
   IMAGE_NAME: giiibates/fritzfluxdb
-  REGISTRY_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
-  REGISTRY_PASSWORD: ${{ secrets.DOCKERHUB_TOKEN }}
 
 concurrency:
-  group: docker-build-${{ github.ref }}
+  group: docker-release
   cancel-in-progress: false
+
+permissions:
+  contents: read
 
 jobs:
   meta:
@@ -60,6 +53,7 @@ jobs:
     outputs:
       build_date: ${{ steps.meta.outputs.build_date }}
       version: ${{ steps.meta.outputs.version }}
+      matrix: ${{ steps.matrix.outputs.matrix }}
 
     steps:
       - name: Checkout repository
@@ -68,16 +62,13 @@ jobs:
           fetch-depth: 1
 
       - name: Validate registry secrets
+        env:
+          REGISTRY_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
+          REGISTRY_PASSWORD: ${{ secrets.DOCKERHUB_TOKEN }}
         run: |
           set -euo pipefail
-          test -n "${{ env.REGISTRY_USERNAME }}" || {
-            echo "ERROR: Missing DOCKERHUB_USERNAME secret"
-            exit 1
-          }
-          test -n "${{ env.REGISTRY_PASSWORD }}" || {
-            echo "ERROR: Missing DOCKERHUB_TOKEN secret"
-            exit 1
-          }
+          : "${REGISTRY_USERNAME:?Missing DOCKERHUB_USERNAME secret}"
+          : "${REGISTRY_PASSWORD:?Missing DOCKERHUB_TOKEN secret}"
 
       - name: Validate and set build metadata
         id: meta
@@ -96,7 +87,10 @@ jobs:
             exit 1
           fi
 
-          if [[ "${{ github.ref }}" == refs/tags/v* ]]; then
+          # A tag push must always match the VERSION file - otherwise a release
+          # would publish a version tag that reads differently inside the image
+          # than on the outside.
+          if [[ "$GITHUB_REF_TYPE" == "tag" ]]; then
             TAG_VERSION="${GITHUB_REF_NAME#v}"
             if [[ "$TAG_VERSION" != "$VERSION" ]]; then
               echo "ERROR: Git tag (v${TAG_VERSION}) does not match VERSION file (${VERSION})"
@@ -110,6 +104,32 @@ jobs:
           echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
           echo "Version: ${VERSION}, Build date: ${BUILD_DATE}"
 
+      # Resolved once here because the build job's own "if:" cannot see the
+      # matrix context - filtering the matrix itself is what a manual
+      # single-platform dispatch requires.
+      - name: Compute build matrix
+        id: matrix
+        env:
+          PLATFORMS_INPUT: ${{ github.event.inputs.platforms }}
+        run: |
+          set -euo pipefail
+          python3 - <<'PY' >> "$GITHUB_OUTPUT"
+          import json
+          import os
+
+          all_platforms = [
+              {"arch": "amd64", "runner": "ubuntu-24.04", "platform": "linux/amd64"},
+              {"arch": "arm64", "runner": "ubuntu-24.04-arm", "platform": "linux/arm64"},
+          ]
+          selected = os.environ.get("PLATFORMS_INPUT") or ""
+          requested = {p.strip() for p in selected.split(",") if p.strip()}
+
+          include = all_platforms if not requested else [
+              p for p in all_platforms if p["platform"] in requested
+          ]
+          print(f"matrix={json.dumps({'include': include})}")
+          PY
+
   lint-test:
     name: Lint & Test
     needs: meta
@@ -120,7 +140,7 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
           fetch-depth: 1
 
@@ -132,27 +152,30 @@ jobs:
 
       - name: Install dependencies
         run: |
+          set -euo pipefail
           python -m pip install --upgrade pip
-          if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
-          pip install ruff pytest || true
+          pip install -r requirements.txt
+          pip install ruff pytest
 
       - name: Run ruff
-        run: |
-          ruff check .
+        run: ruff check .
 
-      - name: Run tests (if present)
+      - name: Run tests
         run: |
           if [ -d tests ]; then pytest -q; else echo "No tests directory, skipping pytest"; fi
 
-  build-amd64:
-    name: Build amd64 image
-    needs: meta
-    runs-on: ubuntu-24.04
-    if: github.event.inputs.platforms == 'linux/amd64' || github.event.inputs.platforms == 'linux/amd64,linux/arm64' || github.event.inputs.platforms == '' || github.event_name == 'push'
+  build:
+    name: Build ${{ matrix.arch }} image
+    # Tests gate the release: a failing test previously ran in parallel with
+    # the build and blocked nothing.
+    needs: [meta, lint-test]
+    env:
+      VERSION: ${{ needs.meta.outputs.version }}
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJson(needs.meta.outputs.matrix) }}
+    runs-on: ${{ matrix.runner }}
     timeout-minutes: 30
-    outputs:
-      version: ${{ needs.meta.outputs.version }}
-      trivy_summary: ${{ steps.trivy_summary.outputs.summary }}
     permissions:
       contents: read
 
@@ -166,7 +189,7 @@ jobs:
         run: |
           set -euo pipefail
           cat > BUILD_INFO <<EOF
-          APP_VERSION=${{ needs.meta.outputs.version }}
+          APP_VERSION=${VERSION}
           GIT_SHA=${{ github.sha }}
           BUILD_DATE=${{ needs.meta.outputs.build_date }}
           EOF
@@ -182,389 +205,241 @@ jobs:
         uses: docker/login-action@4907a6ddec9925e35a0a9e82d7399ccc52663121 # v4.1.0
         with:
           registry: ${{ env.REGISTRY }}
-          username: ${{ env.REGISTRY_USERNAME }}
-          password: ${{ env.REGISTRY_PASSWORD }}
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
 
-      - name: Build amd64 image
+      - name: Build image
         run: |
           set -euo pipefail
-          VERSION="${{ needs.meta.outputs.version }}"
-
           docker buildx build \
             --pull \
-            --platform linux/amd64 \
+            --platform "${{ matrix.platform }}" \
             --load \
-            --cache-from type=gha,scope=fritzfluxdb-amd64 \
-            --cache-to type=gha,mode=max,scope=fritzfluxdb-amd64 \
+            --cache-from type=gha,scope=fritzfluxdb-${{ matrix.arch }} \
+            --cache-to type=gha,mode=max,scope=fritzfluxdb-${{ matrix.arch }} \
             --build-arg "APP_VERSION=${VERSION}" \
             --build-arg "GIT_SHA=${{ github.sha }}" \
             --build-arg "BUILD_DATE=${{ needs.meta.outputs.build_date }}" \
-            -t "${IMAGE_NAME}:${VERSION}-amd64" \
+            -t "${IMAGE_NAME}:${VERSION}-${{ matrix.arch }}" \
             -f docker/Dockerfile \
             .
+          echo "Built: ${IMAGE_NAME}:${VERSION}-${{ matrix.arch }}"
 
-          echo "Built: ${IMAGE_NAME}:${VERSION}-amd64"
-
-      - name: Smoke test amd64 image
+      - name: Smoke test image
         run: |
           set -euo pipefail
-          VERSION="${{ needs.meta.outputs.version }}"
-          IMAGE="${IMAGE_NAME}:${VERSION}-amd64"
+          IMAGE="${IMAGE_NAME}:${VERSION}-${{ matrix.arch }}"
 
           echo "=== CLI help test ==="
           docker run --rm "${IMAGE}" python run.py --help
           echo "✓ CLI responds"
 
-          echo "=== Module import & version check ==="
-          docker run --rm --entrypoint python "${IMAGE}" -c '
-          import fritzfluxdb.main
+          echo "=== Version, build metadata & privilege drop ==="
+          docker run --rm --entrypoint python \
+            -e EXPECTED_VERSION="${VERSION}" \
+            -e EXPECTED_SHA="${{ github.sha }}" \
+            "${IMAGE}" -c '
+          import os
+          import sys
+
+          import fritzfluxdb.main  # noqa: F401 - import must succeed
           import fritzfluxdb.version as v
-          print(f"Version: {v.VERSION}")
-          print(f"Module import: OK")
+
+          failures = []
+          expected_version = os.environ["EXPECTED_VERSION"]
+          expected_sha = os.environ["EXPECTED_SHA"]
+
+          if v.VERSION != expected_version:
+              failures.append(f"VERSION is {v.VERSION!r}, expected {expected_version!r}")
+          if v.GIT_SHA != expected_sha:
+              failures.append(f"GIT_SHA is {v.GIT_SHA!r}, expected {expected_sha!r}")
+
+          uid = os.getuid()
+          if uid != 10001:
+              failures.append(f"process runs as uid {uid}, expected 10001 (fritzfluxdb)")
+
+          if failures:
+              for failure in failures:
+                  print(f"✗ {failure}", file=sys.stderr)
+              sys.exit(1)
+          print(f"✓ Version {v.VERSION} ({v.GIT_SHA[:12]}), running as uid {uid}")
           '
-          echo "✓ Python modules load correctly"
 
           echo "=== Filesystem validation ==="
           docker run --rm --entrypoint /bin/sh "${IMAGE}" -c '
-            echo "App directory:"
-            ls -la /app/
-            echo ""
-            echo "Entrypoint:"
             test -x /usr/local/bin/entrypoint.sh && echo "/usr/local/bin/entrypoint.sh: OK" || exit 1
-            echo ""
-            echo "Tini (PID 1):"
             test -x /usr/bin/tini && echo "/usr/bin/tini: OK" || exit 1
-            echo ""
-            echo "Python packages:"
-            pip check 2>&1 && echo "pip check: OK" || exit 1
+            pip check && echo "pip check: OK" || exit 1
           '
-          echo "✓ Filesystem structure valid"
-          echo ""
-          echo "All smoke tests passed for ${IMAGE}"
+          echo "✓ All smoke tests passed for ${IMAGE}"
 
-      - name: Trivy vulnerability scan (amd64)
+      - name: Trivy vulnerability scan
         uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         with:
-          image-ref: '${{ env.IMAGE_NAME }}:${{ needs.meta.outputs.version }}-amd64'
+          image-ref: '${{ env.IMAGE_NAME }}:${{ env.VERSION }}-${{ matrix.arch }}'
           format: 'json'
-          output: 'trivy-amd64.json'
+          output: 'trivy-${{ matrix.arch }}.json'
           exit-code: ${{ (github.event.inputs.enforce_trivy_gate == 'true' || github.event_name == 'push') && '1' || '0' }}
           ignore-unfixed: true
           vuln-type: 'os,library'
           severity: 'CRITICAL,HIGH'
           timeout: '10m'
           trivyignores: '.trivyignore'
-          version: 'latest'
 
-      - name: Generate Trivy summary (amd64)
-        id: trivy_summary
+      - name: Generate Trivy summary
+        if: always()
         run: |
-          if [[ ! -f trivy-amd64.json ]]; then
-            echo "summary=Scan failed - no results" >> "$GITHUB_OUTPUT"
+          FILE="trivy-${{ matrix.arch }}.json"
+          if [[ ! -f "$FILE" ]]; then
+            echo "### Trivy (${{ matrix.arch }}): Scan failed — no results file" >> "$GITHUB_STEP_SUMMARY"
             exit 0
           fi
 
-          CRITICAL=$(jq '[.Results[]?.Vulnerabilities[]? | select(.Severity == "CRITICAL")] | length' trivy-amd64.json 2>/dev/null || echo 0)
-          HIGH=$(jq '[.Results[]?.Vulnerabilities[]? | select(.Severity == "HIGH")] | length' trivy-amd64.json 2>/dev/null || echo 0)
+          CRITICAL=$(jq '[.Results[]?.Vulnerabilities[]? | select(.Severity == "CRITICAL")] | length' "$FILE" 2>/dev/null || echo 0)
+          HIGH=$(jq '[.Results[]?.Vulnerabilities[]? | select(.Severity == "HIGH")] | length' "$FILE" 2>/dev/null || echo 0)
 
-          if (( CRITICAL == 0 && HIGH == 0 )); then
-            SUMMARY="✅ No HIGH/CRITICAL vulnerabilities found"
-          else
-            SUMMARY="⚠️ ${CRITICAL} CRITICAL, ${HIGH} HIGH vulnerabilities"
-          fi
-
-          echo "summary=$SUMMARY" >> "$GITHUB_OUTPUT"
-          echo "$SUMMARY"
-
-          echo "### Trivy Scan Results (amd64)" >> "$GITHUB_STEP_SUMMARY"
+          echo "### Trivy Scan Results (${{ matrix.arch }})" >> "$GITHUB_STEP_SUMMARY"
           if (( CRITICAL > 0 || HIGH > 0 )); then
             echo '```' >> "$GITHUB_STEP_SUMMARY"
-            jq -r '.Results[]?.Vulnerabilities[]? | select(.Severity == "CRITICAL" or .Severity == "HIGH") | "\(.Severity)\t\(.VulnerabilityID)\t\(.PkgName)\t\(.InstalledVersion)"' trivy-amd64.json 2>/dev/null | head -20 >> "$GITHUB_STEP_SUMMARY" || true
+            jq -r '.Results[]?.Vulnerabilities[]? | select(.Severity == "CRITICAL" or .Severity == "HIGH") | "\(.Severity)\t\(.VulnerabilityID)\t\(.PkgName)\t\(.InstalledVersion)"' \
+              "$FILE" 2>/dev/null | head -20 >> "$GITHUB_STEP_SUMMARY" || true
             echo '```' >> "$GITHUB_STEP_SUMMARY"
           else
-            echo "$SUMMARY" >> "$GITHUB_STEP_SUMMARY"
+            echo "✅ No HIGH/CRITICAL vulnerabilities found" >> "$GITHUB_STEP_SUMMARY"
           fi
 
-      - name: Upload Trivy findings (amd64)
+      - name: Upload Trivy findings
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: trivy-findings-amd64
-          path: trivy-amd64.json
+          name: trivy-findings-${{ matrix.arch }}
+          path: trivy-${{ matrix.arch }}.json
           retention-days: 14
           if-no-files-found: warn
 
-      - name: Check amd64 tag existence
+      - name: Push image
         if: github.event.inputs.push != 'false'
-        id: check_tag
-        run: |
-          VERSION="${{ needs.meta.outputs.version }}"
-          TAG="${IMAGE_NAME}:${VERSION}-amd64"
-          if docker manifest inspect "$TAG" > /dev/null 2>&1; then
-            echo "exists=true" >> "$GITHUB_OUTPUT"
-            echo "Tag $TAG already exists in registry"
-          else
-            echo "exists=false" >> "$GITHUB_OUTPUT"
-            echo "Tag $TAG does not exist yet"
-          fi
+        run: docker push "${IMAGE_NAME}:${VERSION}-${{ matrix.arch }}"
 
-      - name: Push amd64 image
-        if: github.event.inputs.push != 'false' && (steps.check_tag.outputs.exists != 'true' || github.event.inputs.allow_overwrite == 'true')
-        run: |
-          VERSION="${{ needs.meta.outputs.version }}"
-          docker push "${IMAGE_NAME}:${VERSION}-amd64"
-
-      - name: Skip push (tag exists)
-        if: github.event.inputs.push != 'false' && steps.check_tag.outputs.exists == 'true' && github.event.inputs.allow_overwrite != 'true'
-        run: |
-          echo "::warning::Skipping push: ${IMAGE_NAME}:${{ needs.meta.outputs.version }}-amd64 already exists. Set allow_overwrite=true to force."
-
-  build-arm64:
-    name: Build arm64 image
-    needs: meta
-    runs-on: ubuntu-24.04-arm
-    if: github.event.inputs.platforms == 'linux/arm64' || github.event.inputs.platforms == 'linux/amd64,linux/arm64' || github.event.inputs.platforms == '' || github.event_name == 'push'
-    timeout-minutes: 30
-    outputs:
-      version: ${{ needs.meta.outputs.version }}
-      trivy_summary: ${{ steps.trivy_summary.outputs.summary }}
-    permissions:
-      contents: read
-
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
-        with:
-          fetch-depth: 1
-
-      - name: Generate BUILD_INFO
-        run: |
-          set -euo pipefail
-          cat > BUILD_INFO <<EOF
-          APP_VERSION=${{ needs.meta.outputs.version }}
-          GIT_SHA=${{ github.sha }}
-          BUILD_DATE=${{ needs.meta.outputs.build_date }}
-          EOF
-
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@4d04d5d9486b7bd6fa91e7baf45bbb4f8b9deedd # v4.0.0
-        with:
-          driver-opts: |
-            network=host
-
-      - name: Log in to registry
+      # The manifest job assembles the index from these digests, never from
+      # the arch tags directly - a digest names one immutable image, a tag can
+      # be a stale local reference if a later step in this job fails.
+      - name: Record image digest
         if: github.event.inputs.push != 'false'
-        uses: docker/login-action@4907a6ddec9925e35a0a9e82d7399ccc52663121 # v4.1.0
-        with:
-          registry: ${{ env.REGISTRY }}
-          username: ${{ env.REGISTRY_USERNAME }}
-          password: ${{ env.REGISTRY_PASSWORD }}
-
-      - name: Build arm64 image
         run: |
           set -euo pipefail
-          VERSION="${{ needs.meta.outputs.version }}"
+          mkdir -p digests
+          digest="$(docker buildx imagetools inspect \
+            "${IMAGE_NAME}:${VERSION}-${{ matrix.arch }}" \
+            --format '{{.Manifest.Digest}}')"
+          case "$digest" in
+            sha256:*) ;;
+            *) echo "ERROR: unexpected digest: '${digest}'"; exit 1 ;;
+          esac
+          printf '%s' "$digest" > "digests/${{ matrix.arch }}"
+          echo "${{ matrix.arch }} -> ${digest}"
 
-          docker buildx build \
-            --pull \
-            --platform linux/arm64 \
-            --load \
-            --cache-from type=gha,scope=fritzfluxdb-arm64 \
-            --cache-to type=gha,mode=max,scope=fritzfluxdb-arm64 \
-            --build-arg "APP_VERSION=${VERSION}" \
-            --build-arg "GIT_SHA=${{ github.sha }}" \
-            --build-arg "BUILD_DATE=${{ needs.meta.outputs.build_date }}" \
-            -t "${IMAGE_NAME}:${VERSION}-arm64" \
-            -f docker/Dockerfile \
-            .
-
-          echo "Built: ${IMAGE_NAME}:${VERSION}-arm64"
-
-      - name: Smoke test arm64 image
-        run: |
-          set -euo pipefail
-          VERSION="${{ needs.meta.outputs.version }}"
-          IMAGE="${IMAGE_NAME}:${VERSION}-arm64"
-
-          echo "=== CLI help test ==="
-          docker run --rm "${IMAGE}" python run.py --help
-          echo "✓ CLI responds"
-
-          echo "=== Module import & version check ==="
-          docker run --rm --entrypoint python "${IMAGE}" -c '
-          import fritzfluxdb.main
-          import fritzfluxdb.version as v
-          print(f"Version: {v.VERSION}")
-          print(f"Module import: OK")
-          '
-          echo "✓ Python modules load correctly"
-
-          echo "=== Filesystem validation ==="
-          docker run --rm --entrypoint /bin/sh "${IMAGE}" -c '
-            echo "App directory:"
-            ls -la /app/
-            echo ""
-            echo "Entrypoint:"
-            test -x /usr/local/bin/entrypoint.sh && echo "/usr/local/bin/entrypoint.sh: OK" || exit 1
-            echo ""
-            echo "Tini (PID 1):"
-            test -x /usr/bin/tini && echo "/usr/bin/tini: OK" || exit 1
-            echo ""
-            echo "Python packages:"
-            pip check 2>&1 && echo "pip check: OK" || exit 1
-          '
-          echo "✓ Filesystem structure valid"
-          echo ""
-          echo "All smoke tests passed for ${IMAGE}"
-
-      - name: Trivy vulnerability scan (arm64)
-        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
-        with:
-          image-ref: '${{ env.IMAGE_NAME }}:${{ needs.meta.outputs.version }}-arm64'
-          format: 'json'
-          output: 'trivy-arm64.json'
-          exit-code: ${{ (github.event.inputs.enforce_trivy_gate == 'true' || github.event_name == 'push') && '1' || '0' }}
-          ignore-unfixed: true
-          vuln-type: 'os,library'
-          severity: 'CRITICAL,HIGH'
-          timeout: '10m'
-          trivyignores: '.trivyignore'
-          version: 'latest'
-
-      - name: Generate Trivy summary (arm64)
-        id: trivy_summary
-        run: |
-          if [[ ! -f trivy-arm64.json ]]; then
-            echo "summary=Scan failed - no results" >> "$GITHUB_OUTPUT"
-            exit 0
-          fi
-
-          CRITICAL=$(jq '[.Results[]?.Vulnerabilities[]? | select(.Severity == "CRITICAL")] | length' trivy-arm64.json 2>/dev/null || echo 0)
-          HIGH=$(jq '[.Results[]?.Vulnerabilities[]? | select(.Severity == "HIGH")] | length' trivy-arm64.json 2>/dev/null || echo 0)
-
-          if (( CRITICAL == 0 && HIGH == 0 )); then
-            SUMMARY="✅ No HIGH/CRITICAL vulnerabilities found"
-          else
-            SUMMARY="⚠️ ${CRITICAL} CRITICAL, ${HIGH} HIGH vulnerabilities"
-          fi
-
-          echo "summary=$SUMMARY" >> "$GITHUB_OUTPUT"
-          echo "$SUMMARY"
-
-          echo "### Trivy Scan Results (arm64)" >> "$GITHUB_STEP_SUMMARY"
-          if (( CRITICAL > 0 || HIGH > 0 )); then
-            echo '```' >> "$GITHUB_STEP_SUMMARY"
-            jq -r '.Results[]?.Vulnerabilities[]? | select(.Severity == "CRITICAL" or .Severity == "HIGH") | "\(.Severity)\t\(.VulnerabilityID)\t\(.PkgName)\t\(.InstalledVersion)"' trivy-arm64.json 2>/dev/null | head -20 >> "$GITHUB_STEP_SUMMARY" || true
-            echo '```' >> "$GITHUB_STEP_SUMMARY"
-          else
-            echo "$SUMMARY" >> "$GITHUB_STEP_SUMMARY"
-          fi
-
-      - name: Upload Trivy findings (arm64)
-        if: always()
+      - name: Upload image digest
+        if: github.event.inputs.push != 'false'
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: trivy-findings-arm64
-          path: trivy-arm64.json
-          retention-days: 14
-          if-no-files-found: warn
-
-      - name: Check arm64 tag existence
-        if: github.event.inputs.push != 'false'
-        id: check_tag
-        run: |
-          VERSION="${{ needs.meta.outputs.version }}"
-          TAG="${IMAGE_NAME}:${VERSION}-arm64"
-          if docker manifest inspect "$TAG" > /dev/null 2>&1; then
-            echo "exists=true" >> "$GITHUB_OUTPUT"
-            echo "Tag $TAG already exists in registry"
-          else
-            echo "exists=false" >> "$GITHUB_OUTPUT"
-            echo "Tag $TAG does not exist yet"
-          fi
-
-      - name: Push arm64 image
-        if: github.event.inputs.push != 'false' && (steps.check_tag.outputs.exists != 'true' || github.event.inputs.allow_overwrite == 'true')
-        run: |
-          VERSION="${{ needs.meta.outputs.version }}"
-          docker push "${IMAGE_NAME}:${VERSION}-arm64"
-
-      - name: Skip push (tag exists)
-        if: github.event.inputs.push != 'false' && steps.check_tag.outputs.exists == 'true' && github.event.inputs.allow_overwrite != 'true'
-        run: |
-          echo "::warning::Skipping push: ${IMAGE_NAME}:${{ needs.meta.outputs.version }}-arm64 already exists. Set allow_overwrite=true to force."
+          name: image-digest-${{ matrix.arch }}
+          path: digests/${{ matrix.arch }}
+          retention-days: 1
+          if-no-files-found: error
 
   create-manifest:
     name: Create multi-arch manifest
-    needs: [meta, build-amd64, build-arm64]
-    if: always() && (needs.build-amd64.result == 'success' || needs.build-arm64.result == 'success') && github.event.inputs.push != 'false'
+    needs: [meta, build]
+    # needs.build.result is only 'success' if every matrix leg that ran
+    # succeeded - a failed or cancelled architecture stops the manifest
+    # instead of letting the tag publish under a single architecture.
+    if: needs.build.result == 'success' && github.event.inputs.push != 'false'
     runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    env:
+      VERSION: ${{ needs.meta.outputs.version }}
     permissions:
       contents: read
 
     steps:
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@4d04d5d9486b7bd6fa91e7baf45bbb4f8b9deedd # v4.0.0
+
       - name: Log in to registry
         uses: docker/login-action@4907a6ddec9925e35a0a9e82d7399ccc52663121 # v4.1.0
         with:
           registry: ${{ env.REGISTRY }}
-          username: ${{ env.REGISTRY_USERNAME }}
-          password: ${{ env.REGISTRY_PASSWORD }}
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
 
-      - name: Check manifest tag existence
-        id: check_manifest
-        run: |
-          VERSION="${{ needs.meta.outputs.version }}"
-          TAG="${IMAGE_NAME}:${VERSION}"
-          if docker manifest inspect "$TAG" > /dev/null 2>&1; then
-            echo "exists=true" >> "$GITHUB_OUTPUT"
-            echo "Manifest tag $TAG already exists"
-          else
-            echo "exists=false" >> "$GITHUB_OUTPUT"
-            echo "Manifest tag $TAG does not exist yet"
-          fi
+      - name: Download image digests
+        uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7.0.0
+        with:
+          pattern: image-digest-*
+          path: digests/
+          merge-multiple: true
 
       - name: Create and push manifest
-        if: steps.check_manifest.outputs.exists != 'true' || github.event.inputs.allow_overwrite == 'true'
         run: |
           set -euo pipefail
-          VERSION="${{ needs.meta.outputs.version }}"
-
-          IMAGES=()
-          if docker manifest inspect "${IMAGE_NAME}:${VERSION}-amd64" > /dev/null 2>&1; then
-            IMAGES+=("${IMAGE_NAME}:${VERSION}-amd64")
-          fi
-          if docker manifest inspect "${IMAGE_NAME}:${VERSION}-arm64" > /dev/null 2>&1; then
-            IMAGES+=("${IMAGE_NAME}:${VERSION}-arm64")
-          fi
-
-          if (( ${#IMAGES[@]} == 0 )); then
-            echo "No images available for manifest"
+          shopt -s nullglob
+          digest_files=(digests/*)
+          if (( ${#digest_files[@]} == 0 )); then
+            echo "ERROR: no image digests were published by the build job"
             exit 1
           fi
 
-          echo "Creating manifest with: ${IMAGES[*]}"
+          declare -a sources=()
+          declare -a platforms=()
+          echo "Assembling index from:"
+          for file in "${digest_files[@]}"; do
+            arch="$(basename "$file")"
+            digest="$(tr -d '[:space:]' < "$file")"
+            sources+=("${IMAGE_NAME}@${digest}")
+            platforms+=("linux/${arch}")
+            echo "  linux/${arch}  ${digest}"
+          done
 
-          docker manifest create "${IMAGE_NAME}:${VERSION}" "${IMAGES[@]}" --amend
-          docker manifest push "${IMAGE_NAME}:${VERSION}"
+          docker buildx imagetools create --tag "${IMAGE_NAME}:${VERSION}" "${sources[@]}"
+          echo "Pushed manifest: ${IMAGE_NAME}:${VERSION}"
 
-          if [[ "$VERSION" != *"-"* ]]; then
-            docker manifest create "${IMAGE_NAME}:latest" "${IMAGES[@]}" --amend
-            docker manifest push "${IMAGE_NAME}:latest"
-            echo "Pushed: ${IMAGE_NAME}:latest"
+          # Latest is greatest: every stable (non-prerelease) run moves
+          # 'latest' unconditionally, no comparison against already published
+          # versions.
+          if [[ "$VERSION" == *-* ]]; then
+            echo "Skipping 'latest': ${VERSION} is a prerelease"
+          else
+            docker buildx imagetools create --tag "${IMAGE_NAME}:latest" "${sources[@]}"
+            echo "Pushed manifest: ${IMAGE_NAME}:latest"
           fi
 
-          echo "Pushed: ${IMAGE_NAME}:${VERSION}"
+          printf '%s\n' "${platforms[@]}" | sort > expected-platforms.txt
 
-      - name: Skip manifest (tag exists)
-        if: steps.check_manifest.outputs.exists == 'true' && github.event.inputs.allow_overwrite != 'true'
+      # imagetools create reports success as soon as the registry accepts the
+      # index, not that the index describes what was intended. Catches a
+      # mismatched or duplicated architecture before it reaches users.
+      - name: Verify manifest
         run: |
-          echo "::warning::Skipping manifest push: ${IMAGE_NAME}:${{ needs.meta.outputs.version }} already exists. Set allow_overwrite=true to force."
+          set -euo pipefail
+          docker buildx imagetools inspect --raw "${IMAGE_NAME}:${VERSION}" \
+            | jq -r '[.manifests[]? | select(.platform.architecture != "unknown") | "\(.platform.os)/\(.platform.architecture)"] | sort[]' \
+            > actual-platforms.txt
+
+          if ! diff -u expected-platforms.txt actual-platforms.txt; then
+            echo "ERROR: ${IMAGE_NAME}:${VERSION} does not describe the expected platforms"
+            exit 1
+          fi
+          echo "OK: ${IMAGE_NAME}:${VERSION} describes $(paste -sd' ' actual-platforms.txt)"
 
   create-release:
     name: Create GitHub Release
-    needs: [meta, build-amd64, build-arm64, create-manifest]
-    if: always() && needs.create-manifest.result == 'success' && github.event.inputs.push != 'false'
+    needs: [meta, build, create-manifest]
+    if: needs.create-manifest.result == 'success' && github.event.inputs.push != 'false'
     runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    env:
+      VERSION: ${{ needs.meta.outputs.version }}
     permissions:
       contents: write
       actions: read
@@ -575,30 +450,64 @@ jobs:
         with:
           fetch-depth: 1
 
+      - name: Download image digests
+        uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7.0.0
+        with:
+          pattern: image-digest-*
+          path: digests/
+          merge-multiple: true
+
+      - name: Download Trivy findings
+        uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7.0.0
+        with:
+          pattern: trivy-findings-*
+          path: trivy-reports/
+          merge-multiple: false
+
       - name: Create or update GitHub Release
         uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
-        env:
-          VERSION: ${{ needs.meta.outputs.version }}
-          TRIVY_AMD64: ${{ needs.build-amd64.outputs.trivy_summary }}
-          TRIVY_ARM64: ${{ needs.build-arm64.outputs.trivy_summary }}
         with:
           script: |
             const fs = require('node:fs');
+            const path = require('node:path');
             const version = process.env.VERSION;
-            const trivyAmd64 = process.env.TRIVY_AMD64 || 'Scan not available';
-            const trivyArm64 = process.env.TRIVY_ARM64 || 'Scan not available';
             const imageName = 'giiibates/fritzfluxdb';
             const isPrerelease = version.includes('-');
-            const runId = context.runId;
-            const runUrl = `https://github.com/${context.repo.owner}/${context.repo.repo}/actions/runs/${runId}`;
+            // The architectures that actually published a digest in this run,
+            // not a hardcoded list - a single-architecture dispatch no longer
+            // claims "multi-arch" in the release notes.
+            const arches = fs.readdirSync('digests').sort();
+            const platformNote = arches.length > 1
+              ? 'multi-arch: ' + arches.map(a => 'linux/' + a).join(', ')
+              : 'linux/' + arches[0];
+            const runUrl = `https://github.com/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`;
+            const tagName = 'v' + version;
+            const assetBase = `https://github.com/${context.repo.owner}/${context.repo.repo}/releases/download/${tagName}`;
+
+            function parseTrivyStatus(arch) {
+              const file = path.join('trivy-reports', `trivy-findings-${arch}`, `trivy-${arch}.json`);
+              try {
+                const data = JSON.parse(fs.readFileSync(file, 'utf8'));
+                let critical = 0, high = 0;
+                for (const result of (data.Results || [])) {
+                  for (const vuln of (result.Vulnerabilities || [])) {
+                    if (vuln.Severity === 'CRITICAL') critical++;
+                    else if (vuln.Severity === 'HIGH') high++;
+                  }
+                }
+                return (critical === 0 && high === 0)
+                  ? '✅ No HIGH/CRITICAL vulnerabilities found'
+                  : `⚠️ ${critical} CRITICAL, ${high} HIGH vulnerabilities`;
+              } catch {
+                return '❓ Report unavailable';
+              }
+            }
 
             function normalizeVersion(value) {
               const stripped = value.startsWith('v') ? value.slice(1) : value;
               const main = stripped.split('-', 1)[0];
               const parts = main.split('.');
-              while (parts.length < 3) {
-                parts.push('0');
-              }
+              while (parts.length < 3) parts.push('0');
               return parts.join('.');
             }
 
@@ -606,13 +515,13 @@ jobs:
               const headingPattern = /^## \[([^\]]+)\] - .+$/gm;
               let startIndex = -1;
               let endIndex = markdown.length;
-              const normalizedTargetVersion = normalizeVersion(targetVersion);
+              const normalizedTarget = normalizeVersion(targetVersion);
               let match;
 
               while ((match = headingPattern.exec(markdown)) !== null) {
                 if (
                   startIndex === -1 &&
-                  (match[1] === targetVersion || normalizeVersion(match[1]) === normalizedTargetVersion)
+                  (match[1] === targetVersion || normalizeVersion(match[1]) === normalizedTarget)
                 ) {
                   startIndex = match.index;
                   continue;
@@ -622,10 +531,8 @@ jobs:
                   break;
                 }
               }
+              if (startIndex === -1) return null;
 
-              if (startIndex === -1) {
-                return null;
-              }
               const section = markdown.slice(startIndex, endIndex).trim();
               const withoutHeading = section.replace(/^## \[[^\]]+\] - .+\n+/, '').trim();
               const detailsIndex = withoutHeading.indexOf('<details>');
@@ -644,19 +551,18 @@ jobs:
             }
 
             const tags = [
-              '- `' + imageName + ':' + version + '` (multi-arch: linux/amd64, linux/arm64)',
-              '- `' + imageName + ':' + version + '-amd64`',
-              '- `' + imageName + ':' + version + '-arm64`'
+              '- `' + imageName + ':' + version + '` (' + platformNote + ')'
             ];
-
-            if (!isPrerelease) {
-              tags.push('- `' + imageName + ':latest`');
+            if (isPrerelease) {
+              tags.push('- `latest` unchanged: prereleases do not move it.');
+            } else {
+              tags.push('- `' + imageName + ':latest` (' + platformNote + ')');
             }
 
-            const findingsLinks = {
-              amd64: `${runUrl}#artifacts`,
-              arm64: `${runUrl}#artifacts`
-            };
+            const scanRows = arches.map(arch =>
+              '| ' + arch + ' | ' + parseTrivyStatus(arch) +
+              ' | [trivy-' + arch + '.json](' + assetBase + '/trivy-' + arch + '.json) |'
+            );
 
             const body = [
               '## fritzFluxDB ' + version,
@@ -669,9 +575,8 @@ jobs:
               '### Security Scan Results',
               '',
               '| Architecture | Status | Findings |',
-              '|--------------|--------|----------|',
-              '| amd64 | ' + trivyAmd64 + ' | [trivy-findings-amd64](' + findingsLinks.amd64 + ') |',
-              '| arm64 | ' + trivyArm64 + ' | [trivy-findings-arm64](' + findingsLinks.arm64 + ') |',
+              '|---|---|---|',
+              ...scanRows,
               '| run | workflow details | [Actions Run](' + runUrl + ') |',
               '',
               '> Scanned with [Trivy](https://trivy.dev/) for HIGH and CRITICAL severity vulnerabilities (unfixed CVEs ignored).',
@@ -680,37 +585,67 @@ jobs:
               changelogSection || '_No matching CHANGELOG entry found for this version._'
             ].join('\n');
 
+            const releaseFields = {
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              tag_name: tagName,
+              name: 'fritzFluxDB v' + version,
+              body: body,
+              draft: false,
+              prerelease: isPrerelease
+            };
+
+            let release = null;
             try {
-              await github.rest.repos.createRelease({
+              ({ data: release } = await github.rest.repos.getReleaseByTag({
                 owner: context.repo.owner,
                 repo: context.repo.repo,
-                tag_name: 'v' + version,
-                name: 'fritzFluxDB v' + version,
-                body: body,
-                draft: false,
-                prerelease: isPrerelease
-              });
-              console.log('Created release v' + version);
+                tag: tagName
+              }));
             } catch (e) {
-              if (e.status === 422) {
-                console.log('Release v' + version + ' already exists, updating...');
-                const { data: release } = await github.rest.repos.getReleaseByTag({
-                  owner: context.repo.owner,
-                  repo: context.repo.repo,
-                  tag: 'v' + version
-                });
-                await github.rest.repos.updateRelease({
+              if (e.status !== 404) throw e;
+            }
+
+            if (release) {
+              ({ data: release } = await github.rest.repos.updateRelease({
+                ...releaseFields,
+                release_id: release.id
+              }));
+              console.log('Updated release ' + tagName);
+            } else {
+              ({ data: release } = await github.rest.repos.createRelease(releaseFields));
+              console.log('Created release ' + tagName);
+            }
+
+            // Run artifacts expire after retention-days; attaching the scan
+            // reports as release assets keeps the links in the body valid for
+            // as long as the release itself exists.
+            for (const arch of arches) {
+              const assetName = `trivy-${arch}.json`;
+              const file = path.join('trivy-reports', `trivy-findings-${arch}`, assetName);
+              try {
+                const data = fs.readFileSync(file);
+                const existing = (release.assets || []).find(a => a.name === assetName);
+                if (existing) {
+                  await github.rest.repos.deleteReleaseAsset({
+                    owner: context.repo.owner,
+                    repo: context.repo.repo,
+                    asset_id: existing.id
+                  });
+                }
+                await github.rest.repos.uploadReleaseAsset({
                   owner: context.repo.owner,
                   repo: context.repo.repo,
                   release_id: release.id,
-                  tag_name: 'v' + version,
-                  name: 'fritzFluxDB v' + version,
-                  body: body,
-                  draft: false,
-                  prerelease: isPrerelease
+                  name: assetName,
+                  data: data,
+                  headers: {
+                    'content-type': 'application/json',
+                    'content-length': data.length
+                  }
                 });
-                console.log('Updated release v' + version);
-              } else {
-                throw e;
+                console.log('Attached ' + assetName);
+              } catch (err) {
+                console.log('Could not attach ' + assetName + ': ' + err.message);
               }
             }

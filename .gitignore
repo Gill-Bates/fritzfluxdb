@@ -6,6 +6,7 @@ __pycache__/
 full_codebase*
 .env
 .omx/
+.kiro/
 
 # Virtual environment
 .venv/

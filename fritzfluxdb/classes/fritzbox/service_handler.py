@@ -65,6 +65,8 @@ class FritzBoxService:
         self.available = True
         self.last_query = None
         self._last_query_monotonic: float | None = None
+        self._next_request_monotonic: float | None = None
+        self.failure_count = 0
         self.name = service_data.get("name")
         self.description = service_data.get("description")
         
@@ -105,8 +107,24 @@ class FritzBoxService:
         """
             needs to be called after every successful service query
         """
+        now = time.monotonic()
         self.last_query = datetime.now(UTC)
-        self._last_query_monotonic = time.monotonic()
+        self._last_query_monotonic = now
+        self._next_request_monotonic = now + self.interval
+        self.failure_count = 0
+
+    def set_failed_query_now(self, initial_backoff: float = 10.0, max_backoff: float = 300.0) -> float:
+        """
+            needs to be called after transient service query failures
+        """
+        now = time.monotonic()
+        self.failure_count += 1
+        delay = max(
+            self.interval,
+            min(float(max_backoff), float(initial_backoff) * (2 ** (self.failure_count - 1))),
+        )
+        self._next_request_monotonic = now + delay
+        return delay
 
     def should_be_requested(self) -> bool:
         """
@@ -116,10 +134,7 @@ class FritzBoxService:
         if self.available is False:
             return False
 
-        if (
-            self._last_query_monotonic is not None
-            and time.monotonic() - self._last_query_monotonic < self.interval
-        ):
+        if self._next_request_monotonic is not None and time.monotonic() < self._next_request_monotonic:
             return False
 
         return True

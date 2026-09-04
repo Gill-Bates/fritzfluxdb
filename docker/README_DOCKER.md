@@ -117,3 +117,9 @@ Pre-built dashboards are available in the [GitHub repository](https://github.com
 ---
 
 > This project is not affiliated with or endorsed by AVM GmbH. FRITZ!Box is a registered trademark of AVM GmbH.
+
+<p align="center">
+  <a href="https://www.buymeacoffee.com/tnsteinerx">
+    <img src="https://img.buymeacoffee.com/button-api/?text=Buy%20me%20a%20beer&emoji=%F0%9F%8D%BA&slug=tnsteinerx&button_colour=FFDD00&font_colour=000000&font_family=Cookie&outline_colour=000000&coffee_colour=ffffff" alt="Buy Me A Coffee">
+  </a>
+</p>

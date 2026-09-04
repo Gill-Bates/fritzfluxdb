@@ -17,6 +17,8 @@
 .gitattributes
 .github/
 .claude/
+.kiro/
+.omx/
 
 # --- Python caches / virtualenvs / build artifacts -------------------------
 __pycache__/
@@ -36,6 +38,11 @@ dist/
 full_codebase*
 my-fritzfluxdb.xml
 .ruff_cache/
+
+# --- Not needed inside the image (Dockerfile only COPYs run.py, BUILD_INFO*,
+# fritzfluxdb/ and docker/entrypoint.sh) --------------------------------------
+tests/
+tools/
 
 # --- Docker files not needed inside the image ------------------------------
 # (docker/entrypoint.sh IS copied by the Dockerfile, so it is NOT ignored)
