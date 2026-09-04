@@ -29,9 +29,15 @@ RUN apt-get update \
     && rm -rf /var/lib/apt/lists/*
 
 # --- Python dependencies (cached layer) ------------------------------------
+# pip is removed once the dependencies are installed: the daemon never installs
+# anything at runtime, and pip's bundled third-party copies (pip/_vendor) are
+# the only source of CVE findings in this image. Dropping it also keeps the
+# runtime surface smaller. Dependency consistency is verified here, at build
+# time, while pip is still present.
 COPY requirements.txt ./
 RUN pip install -r requirements.txt \
-    && pip check
+    && pip check \
+    && python -m pip uninstall -y pip
 
 # --- Application sources ----------------------------------------------------
 # run.py + BUILD_INFO (BUILD_INFO* tolerates the file being absent; the banner
