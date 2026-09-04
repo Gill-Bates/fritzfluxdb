@@ -1,0 +1,18 @@
+# Ruff configuration.
+#
+# Everything stays on ruff's defaults for the pinned version (see the lint job
+# in .github/workflows/docker-build.yml). Exactly one rule is turned off:
+#
+#   EXE001 - "Shebang is present but file is not executable"
+#
+# This repository keeps a `#!/usr/bin/env python3` header on every Python file
+# as a house style, including modules that are only ever imported and are
+# therefore not marked executable. Marking library modules +x just to satisfy
+# the rule would be worse than switching the rule off, so it is disabled here
+# rather than worked around per file.
+#
+# Note this fires only for a non-root user, so a local `ruff check` as root
+# passes while CI does not.
+
+[lint]
+ignore = ["EXE001"]
