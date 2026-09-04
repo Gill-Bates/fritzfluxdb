@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 #
 # fritzfluxdb/classes/fritzbox/banner.py
 # Copyright (C) 2026 Gill-Bates http://github.com/Gill-Bates
@@ -20,7 +19,7 @@ def print_banner() -> None:
     try:
         try:
             from fritzfluxdb.version import AUTHOR, BUILD_DATE, GIT_SHA, URL, VERSION
-        except Exception:
+        except ImportError:
             AUTHOR, BUILD_DATE, GIT_SHA, URL, VERSION = "unknown", "", "", "", "dev"
 
         sha_short = GIT_SHA[:7] if GIT_SHA else ""
@@ -65,6 +64,6 @@ def print_banner() -> None:
             sys.stdout.write(banner + "\n")
 
         sys.stdout.flush()
-    except Exception:
+    except Exception:  # noqa: BLE001, S110 - a cosmetic banner must never take the daemon down
         # Output glitches (closed stdout, encoding, ...) must not break startup.
         pass

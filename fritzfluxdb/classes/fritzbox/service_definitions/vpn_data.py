@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 #
 # fritzfluxdb/classes/fritzbox/service_definitions/vpn_data.py
 # Copyright (C) 2026 Gill-Bates http://github.com/Gill-Bates
@@ -6,8 +5,8 @@
 
 import os
 
-from fritzfluxdb.common import grab
 from fritzfluxdb.classes.fritzbox.service_definitions import lua_services
+from fritzfluxdb.common import grab
 
 INCLUDE_VPN_ADDRESS_METRICS = (
     os.getenv("FRITZFLUXDB_INCLUDE_VPN_ADDRESS_METRICS", "")

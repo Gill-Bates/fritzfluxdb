@@ -1,13 +1,14 @@
-#!/usr/bin/env python3
 #
 # fritzfluxdb/classes/common.py
 # Copyright (C) 2026 Gill-Bates http://github.com/Gill-Bates
 #
 
-from datetime import datetime, UTC
-from math import isfinite
 import configparser
 import os
+from contextlib import suppress
+from datetime import UTC, datetime
+from math import isfinite
+from typing import ClassVar
 
 from fritzfluxdb.common import do_error_exit
 from fritzfluxdb.log import get_logger
@@ -15,12 +16,12 @@ from fritzfluxdb.log import get_logger
 log = get_logger()
 
 
-class WritePrecision(object):
+class WritePrecision:
     MS = "ms"
     S = "s"
     US = "us"
 
-    VALID = {MS, S, US}
+    VALID: ClassVar[set] = {MS, S, US}
 
 
 class FritzMeasurement:
@@ -32,8 +33,15 @@ class FritzMeasurement:
     default_box_tag_key = "box"
     default_timestamp_precision = WritePrecision.S
 
-    __slots__ = ("name", "value", "box_tag", "timestamp", "additional_tags",
-                 "timestamp_precision", "measurement")
+    __slots__ = (
+        "additional_tags",
+        "box_tag",
+        "measurement",
+        "name",
+        "timestamp",
+        "timestamp_precision",
+        "value",
+    )
 
     def __init__(self, key, value,
                  data_type=None, box_tag=None,
@@ -122,27 +130,23 @@ class FritzMeasurement:
                       f"returning '0'")
             return 0
 
+        value = value.strip()
+
         if "." in value:
-            # noinspection PyBroadException
-            try:
-                # try to convert value to float
+            # try to convert value to float
+            with suppress(ValueError):
                 return float(value)
-            except Exception:
-                pass
 
-        # noinspection PyBroadException
-        try:
-            # try to convert value to int
+        # try to convert value to int
+        with suppress(ValueError):
             return int(value)
-        except Exception:
-            pass
 
-        return value.strip()
+        return value
 
     @property
     def tags(self):
 
-        tags = dict()
+        tags = {}
         if self.box_tag is not None:
             tags[self.default_box_tag_key] = self.box_tag
 
@@ -233,9 +237,9 @@ class ConfigBase:
         Base class to parse config data
     """
 
-    sensitive_keys = {"password", "token", "secret", "key"}
+    sensitive_keys: ClassVar[set] = {"password", "token", "secret", "key"}
 
-    not_config_vars = [
+    not_config_vars: ClassVar[list] = [
         "config_section_name",
         "__module__",
         "__doc__"
@@ -263,9 +267,8 @@ class ConfigBase:
         if isinstance(value, bool):
             return value
 
-        elif isinstance(value, str):
-            if value.lower() in valid:
-                return valid[value.lower()]
+        elif isinstance(value, str) and value.lower() in valid:
+            return valid[value.lower()]
 
         raise ValueError
 
@@ -279,7 +282,9 @@ class ConfigBase:
         if config_section_name is None:
             raise KeyError(f"Class '{self.__class__.__name__}' is missing 'config_section_name' attribute")
 
-        for config_option in [x for x in vars(self.__class__) if x not in self.__class__.not_config_vars]:
+        # dunder entries (__annotations__, __firstlineno__, ...) are never config options
+        for config_option in [x for x in vars(self.__class__)
+                              if not x.startswith("__") and x not in self.__class__.not_config_vars]:
 
             var_config = getattr(self.__class__, config_option)
 

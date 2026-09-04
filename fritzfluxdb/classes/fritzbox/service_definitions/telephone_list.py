@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 #
 # fritzfluxdb/classes/fritzbox/service_definitions/telephone_list.py
 # Copyright (C) 2026 Gill-Bates http://github.com/Gill-Bates
@@ -8,10 +7,10 @@ import csv
 import hashlib
 from datetime import datetime
 from io import StringIO
+from typing import ClassVar
 
-from fritzfluxdb.classes.fritzbox.service_handler import FritzBoxLuaURLPath
 from fritzfluxdb.classes.fritzbox.service_definitions import lua_services
-
+from fritzfluxdb.classes.fritzbox.service_handler import FritzBoxLuaURLPath
 
 read_interval = 60
 
@@ -32,7 +31,7 @@ class CallLogEntry:
     maps columns to be backwards compatible
     """
 
-    call_types = {
+    call_types: ClassVar[dict] = {
         "1": "incoming",
         "2": "unanswered",
         "3": "blocked",
@@ -54,7 +53,8 @@ class CallLogEntry:
         date_value = entry_dict.get("Datum")
         if not date_value:
             raise ValueError(f"missing call date in entry: {entry!r}")
-        self._date_time = datetime.strptime(date_value, "%d.%m.%y %H:%M")
+        # call log dates carry no zone; the handler attaches config.timezone later
+        self._date_time = datetime.strptime(date_value, "%d.%m.%y %H:%M")  # noqa: DTZ007
         self._caller_name = entry_dict.get("Name", "")
         self._caller_number = entry_dict.get("Rufnummer", "")
         self._caller_location = entry_dict.get("Landes-/Ortsnetzbereich", "")
@@ -124,7 +124,7 @@ class CallLog:
 
     def __init__(self, data):
 
-        self.entries = list()
+        self.entries = []
         if not isinstance(data, str):
             return
 

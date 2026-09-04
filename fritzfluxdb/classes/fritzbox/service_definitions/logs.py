@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 #
 # fritzfluxdb/classes/fritzbox/service_definitions/logs.py
 # Copyright (C) 2026 Gill-Bates http://github.com/Gill-Bates
@@ -7,13 +6,15 @@
 from collections.abc import Callable
 from datetime import datetime
 from typing import Any
+
 from fritzfluxdb.classes.fritzbox.service_definitions import lua_services
 
 
 def parse_legacy_log_timestamp(data) -> datetime:
     if not isinstance(data, list) or len(data) < 3:
         raise ValueError(f"invalid legacy log entry: {data!r}")
-    return datetime.strptime(f"{data[0]} {data[1]}", "%d.%m.%y %H:%M:%S")
+    # Fritz!Box log entries carry no zone; the handler attaches config.timezone later
+    return datetime.strptime(f"{data[0]} {data[1]}", "%d.%m.%y %H:%M:%S")  # noqa: DTZ007
 
 
 def parse_legacy_log_message(data) -> str:
@@ -27,7 +28,8 @@ def parse_modern_log_timestamp(data) -> datetime:
     time_value = data.get("time") if isinstance(data, dict) else None
     if not date_value or not time_value:
         raise ValueError(f"invalid log entry timestamp: {data!r}")
-    return datetime.strptime(f"{date_value} {time_value}", "%d.%m.%y %H:%M:%S")
+    # Fritz!Box log entries carry no zone; the handler attaches config.timezone later
+    return datetime.strptime(f"{date_value} {time_value}", "%d.%m.%y %H:%M:%S")  # noqa: DTZ007
 
 
 def parse_modern_log_message(data) -> str:

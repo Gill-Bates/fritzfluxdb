@@ -1,11 +1,10 @@
-#!/usr/bin/env python3
 #
 # fritzfluxdb/common.py
 # Copyright (C) 2026 Gill-Bates http://github.com/Gill-Bates
 #
 
-import sys
 import os
+import sys
 
 test_mode_state = False
 test_env_var_read = False
@@ -99,7 +98,7 @@ def in_test_mode():
     global test_env_var_read, test_mode_state
 
     if test_env_var_read is False:
-        test_mode_state = True if os.environ.get("TESTMODE") else False
+        test_mode_state = bool(os.environ.get("TESTMODE"))
         test_env_var_read = True
         if test_mode_state is True:
             print("Running in TESTMODE")

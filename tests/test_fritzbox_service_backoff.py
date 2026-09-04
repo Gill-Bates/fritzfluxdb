@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 #
 # tests/test_fritzbox_service_backoff.py
 # Copyright (C) 2026 Gill-Bates http://github.com/Gill-Bates

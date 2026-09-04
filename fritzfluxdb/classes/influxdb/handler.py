@@ -1,23 +1,23 @@
-#!/usr/bin/env python3
 #
 # fritzfluxdb/classes/influxdb/handler.py
 # Copyright (C) 2026 Gill-Bates http://github.com/Gill-Bates
 #
 
 import asyncio
+import re
 import time
 from datetime import UTC, datetime
-from logging import LogRecord
-import re
 from email.utils import parsedate_to_datetime
 from ipaddress import ip_address
+from logging import LogRecord
+from typing import ClassVar
 
 import httpx
 
-from fritzfluxdb.classes.influxdb.config import InfluxDBConfig
-from fritzfluxdb.log import get_logger
 from fritzfluxdb.classes.common import FritzMeasurement, WritePrecision
 from fritzfluxdb.classes.fritzbox.config import FritzBoxConfig
+from fritzfluxdb.classes.influxdb.config import InfluxDBConfig
+from fritzfluxdb.log import get_logger
 
 
 def _format_url_host(hostname: str) -> str:
@@ -143,7 +143,7 @@ class InfluxHandler:
     retry_interval = 5
     max_retry_interval = 120
     retention_warning_interval = 300
-    _retryable_status_codes = {408, 425, 429, 500, 502, 503, 504}
+    _retryable_status_codes: ClassVar[set] = {408, 425, 429, 500, 502, 503, 504}
 
     connection_warning_interval = 60
 
@@ -170,7 +170,7 @@ class InfluxHandler:
         self.last_connection_warning: datetime | None = None
         self.out_of_retention_period_range = False
         self.last_retention_warning = None
-        self.buffer = list()
+        self.buffer = []
         self.current_retry_interval = self.retry_interval
         self.last_write_retry = None
         self.retention_buffer_sorted = False
@@ -239,7 +239,7 @@ class InfluxHandler:
                         self.questdb_version = match.group(1)
                     else:
                         self.questdb_version = build_str
-                except Exception as exc:
+                except Exception as exc:  # noqa: BLE001 - version string is cosmetic, any parse failure is tolerated
                     log.debug("Failed to parse QuestDB version response: %s", exc)
                     self.questdb_version = "unknown version"
                 # Schema only needs to be ensured once per process; QuestDB's ILP
@@ -250,7 +250,7 @@ class InfluxHandler:
                     try:
                         await self._ensure_questdb_schema(auth=auth)
                         self.questdb_schema_ensured = True
-                    except Exception as exc:
+                    except Exception as exc:  # noqa: BLE001 - schema setup is retried on the next reconnect
                         log.error("Failed to ensure QuestDB schema for '%s': %s",
                                   self.config.measurement_name, _format_exc(exc))
             else:
@@ -381,11 +381,8 @@ class InfluxHandler:
     def permitted_to_write_data(self):
         if self.last_write_retry is None:
             return True
-        if self.current_retry_interval > self.max_retry_interval:
-            self.current_retry_interval = self.max_retry_interval
-        if (datetime.now(UTC) - self.last_write_retry).total_seconds() >= self.current_retry_interval:
-            return True
-        return False
+        self.current_retry_interval = min(self.current_retry_interval, self.max_retry_interval)
+        return (datetime.now(UTC) - self.last_write_retry).total_seconds() >= self.current_retry_interval
 
     async def _flush_buffer_before_close(self, timeout: float = 10.0) -> None:
         if not self.buffer:
@@ -409,9 +406,8 @@ class InfluxHandler:
             await self._write_data_unlocked(force=force)
 
     async def _write_data_unlocked(self, *, force: bool = False):
-        if self.client is None:
-            if not await self._init_client():
-                return
+        if self.client is None and not await self._init_client():
+            return
         if not force and not self.permitted_to_write_data():
             return
         if len(self.buffer) == 0:
@@ -690,9 +686,9 @@ class InfluxLogAndConfigWriter:
 
     def __init__(self, config: FritzBoxConfig, log_queue: asyncio.Queue):
         if not isinstance(config, FritzBoxConfig):
-            raise ValueError("param 'config' needs to be a 'FritzBoxConfig' object")
+            raise TypeError("param 'config' needs to be a 'FritzBoxConfig' object")
         if not isinstance(log_queue, asyncio.Queue):
-            raise ValueError("param 'log_queue' needs to be a 'asyncio.Queue' object")
+            raise TypeError("param 'log_queue' needs to be a 'asyncio.Queue' object")
 
         self.config = config
         self.log_queue = log_queue

@@ -1,28 +1,34 @@
-#!/usr/bin/env python3
 #
 # fritzfluxdb/classes/fritzbox/handler.py
 # Copyright (C) 2026 Gill-Bates http://github.com/Gill-Bates
 #
 
 import asyncio
+import hashlib
 import time
-from datetime import datetime, UTC, timezone, timedelta
+import xml.etree.ElementTree as ET
+from datetime import UTC, datetime, timedelta, timezone
 
 import httpx
-import xml.etree.ElementTree as ET
-import hashlib
 
 # import 3rd party modules
 from fritzconnection import FritzConnection
-from fritzconnection.core.exceptions import FritzConnectionException, FritzServiceError, FritzActionError
+from fritzconnection.core.exceptions import (
+    FritzActionError,
+    FritzConnectionException,
+    FritzServiceError,
+)
 
-from fritzfluxdb.classes.fritzbox.config import FritzBoxConfig
-from fritzfluxdb.log import get_logger
-from fritzfluxdb.classes.fritzbox.service_handler import FritzBoxTR069Service, FritzBoxLuaService
-import fritzfluxdb.classes.fritzbox.service_definitions as service_definitions
 from fritzfluxdb.classes.common import FritzMeasurement
-from fritzfluxdb.common import grab
+from fritzfluxdb.classes.fritzbox import service_definitions
+from fritzfluxdb.classes.fritzbox.config import FritzBoxConfig
 from fritzfluxdb.classes.fritzbox.model import FritzBoxModel
+from fritzfluxdb.classes.fritzbox.service_handler import (
+    FritzBoxLuaService,
+    FritzBoxTR069Service,
+)
+from fritzfluxdb.common import grab
+from fritzfluxdb.log import get_logger
 
 log = get_logger()
 
@@ -39,8 +45,8 @@ class FritzBoxHandlerBase:
             self.config = FritzBoxConfig(config)
 
         self.init_successful = False
-        self.services = list()
-        self.current_result_list = list()
+        self.services = []
+        self.current_result_list = []
         self.discovery_done = False
         self._transport_error_log_state = {}
 
@@ -62,8 +68,7 @@ class FritzBoxHandlerBase:
             new_service = class_name(fritzbox_service)
 
             # adjust request interval if necessary
-            if self.config.request_interval > new_service.interval:
-                new_service.interval = self.config.request_interval
+            new_service.interval = max(new_service.interval, self.config.request_interval)
 
             self.services.append(new_service)
 
@@ -99,17 +104,18 @@ class FritzBoxHandlerBase:
         return result
 
     async def task_loop(self, queue):
+        service_query_limit = asyncio.Semaphore(4)
+
+        async def query_service(service):
+            async with service_query_limit:
+                return await asyncio.to_thread(self._query_service_with_backoff, service)
+
         while True:
-            self.current_result_list = list()
+            self.current_result_list = []
             services_to_request = [
                 service for service in self.services
                 if self.discovery_done is False or service.should_be_requested() is True
             ]
-            service_query_limit = asyncio.Semaphore(4)
-
-            async def query_service(service):
-                async with service_query_limit:
-                    return await asyncio.to_thread(self._query_service_with_backoff, service)
 
             await asyncio.gather(
                 *[
@@ -202,7 +208,7 @@ class FritzBoxHandler(FritzBoxHandlerBase):
                 log.error(f"Failed to connect to {self.name} '{self.config.hostname}': {e}")
 
             return
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001 - fritzconnection raises undocumented exception types on connect
             log.error(f"Failed to connect to {self.name} '{self.config.hostname}': {e}")
             return
 
@@ -218,7 +224,7 @@ class FritzBoxHandler(FritzBoxHandlerBase):
             self.config.link_type = link_type
         except FritzConnectionException as exc:
             log.warning(f"Unable to determine FritzBox link type: {exc}")
-        except Exception as exc:
+        except Exception as exc:  # noqa: BLE001 - link type is optional metadata, never fatal
             log.debug(f"Unable to determine FritzBox link type: {exc}")
 
         # auto-detect Fritz!Box local timezone via Time:1 -> GetInfo
@@ -228,7 +234,8 @@ class FritzBoxHandler(FritzBoxHandlerBase):
             utc_after = datetime.now(UTC)
             local_str = (time_info or {}).get("NewCurrentLocalTime", "")
             if local_str:
-                local_dt = datetime.strptime(local_str[:19], "%Y-%m-%dT%H:%M:%S")
+                # deliberately naive: the offset against UTC is what we want to measure
+                local_dt = datetime.strptime(local_str[:19], "%Y-%m-%dT%H:%M:%S")  # noqa: DTZ007
                 # Use midpoint of the two UTC samples to minimise request latency error
                 utc_mid = utc_before + (utc_after - utc_before) / 2
                 raw_offset = local_dt - utc_mid.replace(tzinfo=None)
@@ -242,7 +249,7 @@ class FritzBoxHandler(FritzBoxHandlerBase):
                     "Fritz!Box timezone auto-detected: UTC%s%02d:%02d",
                     sign, abs_s // 3600, (abs_s % 3600) // 60,
                 )
-        except Exception as exc:
+        except Exception as exc:  # noqa: BLE001 - timezone auto-detection is best effort
             log.warning("Unable to auto-detect Fritz!Box timezone, keeping configured value: %s", exc)
 
         proto = "HTTPS" if self.config.tls_enabled else "HTTP"
@@ -322,7 +329,7 @@ class FritzBoxHandler(FritzBoxHandlerBase):
                         self.name, self.config.hostname, e,
                     )
                 continue
-            except Exception as e:
+            except Exception as e:  # noqa: BLE001 - one bad service must not stop the polling loop
                 log.error(f"Unable to request {self.name} data: {e}")
                 continue
 
@@ -373,10 +380,9 @@ class FritzBoxHandler(FritzBoxHandlerBase):
                 if fw_version:
                     self.config.fw_version = fw_version
 
-        if self.discovery_done is False:
-            if True not in [x.available for x in service.actions]:
-                service_invalid_log(f"All actions for service '{service.name}' are unavailable. Disabling service.")
-                service.available = False
+        if self.discovery_done is False and True not in [x.available for x in service.actions]:
+            service_invalid_log(f"All actions for service '{service.name}' are unavailable. Disabling service.")
+            service.available = False
 
         if successful_request is True:
             return True
@@ -560,7 +566,7 @@ class FritzBoxLuaHandler(FritzBoxHandlerBase):
 
         try:
             result = service_to_request.response_parser(response)
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001 - service-supplied response parser is a plugin boundary
             log.error(f"{self.name} request parsing for '{service_to_request.name}' failed: {e}")
             return None
 
@@ -625,13 +631,13 @@ class FritzBoxLuaHandler(FritzBoxHandlerBase):
         # define defaults
         metric_value = None
         timestamp = None
-        metric_tags = dict()
+        metric_tags = {}
 
         if callable(exclude_filter_function):
             try:
                 if exclude_filter_function(data) is True:
                     return
-            except Exception as exc:
+            except Exception as exc:  # noqa: BLE001 - service-supplied exclude filter is a plugin boundary
                 log.error(f"Exclude filter for metric '{metric_name}' failed: {exc}")
                 return
 
@@ -644,7 +650,7 @@ class FritzBoxLuaHandler(FritzBoxHandlerBase):
         if value_function is not None:
             try:
                 metric_value = value_function(data)
-            except Exception as exc:
+            except Exception as exc:  # noqa: BLE001 - service-supplied value function is a plugin boundary
                 log.error(f"Value function for metric '{metric_name}' failed: {exc}")
                 return
 
@@ -656,7 +662,7 @@ class FritzBoxLuaHandler(FritzBoxHandlerBase):
         if callable(tags_function):
             try:
                 generated_tags = tags_function(data)
-            except Exception as exc:
+            except Exception as exc:  # noqa: BLE001 - service-supplied tags function is a plugin boundary
                 log.error(f"Tags function for metric '{metric_name}' failed: {exc}")
                 return
             if not isinstance(generated_tags, dict):
@@ -672,7 +678,7 @@ class FritzBoxLuaHandler(FritzBoxHandlerBase):
                 if timestamp.tzinfo is None or timestamp.tzinfo.utcoffset(timestamp) is None:
                     timestamp = timestamp.replace(tzinfo=self.config.timezone)
 
-            except Exception as exc:
+            except Exception as exc:  # noqa: BLE001 - service-supplied timestamp function is a plugin boundary
                 log.error(f"Timestamp function for metric '{metric_name}' failed: {exc}")
                 return
 
@@ -686,7 +692,7 @@ class FritzBoxLuaHandler(FritzBoxHandlerBase):
                     metric_value = self._parse_bool(metric_value)
                 else:
                     metric_value = data_type(metric_value)
-            except Exception as e:
+            except Exception as e:  # noqa: BLE001 - Fritz!Box may return any garbage for a typed metric
                 log.error(f"Unable to convert {self.name} value '{metric_value}' "
                           f"for '{metric_name}' to '{data_type}': {e}")
                 return

@@ -1,8 +1,9 @@
-#!/usr/bin/env python3
 #
 # fritzfluxdb/classes/fritzbox/model.py
 # Copyright (C) 2026 Gill-Bates http://github.com/Gill-Bates
 #
+
+from typing import ClassVar
 
 from fritzfluxdb.log import get_logger
 
@@ -22,7 +23,7 @@ class FritzBoxLinkTypes:
 class FritzBoxModel:
 
     # Checked first — mixed/ambiguous models that cannot be classified by number alone
-    _special_model_link_types: dict[str, str] = {
+    _special_model_link_types: ClassVar[dict[str, str]] = {
         "5690 Pro": FritzBoxLinkTypes.Other,   # DSL + Fiber
         "5550": FritzBoxLinkTypes.Other,        # DSL + Fiber / mixed
     }
@@ -30,7 +31,7 @@ class FritzBoxModel:
     # Fallback table when TR-064 does not report a link type.
     # Longer/more-specific strings must appear before shorter ones so that
     # "5690 XGS" is matched before the generic "5690" entry.
-    _fritzbox_model_link_types: dict[str, str] = {
+    _fritzbox_model_link_types: ClassVar[dict[str, str]] = {
         # no-modem / network routers
         "4020": FritzBoxLinkTypes.NO_MODEM,
         "4040": FritzBoxLinkTypes.NO_MODEM,
