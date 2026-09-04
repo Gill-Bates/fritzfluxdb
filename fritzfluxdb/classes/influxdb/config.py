@@ -1,17 +1,17 @@
-#!/usr/bin/env python3
 #
 # fritzfluxdb/classes/influxdb/config.py
 # Copyright (C) 2026 Gill-Bates http://github.com/Gill-Bates
 #
 
-import os
 import configparser
-from contextlib import contextmanager
+import os
 from collections.abc import Iterator
+from contextlib import contextmanager
+from typing import ClassVar
 from urllib.parse import urlsplit
 
-from fritzfluxdb.log import get_logger
 from fritzfluxdb.classes.common import ConfigBase
+from fritzfluxdb.log import get_logger
 
 log = get_logger()
 
@@ -33,66 +33,66 @@ def _temporary_env(overrides: dict[str, str]) -> Iterator[None]:
 class InfluxDBConfig(ConfigBase):
     """Parses and validates InfluxDB-compatible writer configuration."""
 
-    version = {
+    version: ClassVar[dict] = {
         "type": str,
         "default": "1"
     }
-    hostname = {
+    hostname: ClassVar[dict] = {
         "type": str,
         "alt": "host",
         "default": None
     }
-    port = {
+    port: ClassVar[dict] = {
         "type": int,
         "default": 8086
     }
-    tls_enabled = {
+    tls_enabled: ClassVar[dict] = {
         "type": bool,
         "alt": "ssl",
         "default": False
     }
-    verify_tls = {
+    verify_tls: ClassVar[dict] = {
         "type": bool,
         "alt": "verify_ssl",
         "default": True
     }
-    allow_plaintext_credentials = {
+    allow_plaintext_credentials: ClassVar[dict] = {
         "type": bool,
         "default": False
     }
-    measurement_name = {
+    measurement_name: ClassVar[dict] = {
         "type": str,
         "default": "fritzbox"
     }
-    data_retention_days = {
+    data_retention_days: ClassVar[dict] = {
         "type": int,
         "default": 365
     }
 
     # version 1 parameters
-    username = {
+    username: ClassVar[dict] = {
         "type": str,
         "default": None
     }
-    password = {
+    password: ClassVar[dict] = {
         "type": str,
         "default": None
     }
-    database = {
+    database: ClassVar[dict] = {
         "type": str,
         "default": None
     }
 
     # version 2 parameters
-    token = {
+    token: ClassVar[dict] = {
         "type": str,
         "default": None
     }
-    organization = {
+    organization: ClassVar[dict] = {
         "type": str,
         "default": None
     }
-    bucket = {
+    bucket: ClassVar[dict] = {
         "type": str,
         "default": None
     }
@@ -210,27 +210,29 @@ class InfluxDBConfig(ConfigBase):
                 log.error("%s port must be between 1 and 65535, got %s", "QuestDB" if self.version == "questdb" else "InfluxDB", self.port)
                 self.parser_error = True
 
-            if not self.tls_enabled and any(bool(v) for v in (self.username, self.password, self.token)):
-                # an empty hostname is already reported by the mandatory key check
-                if self.hostname and self.hostname not in {"localhost", "127.0.0.1", "::1"}:
-                    if self.allow_plaintext_credentials:
-                        log.warning(
-                            "%s credentials are sent over plain HTTP to '%s'; use only on trusted networks",
-                            "QuestDB" if self.version == "questdb" else "InfluxDB",
-                            self.hostname,
-                        )
-                    else:
-                        log.error(
-                            "%s credentials must not be sent over plain HTTP to '%s'. "
-                            "Enable TLS or set %s_ALLOW_PLAINTEXT_CREDENTIALS=true for trusted networks.",
-                            "QuestDB" if self.version == "questdb" else "InfluxDB",
-                            self.hostname,
-                            "QUESTDB" if self.version == "questdb" else "INFLUXDB",
-                        )
-                        self.parser_error = True
+            # an empty hostname is already reported by the mandatory key check
+            if (not self.tls_enabled
+                    and any(bool(v) for v in (self.username, self.password, self.token))
+                    and self.hostname
+                    and self.hostname not in {"localhost", "127.0.0.1", "::1"}):
+                if self.allow_plaintext_credentials:
+                    log.warning(
+                        "%s credentials are sent over plain HTTP to '%s'; use only on trusted networks",
+                        "QuestDB" if self.version == "questdb" else "InfluxDB",
+                        self.hostname,
+                    )
+                else:
+                    log.error(
+                        "%s credentials must not be sent over plain HTTP to '%s'. "
+                        "Enable TLS or set %s_ALLOW_PLAINTEXT_CREDENTIALS=true for trusted networks.",
+                        "QuestDB" if self.version == "questdb" else "InfluxDB",
+                        self.hostname,
+                        "QUESTDB" if self.version == "questdb" else "INFLUXDB",
+                    )
+                    self.parser_error = True
 
             # validate data
-            mandatory_keys = list()
+            mandatory_keys = []
             if self.version == 1:
                 mandatory_keys = ["hostname", "database"]
 

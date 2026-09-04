@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 #
 # fritzfluxdb/classes/fritzbox/service_handler.py
 # Copyright (C) 2026 Gill-Bates http://github.com/Gill-Bates
@@ -6,12 +5,12 @@
 
 import re
 import time
-from typing import Any
-from datetime import datetime, UTC
 from collections import deque
+from datetime import UTC, datetime
+from typing import Any
 
-from fritzfluxdb.log import get_logger
 from fritzfluxdb.classes.common import FritzMeasurement
+from fritzfluxdb.log import get_logger
 
 log = get_logger()
 
@@ -89,7 +88,7 @@ class FritzBoxService:
         if not isinstance(self.name, str) or not self.name:
             raise ValueError(f"{self.__class__.__name__} instance has no name")
 
-        self.add_value_instances(service_data.get("value_instances", dict()))
+        self.add_value_instances(service_data.get("value_instances", {}))
 
     def add_value_instances(self, data: dict[str, Any] | None = None) -> None:
 
@@ -134,10 +133,7 @@ class FritzBoxService:
         if self.available is False:
             return False
 
-        if self._next_request_monotonic is not None and time.monotonic() < self._next_request_monotonic:
-            return False
-
-        return True
+        return not (self._next_request_monotonic is not None and time.monotonic() < self._next_request_monotonic)
 
 
 class FritzBoxTR069Service(FritzBoxService):
@@ -151,7 +147,7 @@ class FritzBoxTR069Service(FritzBoxService):
 
         super().__init__(service_data)
 
-        self.actions = list()
+        self.actions = []
         self.link_type = service_data.get("link_type")  # defines for which link type this service is valid for
 
         actions = service_data.get("actions", [])

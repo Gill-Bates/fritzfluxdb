@@ -6,11 +6,11 @@
 
 # -*- coding: utf-8 -*-
 
-import sys
-
 # Add the current directory to the Python path,
 # so that the fritzFlux module can be found.
 import os
+import sys
+
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 try:

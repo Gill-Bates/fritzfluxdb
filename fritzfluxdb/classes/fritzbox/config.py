@@ -1,15 +1,15 @@
-#!/usr/bin/env python3
 #
 # fritzfluxdb/classes/fritzbox/config.py
 # Copyright (C) 2026 Gill-Bates http://github.com/Gill-Bates
 #
 
 import configparser
+from typing import ClassVar
 from urllib.parse import urlsplit
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
-from fritzfluxdb.log import get_logger
 from fritzfluxdb.classes.common import ConfigBase
+from fritzfluxdb.log import get_logger
 
 log = get_logger()
 
@@ -19,48 +19,48 @@ class FritzBoxConfig(ConfigBase):
         class which defines the FritzBox config options
     """
 
-    hostname = {
+    hostname: ClassVar[dict] = {
         "type": str,
         "alt": "host",
         "default": "192.168.178.1"
     }
-    username = {
+    username: ClassVar[dict] = {
         "type": str,
         "default": None
     }
-    password = {
+    password: ClassVar[dict] = {
         "type": str,
         "default": None
     }
-    port = {
+    port: ClassVar[dict] = {
         "type": int,
         "default": 49000
     }
-    tls_enabled = {
+    tls_enabled: ClassVar[dict] = {
         "type": bool,
         "alt": "ssl",
         "default": None
     }
-    verify_tls = {
+    verify_tls: ClassVar[dict] = {
         "type": bool,
         "alt": "verify_ssl",
         "default": True
     }
-    connect_timeout = {
+    connect_timeout: ClassVar[dict] = {
         "type": int,
         "alt": "timeout",
         "default": 10
     }
-    request_interval = {
+    request_interval: ClassVar[dict] = {
         "type": int,
         "alt": "interval",
         "default": 10
     }
-    box_tag = {
+    box_tag: ClassVar[dict] = {
         "type": str,
         "default": "fritz.box"
     }
-    timezone = {
+    timezone: ClassVar[dict] = {
         "type": str,
         "default": "Europe/Berlin"
     }
@@ -91,7 +91,7 @@ class FritzBoxConfig(ConfigBase):
         self._validate_hostname()
 
         min_request_interval = self.__class__.request_interval.get("default")
-        if getattr(self, "request_interval") < min_request_interval:
+        if self.request_interval < min_request_interval:
             log.info(f"Setting minimum FritzBox request interval to {min_request_interval} seconds")
             self.request_interval = min_request_interval
 

@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 #
 # fritzfluxdb/classes/fritzbox/service_definitions/network_hosts.py
 # Copyright (C) 2026 Gill-Bates http://github.com/Gill-Bates
@@ -39,7 +38,7 @@ def get_active_host_details(data, desired_value: str, fallback_value):
     property_list = data.get("properties")
 
     if not isinstance(property_list, list):
-        property_list = list()
+        property_list = []
 
     txt_list = [
         item.get("txt")

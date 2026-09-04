@@ -11,8 +11,8 @@ from the influx2 source dashboards.
 Run from the repo root:  python3 tools/build_questdb_dashboards.py
 """
 
-import json
 import copy
+import json
 import os
 
 DS_VAR = "${DS_QUESTDB}"
@@ -323,18 +323,18 @@ def patch_timezone_var(v):
 SYSTEM_QUERIES = {
     # Current UP/DOWN
     (47, "A"): (
-        f"SELECT timestamp AS time,\n"
-        f"  avg(sendrate)*8 AS \"UP\", avg(receiverate)*8 AS \"DOWN\",\n"
-        f"  avg(downstreammax) AS \"DOWN Max\", avg(downstream_dsl_sync_max)*1000 AS \"DOWN DSL Sync\",\n"
-        f"  avg(downstreamphysicalmax) AS \"DOWN Physical Max\", avg(upstreammax) AS \"UP netto Max\",\n"
-        f"  avg(upstream_dsl_sync_max)*1000 AS \"UP DSL Sync\", avg(upstreamphysicalmax) AS \"UP Physical Max\"\n"
-        f"FROM {MEASUREMENT}\n"
-        f"WHERE {TF}\n"
-        f"  AND {BOX_FILTER}\n"
-        f"  AND (sendrate IS NOT NULL OR receiverate IS NOT NULL\n"
-        f"       OR downstreammax IS NOT NULL OR downstream_dsl_sync_max IS NOT NULL\n"
-        f"       OR upstreammax IS NOT NULL OR upstream_dsl_sync_max IS NOT NULL)\n"
-        f"SAMPLE BY {SAMPLE_BY} ALIGN TO CALENDAR",
+        (f"SELECT timestamp AS time,\n"
+            f"  avg(sendrate)*8 AS \"UP\", avg(receiverate)*8 AS \"DOWN\",\n"
+            f"  avg(downstreammax) AS \"DOWN Max\", avg(downstream_dsl_sync_max)*1000 AS \"DOWN DSL Sync\",\n"
+            f"  avg(downstreamphysicalmax) AS \"DOWN Physical Max\", avg(upstreammax) AS \"UP netto Max\",\n"
+            f"  avg(upstream_dsl_sync_max)*1000 AS \"UP DSL Sync\", avg(upstreamphysicalmax) AS \"UP Physical Max\"\n"
+            f"FROM {MEASUREMENT}\n"
+            f"WHERE {TF}\n"
+            f"  AND {BOX_FILTER}\n"
+            f"  AND (sendrate IS NOT NULL OR receiverate IS NOT NULL\n"
+            f"       OR downstreammax IS NOT NULL OR downstream_dsl_sync_max IS NOT NULL\n"
+            f"       OR upstreammax IS NOT NULL OR upstream_dsl_sync_max IS NOT NULL)\n"
+            f"SAMPLE BY {SAMPLE_BY} ALIGN TO CALENDAR"),
         "time_series",
     ),
     (47, "B"): (
@@ -346,12 +346,12 @@ SYSTEM_QUERIES = {
     ),
     # Log entries (logs panel)
     (26, "A"): (
-        f"SELECT timestamp AS time, log_entry AS line, log_type\n"
-        f"FROM {MEASUREMENT}\n"
-        f"WHERE {TF}\n"
-        f"  AND {BOX_FILTER}\n"
-        f"  AND log_entry IS NOT NULL AND log_type != 'FritzInfluxDB'\n"
-        f"ORDER BY timestamp DESC LIMIT 5",
+        (f"SELECT timestamp AS time, log_entry AS line, log_type\n"
+            f"FROM {MEASUREMENT}\n"
+            f"WHERE {TF}\n"
+            f"  AND {BOX_FILTER}\n"
+            f"  AND log_entry IS NOT NULL AND log_type != 'FritzInfluxDB'\n"
+            f"ORDER BY timestamp DESC LIMIT 5"),
         "time_series",
     ),
     # Stat / gauge panels – last value
@@ -368,13 +368,13 @@ SYSTEM_QUERIES = {
     (30, "A"): (ts_last("cpu_temp", "CPU Temp (°C)"), "table"),
     (33, "A"): (ts_last("cpu_utilization", "CPU %"), "table"),
     (34, "A"): (
-        f"SELECT timestamp AS time,\n"
-        f"  ram_usage_fixed AS \"RAM Fixed\", ram_usage_dynamic AS \"RAM Dynamic\"\n"
-        f"FROM {MEASUREMENT}\n"
-        f"WHERE {TF}\n"
-        f"  AND {BOX_FILTER}\n"
-        f"  AND (ram_usage_fixed IS NOT NULL OR ram_usage_dynamic IS NOT NULL)\n"
-        f"ORDER BY timestamp DESC LIMIT 1",
+        (f"SELECT timestamp AS time,\n"
+            f"  ram_usage_fixed AS \"RAM Fixed\", ram_usage_dynamic AS \"RAM Dynamic\"\n"
+            f"FROM {MEASUREMENT}\n"
+            f"WHERE {TF}\n"
+            f"  AND {BOX_FILTER}\n"
+            f"  AND (ram_usage_fixed IS NOT NULL OR ram_usage_dynamic IS NOT NULL)\n"
+            f"ORDER BY timestamp DESC LIMIT 1"),
         "table",
     ),
     (37, "A"): (ts_last("num_active_host", "Active Hosts"), "table"),
@@ -410,30 +410,30 @@ SYSTEM_QUERIES = {
         "table",
     ),
     (8, "A"): (
-        f"SELECT last(totalbytessent) AS \"Upload Since Connection\"\n"
-        f"FROM {MEASUREMENT}\n"
-        f"WHERE timestamp >= {ago('d', 1)}\n"
-        f"  AND {BOX_FILTER}\n"
-        f"  AND totalbytessent IS NOT NULL",
+        (f"SELECT last(totalbytessent) AS \"Upload Since Connection\"\n"
+            f"FROM {MEASUREMENT}\n"
+            f"WHERE timestamp >= {ago('d', 1)}\n"
+            f"  AND {BOX_FILTER}\n"
+            f"  AND totalbytessent IS NOT NULL"),
         "table",
     ),
     (3, "A"): (
-        f"SELECT last(totalbytesreceived) AS \"Download Since Connection\"\n"
-        f"FROM {MEASUREMENT}\n"
-        f"WHERE timestamp >= {ago('d', 1)}\n"
-        f"  AND {BOX_FILTER}\n"
-        f"  AND totalbytesreceived IS NOT NULL",
+        (f"SELECT last(totalbytesreceived) AS \"Download Since Connection\"\n"
+            f"FROM {MEASUREMENT}\n"
+            f"WHERE timestamp >= {ago('d', 1)}\n"
+            f"  AND {BOX_FILTER}\n"
+            f"  AND totalbytesreceived IS NOT NULL"),
         "table",
     ),
     # WLAN
     (55, "A"): (ts_agg("wlan1_associations", "wlan2_associations", "wlan3_associations"), "time_series"),
     (56, "A"): (ts_agg("wlan1_channel", "wlan2_channel", "wlan3_channel"), "time_series"),
     (60, "A"): (
-        f"{wlan_info_select('wlan1', '2.4 GHz')}\n"
-        f"UNION ALL\n"
-        f"{wlan_info_select('wlan2', '5 GHz')}\n"
-        f"UNION ALL\n"
-        f"{wlan_info_select('wlan3', 'Guest')}",
+        (f"{wlan_info_select('wlan1', '2.4 GHz')}\n"
+            f"UNION ALL\n"
+            f"{wlan_info_select('wlan2', '5 GHz')}\n"
+            f"UNION ALL\n"
+            f"{wlan_info_select('wlan3', 'Guest')}"),
         "table",
     ),
     # System infos
@@ -444,87 +444,87 @@ SYSTEM_QUERIES = {
     (51, "A"): (ts_agg("cpu_temp"), "time_series"),
     (53, "A"): (ts_last("energy_consumption", "Energy (W)"), "table"),
     (20, "B"): (
-        f"SELECT {last_not_null('external_ip', 'IPv4')}, {last_not_null('external_ipv6', 'IPv6')},\n"
-        f"  {last_not_null('ipv6_prefix', 'IPv6 Prefix')}, {last_not_null('ipv6_prefix_length', 'IPv6 Prefix Length')},\n"
-        f"  {last_not_null('model', 'Model')}, {last_not_null('serialnumber', 'Serial')},\n"
-        f"  {last_not_null('softwareversion', 'SW Version')}, {last_not_null('last_auth_error', 'Last Auth Error')},\n"
-        f"  {last_nonempty_text('myfritz_host_name', 'MyFritz Hostname')}\n"
-        f"FROM {MEASUREMENT}\n"
-        f"WHERE timestamp >= {ago('d', 1)}\n"
-        f"  AND {BOX_FILTER}",
+        (f"SELECT {last_not_null('external_ip', 'IPv4')}, {last_not_null('external_ipv6', 'IPv6')},\n"
+            f"  {last_not_null('ipv6_prefix', 'IPv6 Prefix')}, {last_not_null('ipv6_prefix_length', 'IPv6 Prefix Length')},\n"
+            f"  {last_not_null('model', 'Model')}, {last_not_null('serialnumber', 'Serial')},\n"
+            f"  {last_not_null('softwareversion', 'SW Version')}, {last_not_null('last_auth_error', 'Last Auth Error')},\n"
+            f"  {last_nonempty_text('myfritz_host_name', 'MyFritz Hostname')}\n"
+            f"FROM {MEASUREMENT}\n"
+            f"WHERE timestamp >= {ago('d', 1)}\n"
+            f"  AND {BOX_FILTER}"),
         "table",
     ),
     (74, "B"): (
-        f"SELECT {last_not_null('physicallinktype', 'Link Type')}, {last_not_null('dsl_line_length', 'DSL Line Length')},\n"
-        f"  {last_not_null('dsl_dslam_vendor', 'DSL DSLAM Vendor')}, {last_not_null('dsl_dslam_sw_version', 'DSL Model Version')},\n"
-        f"  {last_not_null('dsl_line_mode', 'DSL Line Mode')}, {last_not_null('cable_cmts_vendor', 'Cable Vendor')},\n"
-        f"  {last_not_null('cable_line_mode', 'Cable Line Mode')}, {last_not_null('cable_modem_version', 'Cable Modem Version')},\n"
-        f"  {last_not_null('cable_num_ds_channels', 'Cable Downstream Channels')}, {last_not_null('cable_num_us_channels', 'Cable Upstream Channels')},\n"
-        f"  {last_not_null('connection_status', 'IP Connection Status')}, {last_not_null('last_connection_error', 'Last Connection Error')},\n"
-        f"  {last_not_null('remote_pop', 'Remote Pop')}, {last_not_null('physical_connection_status', 'Link Connection Status')}\n"
-        f"FROM {MEASUREMENT}\n"
-        f"WHERE timestamp >= {ago('d', 1)}\n"
-        f"  AND {BOX_FILTER}",
+        (f"SELECT {last_not_null('physicallinktype', 'Link Type')}, {last_not_null('dsl_line_length', 'DSL Line Length')},\n"
+            f"  {last_not_null('dsl_dslam_vendor', 'DSL DSLAM Vendor')}, {last_not_null('dsl_dslam_sw_version', 'DSL Model Version')},\n"
+            f"  {last_not_null('dsl_line_mode', 'DSL Line Mode')}, {last_not_null('cable_cmts_vendor', 'Cable Vendor')},\n"
+            f"  {last_not_null('cable_line_mode', 'Cable Line Mode')}, {last_not_null('cable_modem_version', 'Cable Modem Version')},\n"
+            f"  {last_not_null('cable_num_ds_channels', 'Cable Downstream Channels')}, {last_not_null('cable_num_us_channels', 'Cable Upstream Channels')},\n"
+            f"  {last_not_null('connection_status', 'IP Connection Status')}, {last_not_null('last_connection_error', 'Last Connection Error')},\n"
+            f"  {last_not_null('remote_pop', 'Remote Pop')}, {last_not_null('physical_connection_status', 'Link Connection Status')}\n"
+            f"FROM {MEASUREMENT}\n"
+            f"WHERE timestamp >= {ago('d', 1)}\n"
+            f"  AND {BOX_FILTER}"),
         "table",
     ),
     # VPN / DynDNS
     (64, "A"): (ts_agg("vpn_user_num_active"), "time_series"),
     (68, "A"): (
-        f"SELECT {last_not_null('vpn_type', 'VPN Type')}, {last_not_null('vpn_user_num_active', 'VPN User Active')}\n"
-        f"FROM {MEASUREMENT}\n"
-        f"WHERE timestamp >= {ago('d', 1)}\n"
-        f"  AND {BOX_FILTER}\n"
-        f"  AND (vpn_type IS NOT NULL OR vpn_user_num_active IS NOT NULL)",
+        (f"SELECT {last_not_null('vpn_type', 'VPN Type')}, {last_not_null('vpn_user_num_active', 'VPN User Active')}\n"
+            f"FROM {MEASUREMENT}\n"
+            f"WHERE timestamp >= {ago('d', 1)}\n"
+            f"  AND {BOX_FILTER}\n"
+            f"  AND (vpn_type IS NOT NULL OR vpn_user_num_active IS NOT NULL)"),
         "table",
     ),
     (62, "A"): (
-        f"SELECT {last_not_null('ddns_domain', 'Domain')},\n"
-        f"  {bool_text('ddns_enabled', 'Enabled')},\n"
-        f"  {last_not_null('ddns_mode', 'Mode')}, {last_not_null('ddns_provider_name', 'Provider')},\n"
-        f"  {last_not_null('ddns_status_ipv4', 'Status IPv4')}, {last_not_null('ddns_status_ipv6', 'Status IPv6')}\n"
-        f"FROM {MEASUREMENT}\n"
-        f"WHERE timestamp >= {ago('d', 1)}\n"
-        f"  AND {BOX_FILTER}\n"
-        f"  AND (ddns_domain IS NOT NULL OR ddns_enabled IS NOT NULL OR ddns_mode IS NOT NULL\n"
-        f"       OR ddns_provider_name IS NOT NULL OR ddns_status_ipv4 IS NOT NULL OR ddns_status_ipv6 IS NOT NULL)",
+        (f"SELECT {last_not_null('ddns_domain', 'Domain')},\n"
+            f"  {bool_text('ddns_enabled', 'Enabled')},\n"
+            f"  {last_not_null('ddns_mode', 'Mode')}, {last_not_null('ddns_provider_name', 'Provider')},\n"
+            f"  {last_not_null('ddns_status_ipv4', 'Status IPv4')}, {last_not_null('ddns_status_ipv6', 'Status IPv6')}\n"
+            f"FROM {MEASUREMENT}\n"
+            f"WHERE timestamp >= {ago('d', 1)}\n"
+            f"  AND {BOX_FILTER}\n"
+            f"  AND (ddns_domain IS NOT NULL OR ddns_enabled IS NOT NULL OR ddns_mode IS NOT NULL\n"
+            f"       OR ddns_provider_name IS NOT NULL OR ddns_status_ipv4 IS NOT NULL OR ddns_status_ipv6 IS NOT NULL)"),
         "table",
     ),
     (66, "A"): (
-        f"SELECT name AS \"Name\", vpn_type AS \"Type\",\n"
-        f"  {bool_text('vpn_user_active', 'Active')}, {bool_text('vpn_user_connected', 'Connected')},\n"
-        f"  {last_not_null('vpn_user_virtual_address', 'Virtual Address')}, {last_not_null('vpn_user_remote_address', 'Remote Address')}\n"
-        f"FROM {MEASUREMENT}\n"
-        f"WHERE timestamp >= {ago('d', 1)}\n"
-        f"  AND {BOX_FILTER}\n"
-        f"  AND name IS NOT NULL\n"
-        f"  AND (vpn_user_active IS NOT NULL OR vpn_user_connected IS NOT NULL OR vpn_user_virtual_address IS NOT NULL OR vpn_user_remote_address IS NOT NULL)\n"
-        f"GROUP BY name, vpn_type\n"
-        f"ORDER BY name",
+        (f"SELECT name AS \"Name\", vpn_type AS \"Type\",\n"
+            f"  {bool_text('vpn_user_active', 'Active')}, {bool_text('vpn_user_connected', 'Connected')},\n"
+            f"  {last_not_null('vpn_user_virtual_address', 'Virtual Address')}, {last_not_null('vpn_user_remote_address', 'Remote Address')}\n"
+            f"FROM {MEASUREMENT}\n"
+            f"WHERE timestamp >= {ago('d', 1)}\n"
+            f"  AND {BOX_FILTER}\n"
+            f"  AND name IS NOT NULL\n"
+            f"  AND (vpn_user_active IS NOT NULL OR vpn_user_connected IS NOT NULL OR vpn_user_virtual_address IS NOT NULL OR vpn_user_remote_address IS NOT NULL)\n"
+            f"GROUP BY name, vpn_type\n"
+            f"ORDER BY name"),
         "table",
     ),
     # Network hosts
     (72, "A"): (
-        f"SELECT timestamp AS time, active_hosts_name AS \"Name\",\n"
-        f"  active_hosts_mac AS \"MAC\", active_hosts_ipv4 AS \"IPv4\",\n"
-        f"  active_hosts_type AS \"Type\", active_hosts_parent AS \"Parent\",\n"
-        f"  active_hosts_port AS \"Port\", active_hosts_additional_text AS \"Info\",\n"
-        f"  active_hosts_ipv4_last_used AS \"Last seen\"\n"
-        f"FROM {MEASUREMENT}\n"
-        f"WHERE timestamp >= {ago('h', 1)}\n"
-        f"  AND {BOX_FILTER}\n"
-        f"  AND active_hosts_name IS NOT NULL\n"
-        f"ORDER BY timestamp DESC",
+        (f"SELECT timestamp AS time, active_hosts_name AS \"Name\",\n"
+            f"  active_hosts_mac AS \"MAC\", active_hosts_ipv4 AS \"IPv4\",\n"
+            f"  active_hosts_type AS \"Type\", active_hosts_parent AS \"Parent\",\n"
+            f"  active_hosts_port AS \"Port\", active_hosts_additional_text AS \"Info\",\n"
+            f"  active_hosts_ipv4_last_used AS \"Last seen\"\n"
+            f"FROM {MEASUREMENT}\n"
+            f"WHERE timestamp >= {ago('h', 1)}\n"
+            f"  AND {BOX_FILTER}\n"
+            f"  AND active_hosts_name IS NOT NULL\n"
+            f"ORDER BY timestamp DESC"),
         "table",
     ),
     (73, "A"): (
-        f"SELECT timestamp AS time, passive_hosts_name AS \"Name\",\n"
-        f"  passive_hosts_mac AS \"MAC\", passive_hosts_ipv4 AS \"IPv4\",\n"
-        f"  passive_hosts_port AS \"Port\"\n"
-        f"FROM {MEASUREMENT}\n"
-        f"WHERE timestamp >= {ago('h', 1)}\n"
-        f"  AND {BOX_FILTER}\n"
-        f"  AND passive_hosts_name IS NOT NULL\n"
-        f"ORDER BY timestamp DESC",
+        (f"SELECT timestamp AS time, passive_hosts_name AS \"Name\",\n"
+            f"  passive_hosts_mac AS \"MAC\", passive_hosts_ipv4 AS \"IPv4\",\n"
+            f"  passive_hosts_port AS \"Port\"\n"
+            f"FROM {MEASUREMENT}\n"
+            f"WHERE timestamp >= {ago('h', 1)}\n"
+            f"  AND {BOX_FILTER}\n"
+            f"  AND passive_hosts_name IS NOT NULL\n"
+            f"ORDER BY timestamp DESC"),
         "table",
     ),
 }
@@ -832,30 +832,30 @@ HA_QUERIES = {
         "time_series",
     ),
     (28, "A"): (
-        f"SELECT name AS \"Name\", ha_device_present AS \"Device Present\",\n"
-        f"  ha_devicefunctions AS \"Functions\", ha_fw_version AS \"Firmware Version\",\n"
-        f"  ha_hun_fun_interfaces AS \"HAN-FAN Functions\", ha_hun_fun_unittype AS \"HAN-FAN Unit Type\",\n"
-        f"  ha_manufacturer AS \"Manufacturer\", ha_product_name AS \"Product Name\"\n"
-        f"FROM {MEASUREMENT}\n"
-        f"WHERE timestamp >= {ago('h', 12)}\n"
-        f"  AND {BOX_FILTER}\n"
-        f"  AND name IS NOT NULL\n"
-        f"LATEST ON timestamp PARTITION BY box, name\n"
-        f"ORDER BY name",
+        (f"SELECT name AS \"Name\", ha_device_present AS \"Device Present\",\n"
+            f"  ha_devicefunctions AS \"Functions\", ha_fw_version AS \"Firmware Version\",\n"
+            f"  ha_hun_fun_interfaces AS \"HAN-FAN Functions\", ha_hun_fun_unittype AS \"HAN-FAN Unit Type\",\n"
+            f"  ha_manufacturer AS \"Manufacturer\", ha_product_name AS \"Product Name\"\n"
+            f"FROM {MEASUREMENT}\n"
+            f"WHERE timestamp >= {ago('h', 12)}\n"
+            f"  AND {BOX_FILTER}\n"
+            f"  AND name IS NOT NULL\n"
+            f"LATEST ON timestamp PARTITION BY box, name\n"
+            f"ORDER BY name"),
         "table",
     ),
     (34, "A"): (
-        f"SELECT name AS \"Name\", ha_product_name AS \"Product Name\",\n"
-        f"  ha_battery_low AS \"Battery Low\", ha_battery_percent AS \"Battery Level\",\n"
-        f"  ha_simpleonoff_state AS \"Device State\", ha_switch_state AS \"Switch State\",\n"
-        f"  ha_switch_mode AS \"Switch Mode\", ha_switch_lock AS \"Switch Lock\",\n"
-        f"  ha_switch_devicelock AS \"Switch Device Lock\"\n"
-        f"FROM {MEASUREMENT}\n"
-        f"WHERE timestamp >= {ago('h', 12)}\n"
-        f"  AND {BOX_FILTER}\n"
-        f"  AND name IS NOT NULL\n"
-        f"LATEST ON timestamp PARTITION BY box, name\n"
-        f"ORDER BY name",
+        (f"SELECT name AS \"Name\", ha_product_name AS \"Product Name\",\n"
+            f"  ha_battery_low AS \"Battery Low\", ha_battery_percent AS \"Battery Level\",\n"
+            f"  ha_simpleonoff_state AS \"Device State\", ha_switch_state AS \"Switch State\",\n"
+            f"  ha_switch_mode AS \"Switch Mode\", ha_switch_lock AS \"Switch Lock\",\n"
+            f"  ha_switch_devicelock AS \"Switch Device Lock\"\n"
+            f"FROM {MEASUREMENT}\n"
+            f"WHERE timestamp >= {ago('h', 12)}\n"
+            f"  AND {BOX_FILTER}\n"
+            f"  AND name IS NOT NULL\n"
+            f"LATEST ON timestamp PARTITION BY box, name\n"
+            f"ORDER BY name"),
         "table",
     ),
     (32, "A"): (

@@ -1,14 +1,13 @@
-#!/usr/bin/env python3
 #
 # fritzfluxdb/configparser.py
 # Copyright (C) 2026 Gill-Bates http://github.com/Gill-Bates
 #
 
-import os
 import configparser
+import os
 
-from fritzfluxdb.log import get_logger
 from fritzfluxdb.common import do_error_exit
+from fritzfluxdb.log import get_logger
 
 log = get_logger()
 
@@ -33,9 +32,8 @@ def import_config(filenames: list | None, default_config_file: str | None = None
     config_files = list(filenames or [])
 
     # check if default config file actually exists and add it to the list
-    if default_config_file is not None and not config_files:
-        if os.path.exists(default_config_file):
-            config_files.append(default_config_file)
+    if default_config_file is not None and not config_files and os.path.exists(default_config_file):
+        config_files.append(default_config_file)
 
     # check if config file exists
     config_file_errors = False

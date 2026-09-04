@@ -1,12 +1,11 @@
-#!/usr/bin/env python3
 #
 # fritzfluxdb/classes/fritzbox/service_definitions/connection_info.py
 # Copyright (C) 2026 Gill-Bates http://github.com/Gill-Bates
 #
 
-from fritzfluxdb.common import grab
-from fritzfluxdb.classes.fritzbox.service_definitions import lua_services
 from fritzfluxdb.classes.fritzbox.model import FritzBoxLinkTypes
+from fritzfluxdb.classes.fritzbox.service_definitions import lua_services
+from fritzfluxdb.common import grab
 
 
 def prepare_json_response_data(response):

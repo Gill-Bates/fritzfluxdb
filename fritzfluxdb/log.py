@@ -1,13 +1,12 @@
-#!/usr/bin/env python3
 #
 # fritzfluxdb/log.py
 # Copyright (C) 2026 Gill-Bates http://github.com/Gill-Bates
 #
 
-import logging
-from logging.handlers import QueueHandler
-import sys
 import asyncio
+import logging
+import sys
+from logging.handlers import QueueHandler
 
 from fritzfluxdb.common import do_error_exit
 

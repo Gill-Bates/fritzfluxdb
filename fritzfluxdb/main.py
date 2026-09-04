@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 #
 # fritzfluxdb/main.py
 # Copyright (C) 2026 Gill-Bates http://github.com/Gill-Bates
@@ -6,19 +5,19 @@
 
 # -*- coding: utf-8 -*-
 
-import re
-import os
-import signal
 import asyncio
+import os
+import re
+import signal
 import sys
 from pathlib import Path
 
-from fritzfluxdb.cli_parser import parse_command_line
-from fritzfluxdb.log import setup_logging
-from fritzfluxdb.configparser import import_config
+from fritzfluxdb.classes.fritzbox.banner import print_banner
 from fritzfluxdb.classes.fritzbox.handler import FritzBoxHandler, FritzBoxLuaHandler
 from fritzfluxdb.classes.influxdb.handler import InfluxHandler, InfluxLogAndConfigWriter
-from fritzfluxdb.classes.fritzbox.banner import print_banner
+from fritzfluxdb.cli_parser import parse_command_line
+from fritzfluxdb.configparser import import_config
+from fritzfluxdb.log import setup_logging
 from fritzfluxdb.version import DESCRIPTION, URL, VERSION, VERSION_DATE
 
 default_config = str(Path(__file__).with_name('fritzFlux.ini'))
@@ -181,9 +180,9 @@ async def main_async() -> int:
                 task.cancel()
             await asyncio.gather(*pending, return_exceptions=True)
 
-    except Exception as e:
+    except Exception:
         exit_code = 1
-        log.exception(f"Exception in main loop: {e}")
+        log.exception("Exception in main loop")
     finally:
         fritzbox_connection.close()
         fritzbox_lua_connection.close()
