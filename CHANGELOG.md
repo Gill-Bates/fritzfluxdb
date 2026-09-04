@@ -1,4 +1,4 @@
-## [v1.4] - Unreleased
+## [v1.4] - 2026-09-04
 
 - ``New`` FritzBox services are now queried concurrently (up to 4 at a time) instead of strictly one after another, making polling cycles faster overall.
 - ``Fix`` A FritzBox service that keeps failing is now automatically backed off with an increasing delay instead of being retried every cycle, and repeated connection errors are logged only once every 5 minutes instead of flooding the log on every failed request.

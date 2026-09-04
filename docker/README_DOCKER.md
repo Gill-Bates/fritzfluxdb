@@ -62,7 +62,7 @@ services:
     env_file:
       - ./.env
     environment:
-      TZ: Etc/UTC
+      TZ: Europe/Berlin
       LOG_LEVEL: INFO
 ```
 
@@ -92,9 +92,7 @@ docker compose up -d
 | `QUESTDB_HOSTNAME` | — | QuestDB host (or full URL); `QUESTDB_*` mirrors the `INFLUXDB_*` options |
 | `QUESTDB_PORT` | `9000` | QuestDB ILP/HTTP port |
 | `LOG_LEVEL` | `INFO` | Log level (`DEBUG`, `INFO`, `WARNING`, `ERROR`) |
-| `TZ` | `Etc/UTC` | Container timezone |
-| `WATCHDOG_RESTART_DELAY` | `10` | Initial reconnect delay in seconds |
-| `WATCHDOG_MAX_RESTART_DELAY` | `300` | Maximum reconnect delay in seconds |
+| `TZ` | `Europe/Berlin` | Container timezone |
 
 ---
 
