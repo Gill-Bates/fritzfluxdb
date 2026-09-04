@@ -155,11 +155,12 @@ jobs:
           set -euo pipefail
           python -m pip install --upgrade pip
           pip install -r requirements.txt
-          # ruff is pinned on purpose: its default rule set grows between
-          # releases, so an unpinned install turns an unrelated upstream
-          # release into a red release pipeline. Bump this deliberately and
+          # Both gate the release, so both are pinned: ruff's default rule
+          # set grows between releases and pytest changes collection
+          # behaviour across majors, which turns an unrelated upstream
+          # release into a red release pipeline. Bump these deliberately and
           # fix any new findings in the same commit.
-          pip install ruff==0.16.6 pytest
+          pip install ruff==0.16.6 pytest==9.1.1
 
       - name: Run ruff
         run: ruff check .

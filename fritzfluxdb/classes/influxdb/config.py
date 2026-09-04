@@ -1,3 +1,4 @@
+#!/usr/bin/env python3
 #
 # fritzfluxdb/classes/influxdb/config.py
 # Copyright (C) 2026 Gill-Bates http://github.com/Gill-Bates

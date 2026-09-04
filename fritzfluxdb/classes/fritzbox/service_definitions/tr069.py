@@ -1,3 +1,4 @@
+#!/usr/bin/env python3
 #
 # fritzfluxdb/classes/fritzbox/service_definitions/tr069.py
 # Copyright (C) 2026 Gill-Bates http://github.com/Gill-Bates
