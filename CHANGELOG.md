@@ -1,12 +1,17 @@
-## [v1.3] - 2026-06-15
+## [v1.4] - Unreleased
 
-- ``Fix`` Database connection errors now name the underlying cause (e.g. `ConnectError`, `ReadTimeout`) instead of logging an empty message — several httpx transport errors have a blank text, which previously produced uninformative lines like `unreachable: `.
-- ``Fix`` The QuestDB schema is now ensured only once per process instead of on every reconnect. During a flaky connection this avoids replaying dozens of `ALTER TABLE` statements on each connection flap; columns are auto-created by QuestDB's line-protocol writes anyway.
-
+- ``New`` FritzBox services are now queried concurrently (up to 4 at a time) instead of strictly one after another, making polling cycles faster overall.
+- ``Fix`` A FritzBox service that keeps failing is now automatically backed off with an increasing delay instead of being retried every cycle, and repeated connection errors are logged only once every 5 minutes instead of flooding the log on every failed request.
+- ``Fix`` A retryable InfluxDB/QuestDB write failure no longer leaves a broken connection open — this previously caused the retry delay to be doubled twice and the "connection restored" log message to report an incorrect number of flushed measurements.
+- ``Security`` The Docker release workflow no longer exposes DockerHub registry credentials as job-wide environment variables; they are now scoped only to the steps that need them.
 
 <details markdown="1">
 <summary>Previous versions...</summary>
 
+## [v1.3] - 2026-06-15
+
+- ``Fix`` Database connection errors now name the underlying cause (e.g. `ConnectError`, `ReadTimeout`) instead of logging an empty message — several httpx transport errors have a blank text, which previously produced uninformative lines like `unreachable: `.
+- ``Fix`` The QuestDB schema is now ensured only once per process instead of on every reconnect. During a flaky connection this avoids replaying dozens of `ALTER TABLE` statements on each connection flap; columns are auto-created by QuestDB's line-protocol writes anyway.
 
 ## [v1.2] - 2026-06-11
 

@@ -206,10 +206,6 @@ Import the JSON files from `grafana/influx2_dashboards/` (or `influx1_dashboards
 ## 🛠 Local Development
 
 ```bash
-python3.13 -m venv .venv
-source .venv/bin/activate
-pip install -r requirements.txt
-
 python run.py -c setup.conf
 ```
 
@@ -222,3 +218,9 @@ python run.py -c setup.conf
 ---
 
 > **Disclaimer:** This project is an independent open-source tool and is not affiliated with, endorsed by, or in any way associated with AVM GmbH or the FRITZ!Box product line. FRITZ!Box is a registered trademark of AVM GmbH.
+
+<p align="center">
+  <a href="https://www.buymeacoffee.com/tnsteinerx">
+    <img src="https://img.buymeacoffee.com/button-api/?text=Buy%20me%20a%20beer&emoji=%F0%9F%8D%BA&slug=tnsteinerx&button_colour=FFDD00&font_colour=000000&font_family=Cookie&outline_colour=000000&coffee_colour=ffffff" alt="Buy Me A Coffee">
+  </a>
+</p>

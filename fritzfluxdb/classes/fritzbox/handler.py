@@ -5,6 +5,7 @@
 #
 
 import asyncio
+import time
 from datetime import datetime, UTC, timezone, timedelta
 
 import httpx
@@ -41,6 +42,7 @@ class FritzBoxHandlerBase:
         self.services = list()
         self.current_result_list = list()
         self.discovery_done = False
+        self._transport_error_log_state = {}
 
         self.version = None
 
@@ -69,11 +71,52 @@ class FritzBoxHandlerBase:
         # stub for the default function
         pass
 
+    def _log_transport_error(self, key, message, *args, interval=300.0):
+        now = time.monotonic()
+        last_log, suppressed_count = self._transport_error_log_state.get(key, (0.0, 0))
+
+        if last_log == 0.0 or now - last_log >= interval:
+            formatted_message = message % args if args else message
+            if suppressed_count:
+                formatted_message = f"{formatted_message} (suppressed {suppressed_count} repeated message(s))"
+            log.error("%s", formatted_message)
+            self._transport_error_log_state[key] = (now, 0)
+            return
+
+        self._transport_error_log_state[key] = (last_log, suppressed_count + 1)
+        log.debug(message, *args)
+
+    def _query_service_with_backoff(self, service):
+        result = self.query_service_data(service)
+
+        if result is False and service.available is True:
+            delay = service.set_failed_query_now()
+            log.debug(
+                "Backing off %s service '%s' for %.0f seconds after %s failed request(s)",
+                self.name, service.name, delay, service.failure_count,
+            )
+
+        return result
+
     async def task_loop(self, queue):
         while True:
             self.current_result_list = list()
-            for service in self.services:
-                await asyncio.to_thread(self.query_service_data, service)
+            services_to_request = [
+                service for service in self.services
+                if self.discovery_done is False or service.should_be_requested() is True
+            ]
+            service_query_limit = asyncio.Semaphore(4)
+
+            async def query_service(service):
+                async with service_query_limit:
+                    return await asyncio.to_thread(self._query_service_with_backoff, service)
+
+            await asyncio.gather(
+                *[
+                    query_service(service)
+                    for service in services_to_request
+                ]
+            )
 
             for result in self.current_result_list:
                 log.debug(result)
@@ -236,6 +279,9 @@ class FritzBoxHandler(FritzBoxHandlerBase):
         if self.discovery_done is True and service.should_be_requested() is False:
             return
 
+        successful_request = False
+        transient_failure = False
+
         # Request every action
         for action in service.actions:
 
@@ -269,7 +315,12 @@ class FritzBoxHandler(FritzBoxHandlerBase):
                     service_invalid_log(f"Querying action '{action.name}' will be disabled")
                     action.available = False
                 else:
-                    log.error(f"Failed to connect to {self.name} '{self.config.hostname}': {e}")
+                    transient_failure = True
+                    self._log_transport_error(
+                        (self.name, service.name, action.name, type(e).__name__, str(e)),
+                        "Failed to connect to %s '%s': %s",
+                        self.name, self.config.hostname, e,
+                    )
                 continue
             except Exception as e:
                 log.error(f"Unable to request {self.name} data: {e}")
@@ -278,6 +329,7 @@ class FritzBoxHandler(FritzBoxHandlerBase):
             if call_result is None:
                 continue
 
+            successful_request = True
             debug_msg = f"Request {self.name} service '{service.name}' returned successfully: {action.name}"
             if len(action.params) > 0:
                 debug_msg += f" ({action.params})"
@@ -326,7 +378,13 @@ class FritzBoxHandler(FritzBoxHandlerBase):
                 service_invalid_log(f"All actions for service '{service.name}' are unavailable. Disabling service.")
                 service.available = False
 
-        return
+        if successful_request is True:
+            return True
+
+        if transient_failure is True:
+            return False
+
+        return None
 
 
 class FritzBoxLuaHandler(FritzBoxHandlerBase):
@@ -479,7 +537,11 @@ class FritzBoxLuaHandler(FritzBoxHandlerBase):
         try:
             response = self.session.request(service_to_request.method, data_url, **call_attributes)
         except httpx.HTTPError as exc:
-            log.error(f"Unable to perform request to '{data_url}': {exc}")
+            self._log_transport_error(
+                (self.name, service_to_request.name, type(exc).__name__, str(exc)),
+                "Unable to perform request to '%s': %s",
+                data_url, exc,
+            )
             return None
 
         # invalidate session on auth-related status codes before parsing
@@ -698,7 +760,7 @@ class FritzBoxLuaHandler(FritzBoxHandlerBase):
 
         if result is None:
             log.error(f"Unable to request {self.name} service '{service.name}', no data returned")
-            return
+            return False
 
         log.debug(f"Request {self.name} service '{service_and_version_name}' returned successfully")
 
@@ -709,4 +771,4 @@ class FritzBoxLuaHandler(FritzBoxHandlerBase):
         for metric_name, metric_params in service.value_instances.items():
             self.extract_value(service, result, metric_name, metric_params)
 
-        return
+        return True
