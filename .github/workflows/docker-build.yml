@@ -269,7 +269,7 @@ jobs:
           docker run --rm --entrypoint /bin/sh "${IMAGE}" -c '
             test -x /usr/local/bin/entrypoint.sh && echo "/usr/local/bin/entrypoint.sh: OK" || exit 1
             test -x /usr/bin/tini && echo "/usr/bin/tini: OK" || exit 1
-            pip check && echo "pip check: OK" || exit 1
+            ! command -v pip >/dev/null && echo "pip absent from runtime image: OK" || exit 1
           '
           echo "✓ All smoke tests passed for ${IMAGE}"
 
