@@ -59,14 +59,14 @@ def target_table(query, ref="A"):
     return target(query, ref, "table")
 
 
-def ts_last(field, alias=None):
+def ts_last(field, alias=None, present_if=None):
     a = alias or field
     return (
         f"SELECT timestamp AS time, {field} AS \"{a}\"\n"
         f"FROM {MEASUREMENT}\n"
         f"WHERE {TF}\n"
         f"  AND {BOX_FILTER}\n"
-        f"  AND {field} IS NOT NULL\n"
+        f"  AND {present_if or field} IS NOT NULL\n"
         f"ORDER BY timestamp DESC\nLIMIT 1"
     )
 
@@ -160,18 +160,10 @@ def last_nonempty_text(field, alias):
     return f'last_not_null(CASE WHEN {field} = \'\' THEN NULL ELSE {field} END) AS "{alias}"'
 
 
-def bool_text(field, alias):
-    return (
-        f"last_not_null(CASE WHEN {field} IS NULL THEN NULL "
-        f"WHEN {field} THEN 'True' ELSE 'False' END) AS \"{alias}\""
-    )
-
-
-def bool_flag(field, alias):
-    return (
-        f"last_not_null(CASE WHEN {field} IS NULL THEN NULL "
-        f"WHEN {field} THEN 1 ELSE 0 END) AS \"{alias}\""
-    )
+# QuestDB BOOLEAN is never NULL (missing = false): check presence via a nullable same-row column.
+def bool_text(field, alias, present_if=None):
+    null_case = f"WHEN {present_if} IS NULL THEN NULL " if present_if else ""
+    return f"last_not_null(CASE {null_case}WHEN {field} THEN 'True' ELSE 'False' END) AS \"{alias}\""
 
 
 def current_rate(field, alias):
@@ -350,12 +342,12 @@ SYSTEM_QUERIES = {
             f"FROM {MEASUREMENT}\n"
             f"WHERE {TF}\n"
             f"  AND {BOX_FILTER}\n"
-            f"  AND log_entry IS NOT NULL AND log_type != 'FritzInfluxDB'\n"
+            f"  AND log_entry IS NOT NULL\n"
             f"ORDER BY timestamp DESC LIMIT 5"),
         "time_series",
     ),
     # Stat / gauge panels – last value
-    (10, "A"): (ts_last("upgrade_available", "Upgrade Available"), "table"),
+    (10, "A"): (ts_last("upgrade_available", "Upgrade Available", present_if="update_state"), "table"),
     (9,  "A"): (ts_last("linkuptime", "Link Uptime (s)"), "table"),
     (11, "A"): (
         current_rate("receiverate", "receiverate"),
@@ -479,13 +471,13 @@ SYSTEM_QUERIES = {
     ),
     (62, "A"): (
         (f"SELECT {last_not_null('ddns_domain', 'Domain')},\n"
-            f"  {bool_text('ddns_enabled', 'Enabled')},\n"
+            f"  {bool_text('ddns_enabled', 'Enabled', present_if='ddns_provider_name')},\n"
             f"  {last_not_null('ddns_mode', 'Mode')}, {last_not_null('ddns_provider_name', 'Provider')},\n"
             f"  {last_not_null('ddns_status_ipv4', 'Status IPv4')}, {last_not_null('ddns_status_ipv6', 'Status IPv6')}\n"
             f"FROM {MEASUREMENT}\n"
             f"WHERE timestamp >= {ago('d', 1)}\n"
             f"  AND {BOX_FILTER}\n"
-            f"  AND (ddns_domain IS NOT NULL OR ddns_enabled IS NOT NULL OR ddns_mode IS NOT NULL\n"
+            f"  AND (ddns_domain IS NOT NULL OR ddns_mode IS NOT NULL\n"
             f"       OR ddns_provider_name IS NOT NULL OR ddns_status_ipv4 IS NOT NULL OR ddns_status_ipv6 IS NOT NULL)"),
         "table",
     ),
@@ -497,7 +489,7 @@ SYSTEM_QUERIES = {
             f"WHERE timestamp >= {ago('d', 1)}\n"
             f"  AND {BOX_FILTER}\n"
             f"  AND name IS NOT NULL\n"
-            f"  AND (vpn_user_active IS NOT NULL OR vpn_user_connected IS NOT NULL OR vpn_user_virtual_address IS NOT NULL OR vpn_user_remote_address IS NOT NULL)\n"
+            f"  AND vpn_type IS NOT NULL\n"
             f"GROUP BY name, vpn_type\n"
             f"ORDER BY name"),
         "table",
@@ -937,23 +929,23 @@ def build_homeauto(src):
 
 if __name__ == "__main__":
     repo_root = os.path.dirname(os.path.dirname(__file__))
-    grafana_dir = os.path.join(repo_root, "grafana")
+    grafana_dir = os.path.join(repo_root, "utils", "grafana")
     base = os.path.join(grafana_dir, "influx2_dashboards")
     out  = os.path.join(grafana_dir, "questdb_dashboards")
     os.makedirs(out, exist_ok=True)
 
     pairs = [
-        ("fritzbox_system_dashboard.json",         build_system),
-        ("fritzbox_logs_dashboard.json",            build_logs),
-        ("fritzbox_call_log_dashboard.json",        build_calllog),
-        ("fritzbox_home_automation_dashboard.json", build_homeauto),
+        ("fritzbox_system_dashboard.json",         "01_fritzbox_system_dashboard.json",         build_system),
+        ("fritzbox_call_log_dashboard.json",       "02_fritzbox_call_log_dashboard.json",       build_calllog),
+        ("fritzbox_logs_dashboard.json",            "03_fritzbox_logs_dashboard.json",            build_logs),
+        ("fritzbox_home_automation_dashboard.json", "04_fritzbox_home_automation_dashboard.json", build_homeauto),
     ]
 
-    for fname, builder in pairs:
+    for fname, dest_fname, builder in pairs:
         with open(os.path.join(base, fname)) as f:
             src = json.load(f)
         result = builder(src)
-        dest = os.path.join(out, fname)
+        dest = os.path.join(out, dest_fname)
         with open(dest, "w") as f:
             json.dump(result, f, indent=2, ensure_ascii=False)
         print(f"Written: {dest}")

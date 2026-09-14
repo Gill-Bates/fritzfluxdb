@@ -189,7 +189,7 @@ All settings can be passed via environment variables (e.g., in `.env` or in Dock
 | `QUESTDB_VERIFY_TLS` | `true` | Verify TLS certificate |
 | `QUESTDB_ALLOW_PLAINTEXT_CREDENTIALS` | `false` | Allow sending credentials/token over plain HTTP (trusted networks only) |
 | `QUESTDB_MEASUREMENT_NAME` | `fritzbox` | Base table name (overridden by serial if available) |
-| `QUESTDB_DATA_RETENTION_DAYS` | `30` | TTL in days, applied only to a table without TTL; `0` disables it (requires QuestDB 8.2.2+) |
+| `QUESTDB_DATA_RETENTION_DAYS` | `90` | TTL in days, applied only to a table without TTL; `0` disables it (requires QuestDB 8.2.2+) |
 | `QUESTDB_USERNAME` | — | QuestDB basic authentication username |
 | `QUESTDB_PASSWORD` | — | QuestDB basic authentication password |
 | `QUESTDB_TOKEN` | — | QuestDB Bearer token authentication |
@@ -198,14 +198,14 @@ All settings can be passed via environment variables (e.g., in `.env` or in Dock
 
 ## 📊 Grafana Dashboards
 
-Pre-built dashboards are included in the `grafana/` directory:
+The project ships example dashboards in the `utils/grafana/` directory:
 
 - **System Dashboard** — CPU, memory, uptime, temperatures
 - **Call Log Dashboard** — Incoming/outgoing calls
 - **Logs Dashboard** — FritzBox system logs
 - **Home Automation Dashboard** — Smart home device metrics (InfluxDB v2 and QuestDB)
 
-Import the JSON files from `grafana/influx2_dashboards/`, `influx1_dashboards/` or `questdb_dashboards/` into your Grafana instance.
+Import the JSON files from `utils/grafana/influx2_dashboards/`, `influx1_dashboards/` or `questdb_dashboards/` into your Grafana instance.
 
 ---
 

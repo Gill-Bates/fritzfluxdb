@@ -1,0 +1,120 @@
+# QuestDB 10.0.1 - small hobby VPS behind Caddy (4 vCPU, limited RAM).
+# Modest concurrency and small O3 buffers for wide FritzBox tables.
+# Restart the container after changes.
+# QDB_* environment variables in compose.yml override matching properties.
+
+config.validation.strict=true
+telemetry.enabled=false
+
+
+# HTTP console, REST API and ILP-over-HTTP. Reverse-proxy (e.g. Caddy) to this port.
+http.enabled=true
+http.net.bind.to=0.0.0.0:9000
+
+http.user=<change-me>
+http.password=<change-me>
+
+http.server.keep.alive=true
+http.keep-alive.timeout=15
+http.keep-alive.max=10000
+
+# Total limit must be >= sum of the per-category limits:
+# 16 json + 8 ilp + 2 export = 26 <= 32
+http.net.connection.limit=32
+http.json.query.connection.limit=16
+http.ilp.connection.limit=8
+http.export.connection.limit=2
+
+http.net.connection.timeout=120000
+http.send.buffer.size=256K
+http.request.header.buffer.size=64K
+
+http.security.interrupt.on.closed.connection=true
+http.pessimistic.health.check.enabled=true
+
+
+############################################
+# Health checks / Prometheus
+############################################
+
+http.min.enabled=true
+http.min.net.bind.to=0.0.0.0:9003
+http.min.worker.count=1
+http.min.net.connection.limit=8
+http.min.net.connection.timeout=30000
+# Allow the health probe without credentials; SQL and ILP stay authenticated.
+http.health.check.authentication.required=false
+
+
+############################################
+# PostgreSQL wire protocol
+############################################
+
+pg.enabled=true
+pg.net.bind.to=0.0.0.0:8812
+pg.user=<change-me>
+pg.password=<change-me>
+pg.net.connection.limit=8
+pg.connection.pool.capacity=8
+pg.net.connection.timeout=120000
+pg.recv.buffer.size=256K
+pg.send.buffer.size=256K
+pg.readonly.user.enabled=false
+
+
+############################################
+# ILP ingestion
+############################################
+
+line.http.enabled=true
+line.tcp.enabled=false
+line.udp.enabled=false
+
+line.default.partition.by=DAY
+line.auto.create.new.tables=true
+line.auto.create.new.columns=true
+line.log.message.on.error=false
+
+
+############################################
+# Worker pools for a small 4 vCPU VPS
+############################################
+
+shared.network.worker.count=1
+shared.query.worker.count=2
+shared.write.worker.count=1
+shared.worker.haltOnError=false
+
+
+############################################
+# Memory / query / storage
+############################################
+
+# Limit tracked native allocations; JVM heap and mmap/page cache need extra RAM.
+# This is not a hard limit on total container memory.
+ram.usage.limit.percent=50
+
+query.timeout=60s
+
+cairo.commit.mode=async
+
+cairo.wal.supported=true
+cairo.wal.enabled.default=true
+
+cairo.max.uncommitted.rows=500000
+
+# O3 uses two buffers per column. Small pages suit low-volume, wide tables.
+cairo.o3.column.memory.size=256K
+
+cairo.sql.parallel.filter.enabled=true
+cairo.sql.parallel.filter.pretouch.threshold=0.05
+cairo.page.frame.shard.count=4
+
+
+############################################
+# Metrics
+############################################
+
+metrics.enabled=true
+query.tracing.enabled=false
+log.sql.query.progress.exe=false

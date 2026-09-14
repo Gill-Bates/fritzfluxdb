@@ -68,7 +68,7 @@ class InfluxDBConfig(ConfigBase):
     # QuestDB only: TTL applied to a table which has none yet, 0 disables it
     data_retention_days: ClassVar[dict] = {
         "type": int,
-        "default": 30
+        "default": 90
     }
 
     # version 1 parameters
