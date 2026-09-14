@@ -1,0 +1,52 @@
+name: Lint & Test
+
+# One definition of the lint/test gate: runs on every branch push and pull
+# request, and the release workflow calls it so a release is gated by exactly
+# the same checks.
+on:
+  push:
+    branches:
+      - "**"
+  pull_request:
+  workflow_call:
+
+permissions:
+  contents: read
+
+jobs:
+  lint-test:
+    name: Lint & Test
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          fetch-depth: 1
+
+      - name: Set up Python
+        uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v6.2.0
+        with:
+          python-version: '3.13'
+          cache: 'pip'
+
+      - name: Install dependencies
+        run: |
+          set -euo pipefail
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          # Both gate the release, so both are pinned: ruff's default rule
+          # set grows between releases and pytest changes collection
+          # behaviour across majors, which turns an unrelated upstream
+          # release into a red release pipeline. Bump these deliberately and
+          # fix any new findings in the same commit.
+          pip install ruff==0.16.6 pytest==9.1.1
+
+      - name: Run ruff
+        run: ruff check .
+
+      # Mandatory: pytest exits non-zero when it collects no tests, so a
+      # missing or emptied test suite fails the gate instead of passing it.
+      - name: Run tests
+        run: pytest -q

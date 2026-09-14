@@ -1,3 +1,4 @@
+#!/usr/bin/env python3
 #
 # fritzfluxdb/classes/fritzbox/service_definitions/logs.py
 # Copyright (C) 2026 Gill-Bates http://github.com/Gill-Bates
@@ -8,6 +9,9 @@ from datetime import datetime
 from typing import Any
 
 from fritzfluxdb.classes.fritzbox.service_definitions import lua_services
+from fritzfluxdb.classes.fritzbox.service_definitions.helpers import (
+    parse_required_json_response as prepare_json_response_data,
+)
 
 
 def parse_legacy_log_timestamp(data) -> datetime:
@@ -36,16 +40,6 @@ def parse_modern_log_message(data) -> str:
     if not isinstance(data, dict) or data.get("msg") is None:
         raise ValueError(f"invalid log entry message: {data!r}")
     return str(data["msg"])
-
-
-def prepare_json_response_data(response):
-    url = getattr(response, "url", "<unknown>")
-    if response.status_code != 200:
-        raise ValueError(f"unexpected HTTP status {response.status_code} for {url}")
-    try:
-        return response.json()
-    except ValueError as exc:
-        raise ValueError(f"invalid JSON response for {url}: {exc}") from exc
 
 
 def _build_log_service(

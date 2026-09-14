@@ -64,7 +64,7 @@ focuses on **operational reliability**, a **smaller, container-first footprint**
 | **Timezone correctness** | Log timestamps are timezone-aware | — |
 
 > The original still ships features this fork intentionally dropped (e.g. automatic
-> retention-policy creation). If you rely on those, the upstream project may suit you better.
+> InfluxDB retention-policy creation). If you rely on those, the upstream project may suit you better.
 
 ---
 
@@ -128,7 +128,7 @@ services:
 docker compose up -d
 ```
 
-That's it. Metrics will start flowing into your InfluxDB.
+That's it. Metrics will start flowing into your database.
 
 ---
 
@@ -141,7 +141,7 @@ All settings can be passed via environment variables (e.g., in `.env` or in Dock
 |----------|---------|-------------|
 | `LOG_LEVEL` | `INFO` | Log level (`DEBUG`, `INFO`, `WARNING`, `ERROR`) |
 | `TZ` | `Europe/Berlin` | Timezone for logging |
-| `DB_TYPE` | `influxdb_v2` | Target database type (`influxdb_v1`, `influxdb_v2` or `questdb`) |
+| `DB_TYPE` | `influxdb_v1` | Target database type (`influxdb_v1`, `influxdb_v2` or `questdb`) |
 
 > [!TIP]
 > **TLS auto-detection:** The hostname may be a full URL (e.g. `https://influx.example.com` behind a
@@ -154,10 +154,16 @@ All settings can be passed via environment variables (e.g., in `.env` or in Dock
 | `FRITZBOX_USERNAME` | — | FritzBox login user |
 | `FRITZBOX_PASSWORD` | — | FritzBox login password |
 | `FRITZBOX_PORT` | `49000` | FritzBox TR-064 port |
-| `FRITZBOX_TLS_ENABLED` | `false` | Enable HTTPS for FritzBox connection |
-| `FRITZBOX_VERIFY_TLS` | `false` | Verify FritzBox certificate |
-| `FRITZBOX_REQUEST_INTERVAL`| `10` | Frequency of requests in seconds |
+| `FRITZBOX_TLS_ENABLED` | auto | Automatically try HTTPS, or explicitly enable/disable it |
+| `FRITZBOX_VERIFY_TLS` | `true` | Verify FritzBox TLS certificate |
+| `FRITZBOX_CONNECT_TIMEOUT` | `10` | Connection timeout in seconds |
+| `FRITZBOX_REQUEST_INTERVAL`| `10` | Minimum request interval per service in seconds (services with a longer built-in interval keep theirs) |
 | `FRITZBOX_BOX_TAG` | `fritz.box` | Custom tag to identify the FritzBox |
+| `FRITZBOX_TIMEZONE` | `Europe/Berlin` | Fallback timezone for FritzBox log timestamps if auto-detection fails |
+
+> **Polling intervals:** TR-064 data and smart home devices are collected every 60 seconds;
+> active network hosts every 10 minutes. `FRITZBOX_REQUEST_INTERVAL` can only increase these
+> built-in intervals.
 
 ### InfluxDB Configuration (used when `DB_TYPE=influxdb_v1` or `influxdb_v2`)
 | Variable | Default | Description |
@@ -172,7 +178,7 @@ All settings can be passed via environment variables (e.g., in `.env` or in Dock
 | `INFLUXDB_USERNAME` | — | InfluxDB v1 username |
 | `INFLUXDB_PASSWORD` | — | InfluxDB v1 password |
 | `INFLUXDB_ORGANIZATION`| — | InfluxDB v2 organization |
-| `INFLUXDB_BUCKET` | `fritzflux` | InfluxDB v2 bucket |
+| `INFLUXDB_BUCKET` | — | InfluxDB v2 bucket |
 | `INFLUXDB_TOKEN` | — | InfluxDB v2 auth token |
 
 ### QuestDB Configuration (used when `DB_TYPE=questdb`)
@@ -184,6 +190,7 @@ All settings can be passed via environment variables (e.g., in `.env` or in Dock
 | `QUESTDB_VERIFY_TLS` | `true` | Verify TLS certificate |
 | `QUESTDB_ALLOW_PLAINTEXT_CREDENTIALS` | `false` | Allow sending credentials/token over plain HTTP (trusted networks only) |
 | `QUESTDB_MEASUREMENT_NAME` | `fritzbox` | Base table name (overridden by serial if available) |
+| `QUESTDB_DATA_RETENTION_DAYS` | `30` | TTL in days, applied only to a table without TTL; `0` disables it (requires QuestDB 8.2.2+) |
 | `QUESTDB_USERNAME` | — | QuestDB basic authentication username |
 | `QUESTDB_PASSWORD` | — | QuestDB basic authentication password |
 | `QUESTDB_TOKEN` | — | QuestDB Bearer token authentication |
@@ -197,16 +204,18 @@ Pre-built dashboards are included in the `grafana/` directory:
 - **System Dashboard** — CPU, memory, uptime, temperatures
 - **Call Log Dashboard** — Incoming/outgoing calls
 - **Logs Dashboard** — FritzBox system logs
-- **Home Automation Dashboard** — Smart home device metrics (InfluxDB v2)
+- **Home Automation Dashboard** — Smart home device metrics (InfluxDB v2 and QuestDB)
 
-Import the JSON files from `grafana/influx2_dashboards/` (or `influx1_dashboards/`) into your Grafana instance.
+Import the JSON files from `grafana/influx2_dashboards/`, `influx1_dashboards/` or `questdb_dashboards/` into your Grafana instance.
 
 ---
 
 ## 🛠 Local Development
 
+Settings are read from a `.env` file in the repository root (see `.env.example`):
+
 ```bash
-python run.py -c setup.conf
+python run.py
 ```
 
 ---

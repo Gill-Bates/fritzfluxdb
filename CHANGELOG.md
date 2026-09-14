@@ -1,12 +1,20 @@
+## [v1.5.0] - 2026-09-14
+
+- ``New`` QuestDB tables now get a data retention (TTL) of 30 days, configurable with `QUESTDB_DATA_RETENTION_DAYS` (`0` disables it). It is only applied to tables without an existing TTL and requires QuestDB 8.2.2+.
+- ``Fix`` QuestDB storage no longer grows by gigabytes per day: all values of one FritzBox query are now written as a single row instead of one row per value. InfluxDB stores the data exactly as before.
+- ``Fix`` Less aggressive polling: TR-064 data and smart home devices are now read every 60 seconds (previously 10), active network hosts every 10 minutes (previously 2).
+- ``Security`` Published Docker images are now blocked when Trivy finds fixable HIGH or CRITICAL vulnerabilities; registry credentials are used only after the image passes its checks.
+
+
+<details markdown="1">
+<summary>Previous versions...</summary>
+
 ## [v1.4] - 2026-09-04
 
 - ``New`` FritzBox services are now queried concurrently (up to 4 at a time) instead of strictly one after another, making polling cycles faster overall.
 - ``Fix`` A FritzBox service that keeps failing is now automatically backed off with an increasing delay instead of being retried every cycle, and repeated connection errors are logged only once every 5 minutes instead of flooding the log on every failed request.
 - ``Fix`` A retryable InfluxDB/QuestDB write failure no longer leaves a broken connection open — this previously caused the retry delay to be doubled twice and the "connection restored" log message to report an incorrect number of flushed measurements.
 - ``Security`` The Docker release workflow no longer exposes DockerHub registry credentials as job-wide environment variables; they are now scoped only to the steps that need them.
-
-<details markdown="1">
-<summary>Previous versions...</summary>
 
 ## [v1.3] - 2026-06-15
 
@@ -59,3 +67,5 @@
 
 ## [v1.0] - 2026-06-08
 ``New`` Initial commit
+
+</details>

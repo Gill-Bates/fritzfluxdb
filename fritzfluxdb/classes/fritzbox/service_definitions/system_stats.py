@@ -1,27 +1,15 @@
+#!/usr/bin/env python3
 #
 # fritzfluxdb/classes/fritzbox/service_definitions/system_stats.py
 # Copyright (C) 2026 Gill-Bates http://github.com/Gill-Bates
 #
 
 from fritzfluxdb.classes.fritzbox.service_definitions import lua_services
+from fritzfluxdb.classes.fritzbox.service_definitions.helpers import (
+    parse_required_json_response as prepare_json_response_data,
+)
 
 read_interval = 150
-
-
-def prepare_json_response_data(response):
-    """
-    handler to prepare returned json data for parsing
-    """
-
-    url = getattr(response, "url", "")
-
-    if response.status_code != 200:
-        raise ValueError(f"unexpected HTTP status {response.status_code} for {url}")
-
-    try:
-        return response.json()
-    except ValueError as exc:
-        raise ValueError(f"invalid JSON response for {url}: {exc}") from exc
 
 
 def missing_data_key(key: str):

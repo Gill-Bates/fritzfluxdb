@@ -1,19 +1,6 @@
 FROM python:3.13-slim-trixie AS base
 SHELL ["/bin/sh", "-eu", "-c"]
 
-# --- Build-time metadata (populated from the CI build args) -----------------
-ARG APP_VERSION="unknown"
-ARG GIT_SHA="unknown"
-ARG BUILD_DATE="unknown"
-
-LABEL org.opencontainers.image.title="fritzFluxDB" \
-      org.opencontainers.image.description="Tiny daemon fetching FritzBox data into InfluxDB" \
-      org.opencontainers.image.source="https://github.com/Gill-Bates/fritzfluxdb" \
-      org.opencontainers.image.version="${APP_VERSION}" \
-      org.opencontainers.image.revision="${GIT_SHA}" \
-      org.opencontainers.image.created="${BUILD_DATE}" \
-      org.opencontainers.image.licenses="MIT"
-
 # --- Runtime environment ---------------------------------------------------
 ENV PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \
@@ -61,6 +48,22 @@ ENV WATCHDOG_RESTART_DELAY=10 \
     WATCHDOG_MAX_RESTARTS=10 \
     WATCHDOG_BACKOFF_RESET_AFTER=3600 \
     WATCHDOG_SHUTDOWN_TIMEOUT=15
+
+# --- Build-time metadata (populated from the CI build args) -----------------
+# Declared last on purpose: every RUN after an ARG sees it as an environment
+# variable, so a per-build value (GIT_SHA, BUILD_DATE) declared earlier would
+# invalidate the apt and pip layers on every build.
+ARG APP_VERSION="unknown"
+ARG GIT_SHA="unknown"
+ARG BUILD_DATE="unknown"
+
+LABEL org.opencontainers.image.title="fritzFluxDB" \
+      org.opencontainers.image.description="Tiny daemon fetching FritzBox data into InfluxDB" \
+      org.opencontainers.image.source="https://github.com/Gill-Bates/fritzfluxdb" \
+      org.opencontainers.image.version="${APP_VERSION}" \
+      org.opencontainers.image.revision="${GIT_SHA}" \
+      org.opencontainers.image.created="${BUILD_DATE}" \
+      org.opencontainers.image.licenses="MIT"
 
 # tini as PID 1 -> entrypoint watchdog -> CMD.
 # CMD is the default command the watchdog supervises; override it (e.g.

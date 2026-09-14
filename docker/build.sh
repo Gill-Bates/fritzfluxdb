@@ -78,26 +78,14 @@ if [ ! -f "${VERSION_FILE}" ]; then
     exit 1
 fi
 
-# Read single line, trim CR, and validate version strictly (without silent aggressive truncation)
+# Read single line and trim CR.
 if ! IFS= read -r APP_VERSION < "${VERSION_FILE}" && [ -z "${APP_VERSION}" ]; then
     echo "ERROR: VERSION file is empty or cannot be read" >&2
     exit 1
 fi
 APP_VERSION="${APP_VERSION%$'\r'}"
 
-case "${APP_VERSION}" in
-    ""|*[[:space:]]*)
-        echo "ERROR: VERSION must contain a single non-empty version without whitespace" >&2
-        exit 1
-        ;;
-esac
-
-case "${APP_VERSION}" in
-    *[!0-9A-Za-z.+_-]*)
-        echo "ERROR: VERSION contains unsupported characters: ${APP_VERSION}" >&2
-        exit 1
-        ;;
-esac
+bash "${SCRIPT_DIR}/validate-version.sh" "${APP_VERSION}"
 
 GIT_SHA="$(git -C "${REPO_ROOT}" rev-parse HEAD 2>/dev/null || echo unknown)"
 BUILD_DATE="$(date -u +%Y-%m-%dT%H:%M:%SZ)"

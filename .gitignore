@@ -1,31 +1,37 @@
-# Python directories and files
+# Python bytecode and build artifacts
 __pycache__/
 *.py[cod]
 *$py.class
 *.so
-full_codebase*
-.env
-.omx/
-.kiro/
 
 # Virtual environment
 .venv/
 venv/
 ENV/
 env/
+
+# Secrets / local runtime config
+.env
+
+# Generated / local-only project files
 BUILD_INFO
+full_codebase*
 my-fritzfluxdb.xml
 
-# IDEs and editors
+# IDEs, editors and local tooling
 .idea/
 .vscode/
+.claude/
+.kiro/
+.omc/
+.omx/
 *.swp
 *.swo
 .DS_Store
-.claude/
 
-# Pytest and coverage
+# Test and lint caches
 .pytest_cache/
+.ruff_cache/
 .coverage
 htmlcov/
 
@@ -33,4 +39,3 @@ htmlcov/
 *.backup
 *.log
 *.tmp
-.ruff_cache/

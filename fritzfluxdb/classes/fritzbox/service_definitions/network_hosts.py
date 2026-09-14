@@ -1,3 +1,4 @@
+#!/usr/bin/env python3
 #
 # fritzfluxdb/classes/fritzbox/service_definitions/network_hosts.py
 # Copyright (C) 2026 Gill-Bates http://github.com/Gill-Bates
@@ -6,6 +7,9 @@
 import re
 
 from fritzfluxdb.classes.fritzbox.service_definitions import lua_services
+from fritzfluxdb.classes.fritzbox.service_definitions.helpers import (
+    parse_required_json_response as prepare_json_response_data,
+)
 
 # precompile active_host_txt_regex
 #  used this neat tool: https://regex101.com/r/ut4KdU/1
@@ -86,22 +90,7 @@ def count_hosts(data, key: str) -> int:
     return len(hosts) if isinstance(hosts, list) else 0
 
 
-def prepare_json_response_data(response):
-    """
-    handler to prepare returned json data for parsing
-    """
-    url = getattr(response, "url", "")
-
-    if response.status_code != 200:
-        raise ValueError(f"unexpected HTTP status {response.status_code} for {url}")
-
-    try:
-        return response.json()
-    except ValueError as exc:
-        raise ValueError(f"invalid JSON response for {url}: {exc}") from exc
-
-
-# every 2 minutes
+# every 10 minutes
 lua_services.append(
     {
         "name": "Active network hosts",
@@ -115,7 +104,7 @@ lua_services.append(
             "initial": True
         },
         "response_parser": prepare_json_response_data,
-        "interval": 120,
+        "interval": 600,
         "value_instances": {
             "active_hosts_name": {
                 "data_path": "data.active",

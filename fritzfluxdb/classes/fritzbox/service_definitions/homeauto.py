@@ -1,3 +1,4 @@
+#!/usr/bin/env python3
 #
 # fritzfluxdb/classes/fritzbox/service_definitions/homeauto.py
 # Copyright (C) 2026 Gill-Bates http://github.com/Gill-Bates
@@ -275,6 +276,7 @@ lua_services.append(
             "switchcmd": "getdevicelistinfos"
         },
         "response_parser": prepare_response_data,
+        "interval": 60,
         "value_instances": {
             # Base Data
             "ha_fw_version": {
