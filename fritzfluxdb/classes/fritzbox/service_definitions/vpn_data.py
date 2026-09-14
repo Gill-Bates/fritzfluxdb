@@ -9,6 +9,8 @@ import os
 from fritzfluxdb.classes.fritzbox.service_definitions import lua_services
 from fritzfluxdb.classes.fritzbox.service_definitions.helpers import (
     parse_fritzbox_bool as parse_bool,
+)
+from fritzfluxdb.classes.fritzbox.service_definitions.helpers import (
     parse_optional_json_response as prepare_json_response_data,
 )
 from fritzfluxdb.common import grab
