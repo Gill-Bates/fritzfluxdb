@@ -11,7 +11,12 @@ ENV PYTHONUNBUFFERED=1 \
 
 WORKDIR ${APP_HOME}
 
+# upgrade first: picks up Debian security fixes already published for the
+# base image's packages (e.g. perl-base, libsqlite3, gzip, libpcre2) that
+# python:3.13-slim-trixie has not yet rebuilt with, so the Trivy release gate
+# does not fail on CVEs Debian already fixed upstream.
 RUN apt-get update \
+    && apt-get upgrade -y \
     && apt-get install -y --no-install-recommends tini tzdata \
     && rm -rf /var/lib/apt/lists/*
 
