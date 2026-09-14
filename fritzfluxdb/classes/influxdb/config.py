@@ -1,3 +1,4 @@
+#!/usr/bin/env python3
 #
 # fritzfluxdb/classes/influxdb/config.py
 # Copyright (C) 2026 Gill-Bates http://github.com/Gill-Bates
@@ -64,9 +65,10 @@ class InfluxDBConfig(ConfigBase):
         "type": str,
         "default": "fritzbox"
     }
+    # QuestDB only: TTL applied to a table which has none yet, 0 disables it
     data_retention_days: ClassVar[dict] = {
         "type": int,
-        "default": 365
+        "default": 30
     }
 
     # version 1 parameters
@@ -152,6 +154,7 @@ class InfluxDBConfig(ConfigBase):
                 "QUESTDB_VERIFY_TLS": "INFLUXDB_VERIFY_TLS",
                 "QUESTDB_VERIFY_SSL": "INFLUXDB_VERIFY_TLS",
                 "QUESTDB_MEASUREMENT_NAME": "INFLUXDB_MEASUREMENT_NAME",
+                "QUESTDB_DATA_RETENTION_DAYS": "INFLUXDB_DATA_RETENTION_DAYS",
                 "QUESTDB_ALLOW_PLAINTEXT_CREDENTIALS": "INFLUXDB_ALLOW_PLAINTEXT_CREDENTIALS",
             }
             for q_var, i_var in questdb_mapping.items():
@@ -205,6 +208,10 @@ class InfluxDBConfig(ConfigBase):
 
             if self.tls_enabled and not self.verify_tls:
                 log.warning(f"TLS certificate verification is disabled for {self.version if self.version == 'questdb' else 'InfluxDB'} at {self.hostname}; use only on trusted networks")
+
+            if self.data_retention_days < 0:
+                log.error("Data retention days must be 0 (disabled) or greater, got %s", self.data_retention_days)
+                self.parser_error = True
 
             if not (1 <= self.port <= 65535):
                 log.error("%s port must be between 1 and 65535, got %s", "QuestDB" if self.version == "questdb" else "InfluxDB", self.port)

@@ -1,3 +1,4 @@
+#!/usr/bin/env python3
 #
 # fritzfluxdb/classes/fritzbox/service_definitions/tr069.py
 # Copyright (C) 2026 Gill-Bates http://github.com/Gill-Bates
@@ -6,9 +7,12 @@
 from fritzfluxdb.classes.fritzbox.model import FritzBoxLinkTypes
 from fritzfluxdb.classes.fritzbox.service_definitions import tr069_services
 
+read_interval = 60
+
 tr069_services.extend([
     {
         "name": "WANCommonIFC",
+        "interval": read_interval,
         "actions": [
             "GetAddonInfos",
             "GetCommonLinkProperties"
@@ -26,6 +30,7 @@ tr069_services.extend([
     },
     {
         "name": "WANIPConn",
+        "interval": read_interval,
         "actions": [
             "GetStatusInfo",
             "X_AVM_DE_GetExternalIPv6Address",
@@ -42,6 +47,7 @@ tr069_services.extend([
     },
     {
         "name": "WANCommonInterfaceConfig:1",
+        "interval": read_interval,
         "actions": ["GetCommonLinkProperties"],
         "value_instances": {
             "NewLayer1DownstreamMaxBitRate": "downstreamphysicalmax:int",
@@ -50,6 +56,7 @@ tr069_services.extend([
     },
     {
         "name": "DeviceInfo",
+        "interval": read_interval,
         "actions": ["GetInfo"],
         "value_instances": {
             "NewUpTime": "systemuptime:int",
@@ -61,6 +68,7 @@ tr069_services.extend([
     },
     {
         "name": "LANEthernetInterfaceConfig:1",
+        "interval": read_interval,
         "actions": ["GetStatistics"],
         "value_instances": {
             "NewBytesReceived": "lan_totalbytesreceived:int",
@@ -69,6 +77,7 @@ tr069_services.extend([
     },
     {
         "name": "WANDSLInterfaceConfig",
+        "interval": read_interval,
         "actions": [
             "GetInfo",
             "GetStatisticsTotal",
@@ -93,6 +102,7 @@ tr069_services.extend([
     },
     {
         "name": "UserInterface:1",
+        "interval": read_interval,
         "actions": ["GetInfo"],
         "value_instances": {
             "NewUpgradeAvailable": "upgrade_available:bool",
@@ -101,6 +111,7 @@ tr069_services.extend([
     },
     {
         "name": "WANPPPConnection:1",
+        "interval": read_interval,
         "actions": ["GetInfo"],
         "link_type": FritzBoxLinkTypes.DSL,
         "value_instances": {
@@ -114,6 +125,7 @@ tr069_services.extend([
     },
     {
         "name": "WANIPConnection:1",
+        "interval": read_interval,
         "actions": ["GetInfo"],
         "link_type": FritzBoxLinkTypes.Cable,
         "value_instances": {
@@ -125,6 +137,7 @@ tr069_services.extend([
     },
     {
         "name": "LANHostConfigManagement",
+        "interval": read_interval,
         "actions": ["GetInfo"],
         "value_instances": {
             "NewDNSServers": "internal_dns_servers:str"
@@ -132,6 +145,7 @@ tr069_services.extend([
     },
     {
         "name": "WLANConfiguration:1",
+        "interval": read_interval,
         "actions": [
             "GetInfo",
             "GetTotalAssociations"
@@ -146,6 +160,7 @@ tr069_services.extend([
     },
     {
         "name": "WLANConfiguration:2",
+        "interval": read_interval,
         "actions": [
             "GetInfo",
             "GetTotalAssociations"
@@ -160,6 +175,7 @@ tr069_services.extend([
     },
     {
         "name": "WLANConfiguration:3",
+        "interval": read_interval,
         "actions": [
             "GetInfo",
             "GetTotalAssociations"
@@ -174,6 +190,7 @@ tr069_services.extend([
     },
     {
         "name": "WLANConfiguration:4",
+        "interval": read_interval,
         "description": "WiFi 6E / WiFi 7 (4th WLAN radio)",
         "actions": [
             "GetInfo",
@@ -189,6 +206,7 @@ tr069_services.extend([
     },
     {
         "name": "X_AVM-DE_RemoteAccess",
+        "interval": read_interval,
         "actions": ["GetDDNSInfo"],
         "value_instances": {
             "NewEnabled": "ddns_enabled:bool",
@@ -201,6 +219,7 @@ tr069_services.extend([
     },
     {
         "name": "X_AVM-DE_MyFritz",
+        "interval": read_interval,
         "actions": ["GetInfo"],
         "value_instances": {
             "NewHostName": "myfritz_host_name:str"

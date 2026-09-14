@@ -1,3 +1,4 @@
+#!/usr/bin/env python3
 #
 # fritzfluxdb/classes/fritzbox/handler.py
 # Copyright (C) 2026 Gill-Bates http://github.com/Gill-Bates
@@ -23,6 +24,7 @@ from fritzfluxdb.classes.common import FritzMeasurement
 from fritzfluxdb.classes.fritzbox import service_definitions
 from fritzfluxdb.classes.fritzbox.config import FritzBoxConfig
 from fritzfluxdb.classes.fritzbox.model import FritzBoxModel
+from fritzfluxdb.classes.fritzbox.service_definitions.helpers import parse_fritzbox_bool
 from fritzfluxdb.classes.fritzbox.service_handler import (
     FritzBoxLuaService,
     FritzBoxTR069Service,
@@ -289,6 +291,9 @@ class FritzBoxHandler(FritzBoxHandlerBase):
         successful_request = False
         transient_failure = False
 
+        # all values of one service query share a timestamp so the writer can bundle them into one line
+        query_timestamp = datetime.now(UTC)
+
         # Request every action
         for action in service.actions:
 
@@ -371,7 +376,8 @@ class FritzBoxHandler(FritzBoxHandlerBase):
                             continue
 
                     self.current_result_list.append(
-                        FritzMeasurement(metric_name, value, box_tag=self.config.box_tag, data_type=data_type)
+                        FritzMeasurement(metric_name, value, box_tag=self.config.box_tag, data_type=data_type,
+                                         timestamp=query_timestamp)
                     )
 
             # special case: update firmware version when requested
@@ -598,25 +604,7 @@ class FritzBoxLuaHandler(FritzBoxHandlerBase):
         md5.update(password.encode("utf-16le"))
         return f"{challenge}-{md5.hexdigest()}"
 
-    @staticmethod
-    def _parse_bool(value) -> bool:
-        if isinstance(value, bool):
-            return value
-
-        if isinstance(value, int):
-            return value != 0
-
-        if isinstance(value, str):
-            normalized = value.strip().lower()
-            if normalized in {"true", "t", "1", "yes", "on"}:
-                return True
-            if normalized in {"false", "f", "0", "no", "off"}:
-                return False
-
-        raise ValueError(f"invalid boolean value: {value!r}")
-
-
-    def extract_value(self, service, data, metric_name, metric_params):
+    def extract_value(self, service, data, metric_name, metric_params, query_timestamp=None):
 
         # read config
         data_path = metric_params.get("data_path")
@@ -630,7 +618,7 @@ class FritzBoxLuaHandler(FritzBoxHandlerBase):
 
         # define defaults
         metric_value = None
-        timestamp = None
+        timestamp = query_timestamp
         metric_tags = {}
 
         if callable(exclude_filter_function):
@@ -689,7 +677,7 @@ class FritzBoxLuaHandler(FritzBoxHandlerBase):
         if data_type in [int, float, bool, str]:
             try:
                 if data_type is bool:
-                    metric_value = self._parse_bool(metric_value)
+                    metric_value = parse_fritzbox_bool(metric_value)
                 else:
                     metric_value = data_type(metric_value)
             except Exception as e:  # noqa: BLE001 - Fritz!Box may return any garbage for a typed metric
@@ -721,13 +709,13 @@ class FritzBoxLuaHandler(FritzBoxHandlerBase):
 
         if data_type is list and data_next is not None:
             for next_metric_value in metric_value:
-                self.extract_value(service, next_metric_value, metric_name, data_next)
+                self.extract_value(service, next_metric_value, metric_name, data_next, query_timestamp)
 
             return
 
         if data_type is dict and data_next is not None:
             for next_metric_value in metric_value.values():
-                self.extract_value(service, next_metric_value, metric_name, data_next)
+                self.extract_value(service, next_metric_value, metric_name, data_next, query_timestamp)
 
             return
 
@@ -773,8 +761,11 @@ class FritzBoxLuaHandler(FritzBoxHandlerBase):
         # set time stamp of this query
         service.set_last_query_now()
 
+        # all values of one service query share a timestamp so the writer can bundle them into one line
+        query_timestamp = datetime.now(UTC)
+
         # Request every param
         for metric_name, metric_params in service.value_instances.items():
-            self.extract_value(service, result, metric_name, metric_params)
+            self.extract_value(service, result, metric_name, metric_params, query_timestamp)
 
         return True

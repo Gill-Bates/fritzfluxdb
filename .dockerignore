@@ -1,9 +1,10 @@
 # =============================================================================
-# fritzFlux - Docker build context excludes
+# fritzFluxDB - Docker build context excludes
 # =============================================================================
-# The image only needs: requirements.txt, run.py, fritzFlux/ and
-# docker/entrypoint.sh (see docker/Dockerfile). Everything else is excluded to
-# keep the build context small and to avoid leaking secrets (.env) into it.
+# The image only needs: requirements.txt, run.py, BUILD_INFO*, fritzfluxdb/
+# and docker/entrypoint.sh (see docker/Dockerfile). Everything else is
+# excluded to keep the build context small and to avoid leaking secrets
+# (.env) into it.
 # =============================================================================
 
 # --- Secrets / local runtime config (must NEVER enter the build context) ---
@@ -18,6 +19,7 @@
 .github/
 .claude/
 .kiro/
+.omc/
 .omx/
 
 # --- Python caches / virtualenvs / build artifacts -------------------------
@@ -48,15 +50,12 @@ tools/
 # (docker/entrypoint.sh IS copied by the Dockerfile, so it is NOT ignored)
 .dockerignore
 docker/Dockerfile
-docker/docker-compose.yml
-docker/docker-compose.yml.example
+docker/docker-compose*.yml
 docker/build.sh
-grafana/
 
 # --- Project assets unrelated to the runtime -------------------------------
 grafana/
 *.xml
-README.md
 *.md
 LICENSE
 setup.conf

@@ -1,3 +1,4 @@
+#!/usr/bin/env python3
 #
 # fritzfluxdb/classes/fritzbox/service_definitions/vpn_data.py
 # Copyright (C) 2026 Gill-Bates http://github.com/Gill-Bates
@@ -6,6 +7,10 @@
 import os
 
 from fritzfluxdb.classes.fritzbox.service_definitions import lua_services
+from fritzfluxdb.classes.fritzbox.service_definitions.helpers import (
+    parse_fritzbox_bool as parse_bool,
+    parse_optional_json_response as prepare_json_response_data,
+)
 from fritzfluxdb.common import grab
 
 INCLUDE_VPN_ADDRESS_METRICS = (
@@ -16,37 +21,8 @@ INCLUDE_VPN_ADDRESS_METRICS = (
 )
 
 
-def prepare_json_response_data(response):
-    url = getattr(response, "url", "<unknown>")
-
-    if response.status_code == 404:
-        return {}
-
-    if response.status_code != 200:
-        raise ValueError(f"unexpected HTTP status {response.status_code} for {url}")
-
-    try:
-        return response.json()
-    except ValueError as exc:
-        raise ValueError(f"invalid JSON response for {url}: {exc}") from exc
-
-
 def missing_dict_at(path: str):
     return lambda data: not isinstance(grab(data, path), dict)
-
-
-def parse_bool(value) -> bool:
-    if isinstance(value, bool):
-        return value
-    if isinstance(value, int):
-        return value != 0
-    if isinstance(value, str):
-        normalized = value.strip().lower()
-        if normalized in {"true", "t", "1", "yes", "on"}:
-            return True
-        if normalized in {"false", "f", "0", "no", "off"}:
-            return False
-    raise ValueError(f"invalid boolean value: {value!r}")
 
 
 def count_connected(data, path: str) -> int:
@@ -234,4 +210,3 @@ for service in _VPN_SERVICES:
     if key not in _registered:
         lua_services.append(service)
         _registered.add(key)
-

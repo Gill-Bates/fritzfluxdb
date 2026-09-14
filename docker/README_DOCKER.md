@@ -81,18 +81,23 @@ docker compose up -d
 | `FRITZBOX_HOSTNAME` | `192.168.178.1` | FritzBox IP or hostname |
 | `FRITZBOX_USERNAME` | — | FritzBox login user |
 | `FRITZBOX_PASSWORD` | — | FritzBox login password |
-| `DB_TYPE` | `influxdb_v2` | Database backend: `influxdb_v1`, `influxdb_v2` or `questdb` |
+| `DB_TYPE` | `influxdb_v1` | Database backend: `influxdb_v1`, `influxdb_v2` or `questdb` |
 | `INFLUXDB_HOSTNAME` | — | InfluxDB host (or full URL, e.g. `https://influx.example.com`) |
 | `INFLUXDB_PORT` | `8086` | InfluxDB port (`443` enables TLS automatically) |
 | `INFLUXDB_ORGANIZATION` | — | InfluxDB v2 organization |
-| `INFLUXDB_BUCKET` | `fritzflux` | InfluxDB bucket / database |
+| `INFLUXDB_BUCKET` | — | InfluxDB v2 bucket |
+| `INFLUXDB_DATABASE` | — | InfluxDB v1 database |
 | `INFLUXDB_TOKEN` | — | InfluxDB v2 auth token |
 | `INFLUXDB_TLS_ENABLED` | `false` | Enable TLS for InfluxDB connection |
 | `INFLUXDB_ALLOW_PLAINTEXT_CREDENTIALS` | `false` | Allow credentials/token over plain HTTP (trusted networks only) |
 | `QUESTDB_HOSTNAME` | — | QuestDB host (or full URL); `QUESTDB_*` mirrors the `INFLUXDB_*` options |
 | `QUESTDB_PORT` | `9000` | QuestDB ILP/HTTP port |
+| `QUESTDB_DATA_RETENTION_DAYS` | `30` | TTL in days for a QuestDB table without TTL (`0` disables, requires QuestDB 8.2.2+) |
 | `LOG_LEVEL` | `INFO` | Log level (`DEBUG`, `INFO`, `WARNING`, `ERROR`) |
 | `TZ` | `Europe/Berlin` | Container timezone |
+
+TR-064 data and smart home devices are collected every 60 seconds; active network hosts every
+10 minutes. `FRITZBOX_REQUEST_INTERVAL` can only increase these built-in intervals.
 
 ---
 
@@ -103,7 +108,7 @@ Pre-built dashboards are available in the [GitHub repository](https://github.com
 - **System Dashboard** — CPU, memory, uptime, temperatures, traffic
 - **Call Log Dashboard** — Incoming/outgoing calls
 - **Logs Dashboard** — FritzBox system logs
-- **Home Automation Dashboard** — Smart home device metrics (InfluxDB v2 only)
+- **Home Automation Dashboard** — Smart home device metrics (InfluxDB v2 and QuestDB)
 
 ---
 

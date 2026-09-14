@@ -15,7 +15,7 @@ on:
           - 'true'
           - 'false'
       platforms:
-        description: 'Platforms to build'
+        description: 'Platforms to build (release tags and the GitHub Release need all of them)'
         required: false
         default: 'linux/amd64,linux/arm64'
         type: choice
@@ -24,7 +24,7 @@ on:
           - 'linux/arm64'
           - 'linux/amd64,linux/arm64'
       enforce_trivy_gate:
-        description: 'Fail build on HIGH/CRITICAL Trivy findings'
+        description: 'Fail an unpublished (push=false) run on HIGH/CRITICAL Trivy findings; publishing runs always enforce it'
         required: false
         default: 'false'
         type: choice
@@ -36,9 +36,12 @@ env:
   REGISTRY: docker.io
   IMAGE_NAME: giiibates/fritzfluxdb
 
+# One lock for everything that writes release tags. queue: max keeps every
+# waiting run instead of letting a newer one replace an already pending one.
 concurrency:
   group: docker-release
   cancel-in-progress: false
+  queue: max
 
 permissions:
   contents: read
@@ -48,12 +51,13 @@ jobs:
     name: Validate build metadata
     runs-on: ubuntu-24.04
     timeout-minutes: 10
-    permissions:
-      contents: read
     outputs:
       build_date: ${{ steps.meta.outputs.build_date }}
       version: ${{ steps.meta.outputs.version }}
-      matrix: ${{ steps.matrix.outputs.matrix }}
+      matrix: ${{ steps.plan.outputs.matrix }}
+      publish: ${{ steps.plan.outputs.publish }}
+      release: ${{ steps.plan.outputs.release }}
+      enforce_trivy_gate: ${{ steps.plan.outputs.enforce_trivy_gate }}
 
     steps:
       - name: Checkout repository
@@ -61,7 +65,59 @@ jobs:
         with:
           fetch-depth: 1
 
+      # Every publish/release decision is made here, once; later jobs only
+      # read these outputs.
+      #   publish            - push the per-architecture image tags
+      #   release            - publish + full platform matrix: move the shared
+      #                        ${VERSION}/latest tags and the GitHub Release.
+      #                        A single-arch run must not replace a multi-arch
+      #                        index with a single-arch one.
+      #   enforce_trivy_gate - always on when publishing
+      #   matrix             - the requested platforms (a single-platform
+      #                        dispatch filters it; job-level "if:" cannot see
+      #                        the matrix context)
+      - name: Resolve build plan
+        id: plan
+        env:
+          PUSH_INPUT: ${{ inputs.push }}
+          PLATFORMS_INPUT: ${{ inputs.platforms }}
+          GATE_INPUT: ${{ inputs.enforce_trivy_gate }}
+        run: |
+          set -euo pipefail
+          all_platforms='[
+            {"arch": "amd64", "runner": "ubuntu-24.04", "platform": "linux/amd64"},
+            {"arch": "arm64", "runner": "ubuntu-24.04-arm", "platform": "linux/arm64"}
+          ]'
+
+          include="$(jq -c --arg requested "${PLATFORMS_INPUT:-}" '
+            ($requested | split(",") | map(gsub("^\\s+|\\s+$"; "")) | map(select(. != ""))) as $r
+            | if ($r | length) == 0 then . else map(select(.platform as $p | $r | index($p))) end
+          ' <<<"$all_platforms")"
+
+          selected="$(jq 'length' <<<"$include")"
+          total="$(jq 'length' <<<"$all_platforms")"
+          if (( selected == 0 )); then
+            echo "ERROR: no known platform selected: '${PLATFORMS_INPUT}'"
+            exit 1
+          fi
+
+          # Tag pushes carry no inputs: they publish and release.
+          publish=true
+          [[ "${PUSH_INPUT:-}" == "false" ]] && publish=false
+          release=false
+          [[ "$publish" == true ]] && (( selected == total )) && release=true
+          enforce_trivy_gate="$publish"
+          [[ "${GATE_INPUT:-}" == "true" ]] && enforce_trivy_gate=true
+
+          {
+            echo "matrix=$(jq -c '{include: .}' <<<"$include")"
+            echo "publish=${publish}"
+            echo "release=${release}"
+            echo "enforce_trivy_gate=${enforce_trivy_gate}"
+          } | tee -a "$GITHUB_OUTPUT"
+
       - name: Validate registry secrets
+        if: steps.plan.outputs.publish == 'true'
         env:
           REGISTRY_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
           REGISTRY_PASSWORD: ${{ secrets.DOCKERHUB_TOKEN }}
@@ -72,6 +128,8 @@ jobs:
 
       - name: Validate and set build metadata
         id: meta
+        env:
+          RELEASE: ${{ steps.plan.outputs.release }}
         run: |
           set -euo pipefail
 
@@ -82,10 +140,7 @@ jobs:
 
           VERSION="$(tr -d '[:space:]' < VERSION)"
 
-          if ! echo "$VERSION" | grep -qE '^[0-9]+\.[0-9]+(\.[0-9]+)?(-[a-zA-Z0-9.]+)?$'; then
-            echo "ERROR: Invalid version format: '$VERSION' (expected: X.Y, X.Y.Z, X.Y-suffix, or X.Y.Z-suffix)"
-            exit 1
-          fi
+          bash docker/validate-version.sh "$VERSION"
 
           # A tag push must always match the VERSION file - otherwise a release
           # would publish a version tag that reads differently inside the image
@@ -98,86 +153,48 @@ jobs:
             fi
           fi
 
+          # The release names the tag v${VERSION}; if that tag already exists
+          # it must point at the commit being built, or the GitHub Release
+          # would describe different code than the image. Checked before
+          # anything is published. A missing tag is created by the release
+          # job at this commit.
+          if [[ "$RELEASE" == "true" ]]; then
+            RELEASE_TAG="v${VERSION}"
+            BUILD_COMMIT="$(git rev-parse HEAD)"
+            TAG_COMMIT="$(git ls-remote --tags origin | awk -v tag="refs/tags/${RELEASE_TAG}" '
+              $2 == tag "^{}" { peeled = $1 }
+              $2 == tag       { direct = $1 }
+              END { print (peeled != "" ? peeled : direct) }')"
+            if [[ -n "$TAG_COMMIT" && "$TAG_COMMIT" != "$BUILD_COMMIT" ]]; then
+              echo "ERROR: tag ${RELEASE_TAG} points at ${TAG_COMMIT}, but this run builds ${BUILD_COMMIT}"
+              echo "       Bump VERSION or dispatch the run on ${RELEASE_TAG}."
+              exit 1
+            fi
+          fi
+
           BUILD_DATE="$(date -u +'%Y-%m-%dT%H:%M:%SZ')"
 
           echo "build_date=${BUILD_DATE}" >> "$GITHUB_OUTPUT"
           echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
           echo "Version: ${VERSION}, Build date: ${BUILD_DATE}"
 
-      # Resolved once here because the build job's own "if:" cannot see the
-      # matrix context - filtering the matrix itself is what a manual
-      # single-platform dispatch requires.
-      - name: Compute build matrix
-        id: matrix
-        env:
-          PLATFORMS_INPUT: ${{ github.event.inputs.platforms }}
-        run: |
-          set -euo pipefail
-          python3 - <<'PY' >> "$GITHUB_OUTPUT"
-          import json
-          import os
-
-          all_platforms = [
-              {"arch": "amd64", "runner": "ubuntu-24.04", "platform": "linux/amd64"},
-              {"arch": "arm64", "runner": "ubuntu-24.04-arm", "platform": "linux/arm64"},
-          ]
-          selected = os.environ.get("PLATFORMS_INPUT") or ""
-          requested = {p.strip() for p in selected.split(",") if p.strip()}
-
-          include = all_platforms if not requested else [
-              p for p in all_platforms if p["platform"] in requested
-          ]
-          print(f"matrix={json.dumps({'include': include})}")
-          PY
-
   lint-test:
     name: Lint & Test
     needs: meta
-    runs-on: ubuntu-24.04
-    timeout-minutes: 20
-    permissions:
-      contents: read
-
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
-        with:
-          fetch-depth: 1
-
-      - name: Set up Python
-        uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v6.2.0
-        with:
-          python-version: '3.13'
-          cache: 'pip'
-
-      - name: Install dependencies
-        run: |
-          set -euo pipefail
-          python -m pip install --upgrade pip
-          pip install -r requirements.txt
-          pip install ruff pytest
-
-      - name: Run ruff
-        run: ruff check .
-
-      - name: Run tests
-        run: |
-          if [ -d tests ]; then pytest -q; else echo "No tests directory, skipping pytest"; fi
+    uses: ./.github/workflows/ci.yml
 
   build:
     name: Build ${{ matrix.arch }} image
-    # Tests gate the release: a failing test previously ran in parallel with
-    # the build and blocked nothing.
+    # No image is built from code that failed lint or tests.
     needs: [meta, lint-test]
     env:
       VERSION: ${{ needs.meta.outputs.version }}
+      PUBLISH: ${{ needs.meta.outputs.publish }}
     strategy:
       fail-fast: false
       matrix: ${{ fromJson(needs.meta.outputs.matrix) }}
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 30
-    permissions:
-      contents: read
 
     steps:
       - name: Checkout repository
@@ -196,48 +213,54 @@ jobs:
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@4d04d5d9486b7bd6fa91e7baf45bbb4f8b9deedd # v4.0.0
-        with:
-          driver-opts: |
-            network=host
 
-      - name: Log in to registry
-        if: github.event.inputs.push != 'false'
-        uses: docker/login-action@4907a6ddec9925e35a0a9e82d7399ccc52663121 # v4.1.0
-        with:
-          registry: ${{ env.REGISTRY }}
-          username: ${{ secrets.DOCKERHUB_USERNAME }}
-          password: ${{ secrets.DOCKERHUB_TOKEN }}
-
+      # build-push-action provides the runtime token the type=gha cache needs;
+      # a plain `docker buildx build` in a run step silently gets no cache.
+      # context: . (not the default git context) so the generated BUILD_INFO
+      # is part of the build.
       - name: Build image
-        run: |
-          set -euo pipefail
-          docker buildx build \
-            --pull \
-            --platform "${{ matrix.platform }}" \
-            --load \
-            --cache-from type=gha,scope=fritzfluxdb-${{ matrix.arch }} \
-            --cache-to type=gha,mode=max,scope=fritzfluxdb-${{ matrix.arch }} \
-            --build-arg "APP_VERSION=${VERSION}" \
-            --build-arg "GIT_SHA=${{ github.sha }}" \
-            --build-arg "BUILD_DATE=${{ needs.meta.outputs.build_date }}" \
-            -t "${IMAGE_NAME}:${VERSION}-${{ matrix.arch }}" \
-            -f docker/Dockerfile \
-            .
-          echo "Built: ${IMAGE_NAME}:${VERSION}-${{ matrix.arch }}"
+        uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
+        with:
+          context: .
+          file: docker/Dockerfile
+          platforms: ${{ matrix.platform }}
+          pull: true
+          load: true
+          push: false
+          cache-from: type=gha,scope=fritzfluxdb-${{ matrix.arch }}
+          cache-to: type=gha,mode=max,scope=fritzfluxdb-${{ matrix.arch }}
+          build-args: |
+            APP_VERSION=${{ env.VERSION }}
+            GIT_SHA=${{ github.sha }}
+            BUILD_DATE=${{ needs.meta.outputs.build_date }}
+          tags: ${{ env.IMAGE_NAME }}:${{ env.VERSION }}-${{ matrix.arch }}
 
       - name: Smoke test image
+        env:
+          EXPECTED_SHA: ${{ github.sha }}
+          EXPECTED_BUILD_DATE: ${{ needs.meta.outputs.build_date }}
         run: |
           set -euo pipefail
           IMAGE="${IMAGE_NAME}:${VERSION}-${{ matrix.arch }}"
 
-          echo "=== CLI help test ==="
+          echo "=== CLI help via the normal start path (tini -> watchdog) ==="
           docker run --rm "${IMAGE}" python run.py --help
           echo "✓ CLI responds"
 
-          echo "=== Version, build metadata & privilege drop ==="
+          echo "=== Runtime user via the normal start path ==="
+          uid="$(docker run --rm "${IMAGE}" python -c 'import os; print(f"UID={os.getuid()}")' \
+            | sed -n 's/^UID=//p')"
+          if [[ "$uid" != "10001" ]]; then
+            echo "✗ daemon command runs as uid '${uid}', expected 10001 (fritzfluxdb)"
+            exit 1
+          fi
+          echo "✓ daemon command runs as uid ${uid}"
+
+          echo "=== Build metadata ==="
           docker run --rm --entrypoint python \
             -e EXPECTED_VERSION="${VERSION}" \
-            -e EXPECTED_SHA="${{ github.sha }}" \
+            -e EXPECTED_SHA \
+            -e EXPECTED_BUILD_DATE \
             "${IMAGE}" -c '
           import os
           import sys
@@ -245,31 +268,33 @@ jobs:
           import fritzfluxdb.main  # noqa: F401 - import must succeed
           import fritzfluxdb.version as v
 
-          failures = []
-          expected_version = os.environ["EXPECTED_VERSION"]
-          expected_sha = os.environ["EXPECTED_SHA"]
-
-          if v.VERSION != expected_version:
-              failures.append(f"VERSION is {v.VERSION!r}, expected {expected_version!r}")
-          if v.GIT_SHA != expected_sha:
-              failures.append(f"GIT_SHA is {v.GIT_SHA!r}, expected {expected_sha!r}")
-
-          uid = os.getuid()
-          if uid != 10001:
-              failures.append(f"process runs as uid {uid}, expected 10001 (fritzfluxdb)")
-
+          expected = {
+              "VERSION": os.environ["EXPECTED_VERSION"],
+              "GIT_SHA": os.environ["EXPECTED_SHA"],
+              "BUILD_DATE": os.environ["EXPECTED_BUILD_DATE"],
+          }
+          failures = [
+              f"{name} is {getattr(v, name)!r}, expected {value!r}"
+              for name, value in expected.items()
+              if getattr(v, name) != value
+          ]
           if failures:
               for failure in failures:
                   print(f"✗ {failure}", file=sys.stderr)
               sys.exit(1)
-          print(f"✓ Version {v.VERSION} ({v.GIT_SHA[:12]}), running as uid {uid}")
+          print(f"✓ Version {v.VERSION} ({v.GIT_SHA[:12]}), built {v.BUILD_DATE}")
           '
 
           echo "=== Filesystem validation ==="
           docker run --rm --entrypoint /bin/sh "${IMAGE}" -c '
             test -x /usr/local/bin/entrypoint.sh && echo "/usr/local/bin/entrypoint.sh: OK" || exit 1
             test -x /usr/bin/tini && echo "/usr/bin/tini: OK" || exit 1
-            ! command -v pip >/dev/null && echo "pip absent from runtime image: OK" || exit 1
+            for tool in pip pip3; do
+              if command -v "$tool" >/dev/null; then echo "$tool present in runtime image"; exit 1; fi
+            done
+            python -c "import importlib.util, sys; sys.exit(importlib.util.find_spec(\"pip\") is not None)" \
+              || { echo "pip module importable in runtime image"; exit 1; }
+            echo "pip absent from runtime image (executables and module): OK"
           '
           echo "✓ All smoke tests passed for ${IMAGE}"
 
@@ -279,68 +304,101 @@ jobs:
           image-ref: '${{ env.IMAGE_NAME }}:${{ env.VERSION }}-${{ matrix.arch }}'
           format: 'json'
           output: 'trivy-${{ matrix.arch }}.json'
-          exit-code: ${{ (github.event.inputs.enforce_trivy_gate == 'true' || github.event_name == 'push') && '1' || '0' }}
+          exit-code: ${{ needs.meta.outputs.enforce_trivy_gate == 'true' && '1' || '0' }}
           ignore-unfixed: true
           vuln-type: 'os,library'
           severity: 'CRITICAL,HIGH'
           timeout: '10m'
           trivyignores: '.trivyignore'
 
-      - name: Generate Trivy summary
+      # The single evaluation of the report: writes the step summary and a
+      # one-line verdict that the release notes reuse verbatim. An unreadable
+      # report fails the step instead of passing as "0 findings".
+      - name: Evaluate Trivy report
         if: always()
+        env:
+          ARCH: ${{ matrix.arch }}
         run: |
-          FILE="trivy-${{ matrix.arch }}.json"
-          if [[ ! -f "$FILE" ]]; then
-            echo "### Trivy (${{ matrix.arch }}): Scan failed — no results file" >> "$GITHUB_STEP_SUMMARY"
-            exit 0
+          set -euo pipefail
+          report="trivy-${ARCH}.json"
+          status_file="trivy-${ARCH}.status"
+
+          if ! counts="$(jq -er '
+                if (.SchemaVersion | type) != "number" then error("not a Trivy report") else . end
+                | [.Results[]?.Vulnerabilities[]?.Severity] as $s
+                | "\($s | map(select(. == "CRITICAL")) | length) \($s | map(select(. == "HIGH")) | length)"
+              ' "$report" 2>/dev/null)"; then
+            verdict="❌ Scan evaluation failed: report missing or unreadable"
+            echo "$verdict" | tee "$status_file"
+            printf '### Trivy (%s)\n%s\n' "$ARCH" "$verdict" >> "$GITHUB_STEP_SUMMARY"
+            exit 1
           fi
 
-          CRITICAL=$(jq '[.Results[]?.Vulnerabilities[]? | select(.Severity == "CRITICAL")] | length' "$FILE" 2>/dev/null || echo 0)
-          HIGH=$(jq '[.Results[]?.Vulnerabilities[]? | select(.Severity == "HIGH")] | length' "$FILE" 2>/dev/null || echo 0)
-
-          echo "### Trivy Scan Results (${{ matrix.arch }})" >> "$GITHUB_STEP_SUMMARY"
-          if (( CRITICAL > 0 || HIGH > 0 )); then
-            echo '```' >> "$GITHUB_STEP_SUMMARY"
-            jq -r '.Results[]?.Vulnerabilities[]? | select(.Severity == "CRITICAL" or .Severity == "HIGH") | "\(.Severity)\t\(.VulnerabilityID)\t\(.PkgName)\t\(.InstalledVersion)"' \
-              "$FILE" 2>/dev/null | head -20 >> "$GITHUB_STEP_SUMMARY" || true
-            echo '```' >> "$GITHUB_STEP_SUMMARY"
+          read -r critical high <<<"$counts"
+          if (( critical + high > 0 )); then
+            verdict="⚠️ ${critical} CRITICAL, ${high} HIGH with a fix available"
           else
-            echo "✅ No HIGH/CRITICAL vulnerabilities found" >> "$GITHUB_STEP_SUMMARY"
+            verdict="✅ No HIGH/CRITICAL findings with a fix available"
           fi
+          echo "$verdict" > "$status_file"
+
+          {
+            echo "### Trivy (${ARCH})"
+            echo "$verdict"
+            echo
+            echo "_Scope: HIGH/CRITICAL with a fix available; unfixed CVEs and \`.trivyignore\` entries are excluded._"
+            if (( critical + high > 0 )); then
+              echo '```'
+              jq -r '.Results[]?.Vulnerabilities[]? | "\(.Severity)\t\(.VulnerabilityID)\t\(.PkgName)\t\(.InstalledVersion)"' "$report" | head -20
+              echo '```'
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Upload Trivy findings
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: trivy-findings-${{ matrix.arch }}
-          path: trivy-${{ matrix.arch }}.json
+          path: |
+            trivy-${{ matrix.arch }}.json
+            trivy-${{ matrix.arch }}.status
           retention-days: 14
           if-no-files-found: warn
 
+      # Credentials enter the job only after the image passed smoke test and scan.
+      - name: Log in to registry
+        if: env.PUBLISH == 'true'
+        uses: docker/login-action@4907a6ddec9925e35a0a9e82d7399ccc52663121 # v4.1.0
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
       - name: Push image
-        if: github.event.inputs.push != 'false'
+        if: env.PUBLISH == 'true'
         run: docker push "${IMAGE_NAME}:${VERSION}-${{ matrix.arch }}"
 
-      # The manifest job assembles the index from these digests, never from
-      # the arch tags directly - a digest names one immutable image, a tag can
-      # be a stale local reference if a later step in this job fails.
+      # The arch tag is mutable in the registry - any later push can move it.
+      # The digest resolved right after this push names exactly the image
+      # that passed the checks above, so the manifest job builds the index
+      # from digests, never from tags.
       - name: Record image digest
-        if: github.event.inputs.push != 'false'
+        if: env.PUBLISH == 'true'
         run: |
           set -euo pipefail
           mkdir -p digests
           digest="$(docker buildx imagetools inspect \
             "${IMAGE_NAME}:${VERSION}-${{ matrix.arch }}" \
             --format '{{.Manifest.Digest}}')"
-          case "$digest" in
-            sha256:*) ;;
-            *) echo "ERROR: unexpected digest: '${digest}'"; exit 1 ;;
-          esac
+          if [[ ! "$digest" =~ ^sha256:[0-9a-f]{64}$ ]]; then
+            echo "ERROR: unexpected digest: '${digest}'"
+            exit 1
+          fi
           printf '%s' "$digest" > "digests/${{ matrix.arch }}"
           echo "${{ matrix.arch }} -> ${digest}"
 
       - name: Upload image digest
-        if: github.event.inputs.push != 'false'
+        if: env.PUBLISH == 'true'
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: image-digest-${{ matrix.arch }}
@@ -351,16 +409,15 @@ jobs:
   create-manifest:
     name: Create multi-arch manifest
     needs: [meta, build]
-    # needs.build.result is only 'success' if every matrix leg that ran
-    # succeeded - a failed or cancelled architecture stops the manifest
-    # instead of letting the tag publish under a single architecture.
-    if: needs.build.result == 'success' && github.event.inputs.push != 'false'
+    # needs.build.result is only 'success' if every matrix leg succeeded, and
+    # release is only true for the full platform matrix - a failed leg or a
+    # single-arch dispatch never moves the shared tags.
+    if: needs.build.result == 'success' && needs.meta.outputs.release == 'true'
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     env:
       VERSION: ${{ needs.meta.outputs.version }}
-    permissions:
-      contents: read
+      MATRIX: ${{ needs.meta.outputs.matrix }}
 
     steps:
       - name: Set up Docker Buildx
@@ -380,66 +437,79 @@ jobs:
           path: digests/
           merge-multiple: true
 
-      - name: Create and push manifest
+      # The index is assembled with --dry-run and checked before any public
+      # tag changes. The expected platforms come from the build matrix, not
+      # from the downloaded files, so a missing architecture cannot shrink
+      # the expectation along with the index.
+      - name: Assemble and verify index
         run: |
           set -euo pipefail
-          shopt -s nullglob
-          digest_files=(digests/*)
-          if (( ${#digest_files[@]} == 0 )); then
-            echo "ERROR: no image digests were published by the build job"
-            exit 1
-          fi
+          jq -r '.include[].platform' <<<"$MATRIX" | sort > expected-platforms.txt
 
-          declare -a sources=()
-          declare -a platforms=()
-          echo "Assembling index from:"
-          for file in "${digest_files[@]}"; do
-            arch="$(basename "$file")"
-            digest="$(tr -d '[:space:]' < "$file")"
+          sources=()
+          for arch in $(jq -r '.include[].arch' <<<"$MATRIX"); do
+            file="digests/${arch}"
+            if [[ ! -s "$file" ]]; then
+              echo "ERROR: no image digest for linux/${arch}"
+              exit 1
+            fi
+            digest="$(< "$file")"
             sources+=("${IMAGE_NAME}@${digest}")
-            platforms+=("linux/${arch}")
             echo "  linux/${arch}  ${digest}"
           done
+          printf '%s\n' "${sources[@]}" > sources.txt
+
+          docker buildx imagetools create --dry-run "${sources[@]}" > index.json
+
+          jq -r '[.manifests[]? | select(.platform.architecture != "unknown")
+                  | "\(.platform.os)/\(.platform.architecture)"] | sort[]' index.json \
+            > actual-platforms.txt
+          if ! diff -u expected-platforms.txt actual-platforms.txt; then
+            echo "ERROR: assembled index does not describe the build matrix"
+            exit 1
+          fi
+          echo "OK: index describes $(paste -sd' ' actual-platforms.txt)"
+
+      - name: Publish release tags
+        run: |
+          set -euo pipefail
+          mapfile -t sources < sources.txt
 
           docker buildx imagetools create --tag "${IMAGE_NAME}:${VERSION}" "${sources[@]}"
-          echo "Pushed manifest: ${IMAGE_NAME}:${VERSION}"
+
+          # The published index must be the one verified above.
+          docker buildx imagetools inspect --raw "${IMAGE_NAME}:${VERSION}" | jq -S . > published.json
+          if ! diff -u <(jq -S . index.json) published.json; then
+            echo "ERROR: ${IMAGE_NAME}:${VERSION} differs from the verified index"
+            exit 1
+          fi
+          digest="$(docker buildx imagetools inspect "${IMAGE_NAME}:${VERSION}" --format '{{.Manifest.Digest}}')"
+          echo "Pushed ${IMAGE_NAME}:${VERSION} -> ${digest}"
 
           # Latest is greatest: every stable (non-prerelease) run moves
           # 'latest' unconditionally, no comparison against already published
-          # versions.
+          # versions. It is copied from the verified digest, not rebuilt.
           if [[ "$VERSION" == *-* ]]; then
             echo "Skipping 'latest': ${VERSION} is a prerelease"
           else
-            docker buildx imagetools create --tag "${IMAGE_NAME}:latest" "${sources[@]}"
-            echo "Pushed manifest: ${IMAGE_NAME}:latest"
+            docker buildx imagetools create --tag "${IMAGE_NAME}:latest" "${IMAGE_NAME}@${digest}"
+            latest="$(docker buildx imagetools inspect "${IMAGE_NAME}:latest" --format '{{.Manifest.Digest}}')"
+            if [[ "$latest" != "$digest" ]]; then
+              echo "ERROR: ${IMAGE_NAME}:latest resolves to ${latest}, expected ${digest}"
+              exit 1
+            fi
+            echo "Pushed ${IMAGE_NAME}:latest -> ${digest}"
           fi
-
-          printf '%s\n' "${platforms[@]}" | sort > expected-platforms.txt
-
-      # imagetools create reports success as soon as the registry accepts the
-      # index, not that the index describes what was intended. Catches a
-      # mismatched or duplicated architecture before it reaches users.
-      - name: Verify manifest
-        run: |
-          set -euo pipefail
-          docker buildx imagetools inspect --raw "${IMAGE_NAME}:${VERSION}" \
-            | jq -r '[.manifests[]? | select(.platform.architecture != "unknown") | "\(.platform.os)/\(.platform.architecture)"] | sort[]' \
-            > actual-platforms.txt
-
-          if ! diff -u expected-platforms.txt actual-platforms.txt; then
-            echo "ERROR: ${IMAGE_NAME}:${VERSION} does not describe the expected platforms"
-            exit 1
-          fi
-          echo "OK: ${IMAGE_NAME}:${VERSION} describes $(paste -sd' ' actual-platforms.txt)"
 
   create-release:
     name: Create GitHub Release
-    needs: [meta, build, create-manifest]
-    if: needs.create-manifest.result == 'success' && github.event.inputs.push != 'false'
+    needs: [meta, create-manifest]
+    if: needs.create-manifest.result == 'success'
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     env:
       VERSION: ${{ needs.meta.outputs.version }}
+      ARCHES: ${{ join(fromJson(needs.meta.outputs.matrix).include.*.arch, ' ') }}
     permissions:
       contents: write
       actions: read
@@ -449,13 +519,6 @@ jobs:
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
           fetch-depth: 1
-
-      - name: Download image digests
-        uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7.0.0
-        with:
-          pattern: image-digest-*
-          path: digests/
-          merge-multiple: true
 
       - name: Download Trivy findings
         uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7.0.0
@@ -468,184 +531,5 @@ jobs:
         uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
         with:
           script: |
-            const fs = require('node:fs');
-            const path = require('node:path');
-            const version = process.env.VERSION;
-            const imageName = 'giiibates/fritzfluxdb';
-            const isPrerelease = version.includes('-');
-            // The architectures that actually published a digest in this run,
-            // not a hardcoded list - a single-architecture dispatch no longer
-            // claims "multi-arch" in the release notes.
-            const arches = fs.readdirSync('digests').sort();
-            const platformNote = arches.length > 1
-              ? 'multi-arch: ' + arches.map(a => 'linux/' + a).join(', ')
-              : 'linux/' + arches[0];
-            const runUrl = `https://github.com/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`;
-            const tagName = 'v' + version;
-            const assetBase = `https://github.com/${context.repo.owner}/${context.repo.repo}/releases/download/${tagName}`;
-
-            function parseTrivyStatus(arch) {
-              const file = path.join('trivy-reports', `trivy-findings-${arch}`, `trivy-${arch}.json`);
-              try {
-                const data = JSON.parse(fs.readFileSync(file, 'utf8'));
-                let critical = 0, high = 0;
-                for (const result of (data.Results || [])) {
-                  for (const vuln of (result.Vulnerabilities || [])) {
-                    if (vuln.Severity === 'CRITICAL') critical++;
-                    else if (vuln.Severity === 'HIGH') high++;
-                  }
-                }
-                return (critical === 0 && high === 0)
-                  ? '✅ No HIGH/CRITICAL vulnerabilities found'
-                  : `⚠️ ${critical} CRITICAL, ${high} HIGH vulnerabilities`;
-              } catch {
-                return '❓ Report unavailable';
-              }
-            }
-
-            function normalizeVersion(value) {
-              const stripped = value.startsWith('v') ? value.slice(1) : value;
-              const main = stripped.split('-', 1)[0];
-              const parts = main.split('.');
-              while (parts.length < 3) parts.push('0');
-              return parts.join('.');
-            }
-
-            function extractVersionSection(markdown, targetVersion) {
-              const headingPattern = /^## \[([^\]]+)\] - .+$/gm;
-              let startIndex = -1;
-              let endIndex = markdown.length;
-              const normalizedTarget = normalizeVersion(targetVersion);
-              let match;
-
-              while ((match = headingPattern.exec(markdown)) !== null) {
-                if (
-                  startIndex === -1 &&
-                  (match[1] === targetVersion || normalizeVersion(match[1]) === normalizedTarget)
-                ) {
-                  startIndex = match.index;
-                  continue;
-                }
-                if (startIndex !== -1) {
-                  endIndex = match.index;
-                  break;
-                }
-              }
-              if (startIndex === -1) return null;
-
-              const section = markdown.slice(startIndex, endIndex).trim();
-              const withoutHeading = section.replace(/^## \[[^\]]+\] - .+\n+/, '').trim();
-              const detailsIndex = withoutHeading.indexOf('<details>');
-              return (detailsIndex >= 0 ? withoutHeading.slice(0, detailsIndex) : withoutHeading).trim();
-            }
-
-            let changelogSection = null;
-            try {
-              const changelogText = fs.readFileSync('CHANGELOG.md', 'utf8');
-              changelogSection = extractVersionSection(changelogText, version);
-              if (!changelogSection) {
-                console.log('No matching changelog section found for version ' + version);
-              }
-            } catch (err) {
-              console.log('Could not read CHANGELOG.md: ' + err.message);
-            }
-
-            const tags = [
-              '- `' + imageName + ':' + version + '` (' + platformNote + ')'
-            ];
-            if (isPrerelease) {
-              tags.push('- `latest` unchanged: prereleases do not move it.');
-            } else {
-              tags.push('- `' + imageName + ':latest` (' + platformNote + ')');
-            }
-
-            const scanRows = arches.map(arch =>
-              '| ' + arch + ' | ' + parseTrivyStatus(arch) +
-              ' | [trivy-' + arch + '.json](' + assetBase + '/trivy-' + arch + '.json) |'
-            );
-
-            const body = [
-              '## fritzFluxDB ' + version,
-              '',
-              '**Docker Image:** `docker pull ' + imageName + ':' + version + '`',
-              '',
-              '### Available Tags',
-              ...tags,
-              '',
-              '### Security Scan Results',
-              '',
-              '| Architecture | Status | Findings |',
-              '|---|---|---|',
-              ...scanRows,
-              '| run | workflow details | [Actions Run](' + runUrl + ') |',
-              '',
-              '> Scanned with [Trivy](https://trivy.dev/) for HIGH and CRITICAL severity vulnerabilities (unfixed CVEs ignored).',
-              '',
-              '### Changelog',
-              changelogSection || '_No matching CHANGELOG entry found for this version._'
-            ].join('\n');
-
-            const releaseFields = {
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              tag_name: tagName,
-              name: 'fritzFluxDB v' + version,
-              body: body,
-              draft: false,
-              prerelease: isPrerelease
-            };
-
-            let release = null;
-            try {
-              ({ data: release } = await github.rest.repos.getReleaseByTag({
-                owner: context.repo.owner,
-                repo: context.repo.repo,
-                tag: tagName
-              }));
-            } catch (e) {
-              if (e.status !== 404) throw e;
-            }
-
-            if (release) {
-              ({ data: release } = await github.rest.repos.updateRelease({
-                ...releaseFields,
-                release_id: release.id
-              }));
-              console.log('Updated release ' + tagName);
-            } else {
-              ({ data: release } = await github.rest.repos.createRelease(releaseFields));
-              console.log('Created release ' + tagName);
-            }
-
-            // Run artifacts expire after retention-days; attaching the scan
-            // reports as release assets keeps the links in the body valid for
-            // as long as the release itself exists.
-            for (const arch of arches) {
-              const assetName = `trivy-${arch}.json`;
-              const file = path.join('trivy-reports', `trivy-findings-${arch}`, assetName);
-              try {
-                const data = fs.readFileSync(file);
-                const existing = (release.assets || []).find(a => a.name === assetName);
-                if (existing) {
-                  await github.rest.repos.deleteReleaseAsset({
-                    owner: context.repo.owner,
-                    repo: context.repo.repo,
-                    asset_id: existing.id
-                  });
-                }
-                await github.rest.repos.uploadReleaseAsset({
-                  owner: context.repo.owner,
-                  repo: context.repo.repo,
-                  release_id: release.id,
-                  name: assetName,
-                  data: data,
-                  headers: {
-                    'content-type': 'application/json',
-                    'content-length': data.length
-                  }
-                });
-                console.log('Attached ' + assetName);
-              } catch (err) {
-                console.log('Could not attach ' + assetName + ': ' + err.message);
-              }
-            }
+            const createRelease = require('./.github/scripts/create-release.js');
+            await createRelease({ github, context });

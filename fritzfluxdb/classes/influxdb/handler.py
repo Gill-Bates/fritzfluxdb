@@ -1,3 +1,4 @@
+#!/usr/bin/env python3
 #
 # fritzfluxdb/classes/influxdb/handler.py
 # Copyright (C) 2026 Gill-Bates http://github.com/Gill-Bates
@@ -318,6 +319,58 @@ class InfluxHandler:
 
         log.debug("Ensured QuestDB schema for %s with %s expected columns", table_name, len(columns))
 
+        await self._ensure_questdb_ttl(auth=auth)
+
+    async def _ensure_questdb_ttl(self, *, auth=None) -> None:
+        """
+        Applies data_retention_days as table TTL, but only to a table without a TTL: a TTL
+        configured by the database admin always wins. Transport errors propagate so the
+        schema setup is retried on the next reconnect.
+        """
+        retention_days = self.config.data_retention_days
+        if not retention_days:
+            return
+
+        table_name = self.config.measurement_name
+        table_literal = "'" + str(table_name).replace("'", "''") + "'"
+
+        try:
+            data = await self._questdb_exec(
+                f"SELECT ttlValue, ttlUnit FROM tables() WHERE table_name = {table_literal};",
+                auth=auth,
+            )
+        except (httpx.HTTPStatusError, RuntimeError, ValueError) as exc:
+            log.warning(
+                "Unable to read TTL of QuestDB table '%s' (requires QuestDB 8.2.2+); "
+                "data retention of %s day(s) is not applied: %s",
+                table_name, retention_days, _format_exc(exc),
+            )
+            return
+
+        rows = data.get("dataset") or []
+        if not rows:
+            log.warning("QuestDB table '%s' not found; data retention is not applied", table_name)
+            return
+
+        ttl_value, ttl_unit = rows[0][0], rows[0][1]
+        if ttl_value:
+            log.info("QuestDB table '%s' keeps its existing TTL of %s %s", table_name, ttl_value, ttl_unit)
+            return
+
+        try:
+            await self._questdb_exec(
+                f"ALTER TABLE {_questdb_identifier(table_name)} SET TTL {int(retention_days)} DAYS;",
+                auth=auth,
+            )
+        except (httpx.HTTPStatusError, RuntimeError, ValueError) as exc:
+            log.warning(
+                "Unable to set TTL of %s day(s) on QuestDB table '%s': %s",
+                retention_days, table_name, _format_exc(exc),
+            )
+            return
+
+        log.info("Set TTL of QuestDB table '%s' to %s day(s)", table_name, retention_days)
+
     @staticmethod
     def _is_retention_drop(status_code: int, message: str) -> bool:
         """True if an InfluxDB write response reports points dropped because they
@@ -365,18 +418,51 @@ class InfluxHandler:
             )
         )
 
-    def convert_measurement(self, measurement: FritzMeasurement) -> str:
-        if not isinstance(measurement, FritzMeasurement):
-            log.error("Measurement needs to be a 'FritzMeasurement' but got '%s'", type(measurement))
-            return ""
-        if self.version == "questdb" and "." in measurement.name:
-            # QuestDB rejects dots in column names (e.g. "802.11" in wlan metric names)
-            original_name = measurement.name
-            measurement.name = original_name.replace(".", "_")
-            result = measurement.to_line_protocol(self.config.measurement_name)
-            measurement.name = original_name
-            return result
-        return measurement.to_line_protocol(self.config.measurement_name)
+    def bundle_measurements(self, measurements: list) -> tuple[list[str], list[FritzMeasurement]]:
+        """
+        Converts measurements into line protocol, merging all fields which share the same
+        series (measurement + tags) and timestamp into a single line.
+
+        QuestDB stores every line as its own row with a slot for each table column, so one
+        line per field multiplies the storage footprint. InfluxDB treats a merged line exactly
+        like the separate lines it replaces. A field name that already exists on a pending line
+        starts a new line instead of overwriting the earlier value.
+
+        Returns the line protocol lines and the measurements that could be converted.
+        """
+        lines: list[tuple[str, int, dict[str, str]]] = []
+        open_lines: dict[tuple[str, int], list[int]] = {}
+        valid_measurements: list[FritzMeasurement] = []
+
+        for measurement in measurements:
+            if not isinstance(measurement, FritzMeasurement):
+                log.error("Measurement needs to be a 'FritzMeasurement' but got '%s'", type(measurement))
+                continue
+
+            field_name = measurement.name
+            if self.version == "questdb":
+                # QuestDB rejects dots in column names (e.g. "802.11" in wlan metric names)
+                field_name = field_name.replace(".", "_")
+
+            field = measurement.line_protocol_field(field_name)
+            if not field:
+                continue
+
+            key = (measurement.line_protocol_series(self.config.measurement_name),
+                   measurement.line_protocol_timestamp())
+            line_indexes = open_lines.setdefault(key, [])
+            for index in line_indexes:
+                if field_name not in lines[index][2]:
+                    lines[index][2][field_name] = field
+                    break
+            else:
+                line_indexes.append(len(lines))
+                lines.append((key[0], key[1], {field_name: field}))
+
+            valid_measurements.append(measurement)
+
+        data_lines = [f"{series} {','.join(fields.values())} {timestamp}" for series, timestamp, fields in lines]
+        return data_lines, valid_measurements
 
     def permitted_to_write_data(self):
         if self.last_write_retry is None:
@@ -419,16 +505,8 @@ class InfluxHandler:
 
         local_buffer = self.buffer[:self.current_measurements_per_write]
 
-        data_lines: list[str] = []
-        valid_measurements: list[FritzMeasurement] = []
-        invalid_count = 0
-        for measurement in local_buffer:
-            line = self.convert_measurement(measurement)
-            if line:
-                data_lines.append(line)
-                valid_measurements.append(measurement)
-            else:
-                invalid_count += 1
+        data_lines, valid_measurements = self.bundle_measurements(local_buffer)
+        invalid_count = len(local_buffer) - len(valid_measurements)
         if invalid_count:
             log.error("Dropping %s invalid %s measurement(s) from current batch", invalid_count, self.name)
             # Remove invalid entries from the buffer immediately so they are not

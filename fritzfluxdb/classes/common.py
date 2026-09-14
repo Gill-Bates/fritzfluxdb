@@ -1,3 +1,4 @@
+#!/usr/bin/env python3
 #
 # fritzfluxdb/classes/common.py
 # Copyright (C) 2026 Gill-Bates http://github.com/Gill-Bates
@@ -55,7 +56,7 @@ class FritzMeasurement:
 
         # Optional override for the InfluxDB measurement name. When set, this
         # data point is written to its own measurement instead of the shared
-        # metrics measurement (used e.g. for log entries and config settings).
+        # metrics measurement.
         self.measurement = str(measurement) if measurement is not None else None
 
         if data_type is not None:
@@ -180,9 +181,10 @@ class FritzMeasurement:
         normalized = value.replace("\r", "\\r").replace("\n", "\\n")
         return '"' + normalized.replace("\\", "\\\\").replace('"', '\\"') + '"'
 
-    def to_line_protocol(self, measurement_name: str) -> str:
-        if self.value is None:
-            return ""
+    def line_protocol_series(self, measurement_name: str) -> str:
+        """
+            returns the escaped measurement name plus tag set, which identifies the series of this point
+        """
 
         # format tags
         tags_str = ""
@@ -199,8 +201,17 @@ class FritzMeasurement:
         effective_measurement = self.measurement if self.measurement is not None else measurement_name
         escaped_meas = self._escape_line_token(effective_measurement, escape_equals=False)
 
-        # format fields
-        fk = self._escape_line_token(self.name)
+        return f"{escaped_meas}{tags_str}"
+
+    def line_protocol_field(self, field_name: str | None = None) -> str:
+        """
+            returns the escaped 'key=value' field of this point, or an empty string if the value can't be written
+        """
+
+        if self.value is None:
+            return ""
+
+        fk = self._escape_line_token(self.name if field_name is None else field_name)
         if isinstance(self.value, bool):
             fv = "true" if self.value else "false"
         elif isinstance(self.value, int):
@@ -215,18 +226,25 @@ class FritzMeasurement:
             fv = self._escape_field_string(self.value)
         else:
             fv = f"{self.value}"
-        fields_str = f"{fk}={fv}"
 
-        # format timestamp
-        ts = int(self.timestamp.timestamp())
+        return f"{fk}={fv}"
+
+    def line_protocol_timestamp(self) -> int:
+
         if self.timestamp_precision == WritePrecision.MS:
-            ts = int(self.timestamp.timestamp() * 1000)
-        elif self.timestamp_precision == WritePrecision.US:
-            ts = int(self.timestamp.timestamp() * 1000000)
-        elif self.timestamp_precision == WritePrecision.S:
-            ts = int(self.timestamp.timestamp())
+            return int(self.timestamp.timestamp() * 1000)
+        if self.timestamp_precision == WritePrecision.US:
+            return int(self.timestamp.timestamp() * 1000000)
 
-        return f"{escaped_meas}{tags_str} {fields_str} {ts}"
+        return int(self.timestamp.timestamp())
+
+    def to_line_protocol(self, measurement_name: str) -> str:
+
+        field = self.line_protocol_field()
+        if not field:
+            return ""
+
+        return f"{self.line_protocol_series(measurement_name)} {field} {self.line_protocol_timestamp()}"
 
     def __hash__(self) -> int:
         return hash((self.name, self.value, self.box_tag, self.timestamp))
