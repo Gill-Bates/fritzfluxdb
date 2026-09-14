@@ -310,6 +310,12 @@ jobs:
           severity: 'CRITICAL,HIGH'
           timeout: '10m'
           trivyignores: '.trivyignore'
+          # Unpinned on purpose: the action's own default Trivy binary lags
+          # behind (was v0.70.0 while v0.74.0 was already out), and an old
+          # scanner is a worse gate than a moving one. If this needs pinning
+          # later for reproducibility, do it deliberately and expect new
+          # findings the same way the ruff/pytest pins above are handled.
+          version: 'latest'
 
       # The single evaluation of the report: writes the step summary and a
       # one-line verdict that the release notes reuse verbatim. An unreadable
