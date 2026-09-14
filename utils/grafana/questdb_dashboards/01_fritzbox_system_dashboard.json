@@ -369,7 +369,7 @@
           },
           "format": 0,
           "queryType": "sql",
-          "rawSql": "SELECT timestamp AS time, log_entry AS line, log_type\nFROM ${measurement}\nWHERE $__timeFilter(timestamp)\n  AND box ~ '^${boxtag:regex}$'\n  AND log_entry IS NOT NULL AND log_type != 'FritzInfluxDB'\nORDER BY timestamp DESC LIMIT 5",
+          "rawSql": "SELECT timestamp AS time, log_entry AS line, log_type\nFROM ${measurement}\nWHERE $__timeFilter(timestamp)\n  AND box ~ '^${boxtag:regex}$'\n  AND log_entry IS NOT NULL\nORDER BY timestamp DESC LIMIT 5",
           "refId": "A",
           "selectedFormat": 0
         }
@@ -463,7 +463,7 @@
           },
           "format": 1,
           "queryType": "sql",
-          "rawSql": "SELECT timestamp AS time, upgrade_available AS \"Upgrade Available\"\nFROM ${measurement}\nWHERE $__timeFilter(timestamp)\n  AND box ~ '^${boxtag:regex}$'\n  AND upgrade_available IS NOT NULL\nORDER BY timestamp DESC\nLIMIT 1",
+          "rawSql": "SELECT timestamp AS time, upgrade_available AS \"Upgrade Available\"\nFROM ${measurement}\nWHERE $__timeFilter(timestamp)\n  AND box ~ '^${boxtag:regex}$'\n  AND update_state IS NOT NULL\nORDER BY timestamp DESC\nLIMIT 1",
           "refId": "A",
           "selectedFormat": 1
         }
@@ -3083,7 +3083,7 @@
               },
               "format": 1,
               "queryType": "sql",
-              "rawSql": "SELECT last_not_null(ddns_domain) AS \"Domain\",\n  last_not_null(CASE WHEN ddns_enabled IS NULL THEN NULL WHEN ddns_enabled THEN 'True' ELSE 'False' END) AS \"Enabled\",\n  last_not_null(ddns_mode) AS \"Mode\", last_not_null(ddns_provider_name) AS \"Provider\",\n  last_not_null(ddns_status_ipv4) AS \"Status IPv4\", last_not_null(ddns_status_ipv6) AS \"Status IPv6\"\nFROM ${measurement}\nWHERE timestamp >= dateadd('d', -1, now())\n  AND box ~ '^${boxtag:regex}$'\n  AND (ddns_domain IS NOT NULL OR ddns_enabled IS NOT NULL OR ddns_mode IS NOT NULL\n       OR ddns_provider_name IS NOT NULL OR ddns_status_ipv4 IS NOT NULL OR ddns_status_ipv6 IS NOT NULL)",
+              "rawSql": "SELECT last_not_null(ddns_domain) AS \"Domain\",\n  last_not_null(CASE WHEN ddns_provider_name IS NULL THEN NULL WHEN ddns_enabled THEN 'True' ELSE 'False' END) AS \"Enabled\",\n  last_not_null(ddns_mode) AS \"Mode\", last_not_null(ddns_provider_name) AS \"Provider\",\n  last_not_null(ddns_status_ipv4) AS \"Status IPv4\", last_not_null(ddns_status_ipv6) AS \"Status IPv6\"\nFROM ${measurement}\nWHERE timestamp >= dateadd('d', -1, now())\n  AND box ~ '^${boxtag:regex}$'\n  AND (ddns_domain IS NOT NULL OR ddns_mode IS NOT NULL\n       OR ddns_provider_name IS NOT NULL OR ddns_status_ipv4 IS NOT NULL OR ddns_status_ipv6 IS NOT NULL)",
               "refId": "A",
               "selectedFormat": 1
             }
@@ -3197,7 +3197,7 @@
               },
               "format": 1,
               "queryType": "sql",
-              "rawSql": "SELECT name AS \"Name\", vpn_type AS \"Type\",\n  last_not_null(CASE WHEN vpn_user_active IS NULL THEN NULL WHEN vpn_user_active THEN 'True' ELSE 'False' END) AS \"Active\", last_not_null(CASE WHEN vpn_user_connected IS NULL THEN NULL WHEN vpn_user_connected THEN 'True' ELSE 'False' END) AS \"Connected\",\n  last_not_null(vpn_user_virtual_address) AS \"Virtual Address\", last_not_null(vpn_user_remote_address) AS \"Remote Address\"\nFROM ${measurement}\nWHERE timestamp >= dateadd('d', -1, now())\n  AND box ~ '^${boxtag:regex}$'\n  AND name IS NOT NULL\n  AND (vpn_user_active IS NOT NULL OR vpn_user_connected IS NOT NULL OR vpn_user_virtual_address IS NOT NULL OR vpn_user_remote_address IS NOT NULL)\nGROUP BY name, vpn_type\nORDER BY name",
+              "rawSql": "SELECT name AS \"Name\", vpn_type AS \"Type\",\n  last_not_null(CASE WHEN vpn_user_active THEN 'True' ELSE 'False' END) AS \"Active\", last_not_null(CASE WHEN vpn_user_connected THEN 'True' ELSE 'False' END) AS \"Connected\",\n  last_not_null(vpn_user_virtual_address) AS \"Virtual Address\", last_not_null(vpn_user_remote_address) AS \"Remote Address\"\nFROM ${measurement}\nWHERE timestamp >= dateadd('d', -1, now())\n  AND box ~ '^${boxtag:regex}$'\n  AND name IS NOT NULL\n  AND vpn_type IS NOT NULL\nGROUP BY name, vpn_type\nORDER BY name",
               "refId": "A",
               "selectedFormat": 1
             }

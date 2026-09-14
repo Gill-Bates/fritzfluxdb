@@ -92,7 +92,7 @@ docker compose up -d
 | `INFLUXDB_ALLOW_PLAINTEXT_CREDENTIALS` | `false` | Allow credentials/token over plain HTTP (trusted networks only) |
 | `QUESTDB_HOSTNAME` | — | QuestDB host (or full URL); `QUESTDB_*` mirrors the `INFLUXDB_*` options |
 | `QUESTDB_PORT` | `9000` | QuestDB ILP/HTTP port |
-| `QUESTDB_DATA_RETENTION_DAYS` | `30` | TTL in days for a QuestDB table without TTL (`0` disables, requires QuestDB 8.2.2+) |
+| `QUESTDB_DATA_RETENTION_DAYS` | `90` | TTL in days for a QuestDB table without TTL (`0` disables, requires QuestDB 8.2.2+) |
 | `LOG_LEVEL` | `INFO` | Log level (`DEBUG`, `INFO`, `WARNING`, `ERROR`) |
 | `TZ` | `Europe/Berlin` | Container timezone |
 
@@ -103,7 +103,7 @@ TR-064 data and smart home devices are collected every 60 seconds; active networ
 
 ## Grafana Dashboards
 
-Pre-built dashboards are available in the [GitHub repository](https://github.com/Gill-Bates/fritzfluxdb/tree/main/grafana):
+The project includes example dashboards, available in the [GitHub repository](https://github.com/Gill-Bates/fritzfluxdb/tree/main/utils/grafana):
 
 - **System Dashboard** — CPU, memory, uptime, temperatures, traffic
 - **Call Log Dashboard** — Incoming/outgoing calls

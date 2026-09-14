@@ -1,13 +1,20 @@
+## [v1.5.1] - 2026-09-14
+
+- ``New`` The default QuestDB data retention is now 90 days (previously 30). Tables that already received a TTL keep it; set `QUESTDB_DATA_RETENTION_DAYS` or change the TTL in QuestDB to adjust an existing table.
+- ``New`` Added `utils/questdb/server.conf.example`, a sample QuestDB server configuration tuned for small, self-hosted deployments.
+- ``Fix`` Grafana dashboards moved from `grafana/` to `utils/grafana/`; the QuestDB dashboards are now numbered (`01_`–`04_`) so Grafana imports them in the correct order.
+- ``Fix`` QuestDB dashboards no longer show "False" for boolean fields (Upgrade Available, DDNS Enabled, VPN Active/Connected) that were never reported by the FritzBox — QuestDB booleans are never `NULL`, so presence is now detected via a companion column instead.
+
+<details markdown="1">
+<summary>Previous versions...</summary>
+
+
 ## [v1.5.0] - 2026-09-14
 
 - ``New`` QuestDB tables now get a data retention (TTL) of 30 days, configurable with `QUESTDB_DATA_RETENTION_DAYS` (`0` disables it). It is only applied to tables without an existing TTL and requires QuestDB 8.2.2+.
 - ``Fix`` QuestDB storage no longer grows by gigabytes per day: all values of one FritzBox query are now written as a single row instead of one row per value. InfluxDB stores the data exactly as before.
 - ``Fix`` Less aggressive polling: TR-064 data and smart home devices are now read every 60 seconds (previously 10), active network hosts every 10 minutes (previously 2).
 - ``Security`` Published Docker images are now blocked when Trivy finds fixable HIGH or CRITICAL vulnerabilities; registry credentials are used only after the image passes its checks.
-
-
-<details markdown="1">
-<summary>Previous versions...</summary>
 
 ## [v1.4] - 2026-09-04
 
