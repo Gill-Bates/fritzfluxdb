@@ -116,6 +116,7 @@ The project includes example dashboards, available in the [GitHub repository](ht
 
 - [GitHub Repository](https://github.com/Gill-Bates/fritzfluxdb)
 - [Changelog](https://github.com/Gill-Bates/fritzfluxdb/blob/main/CHANGELOG.md)
+- [License: MIT](https://github.com/Gill-Bates/fritzfluxdb/blob/main/LICENSE)
 
 ---
 

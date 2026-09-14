@@ -24,7 +24,7 @@ from fritzfluxdb.version import DESCRIPTION, URL, VERSION, VERSION_DATE
 default_config = str(Path(__file__).with_name('fritzFlux.ini'))
 
 async def main_async() -> int:
-    if sys.version_info < (3, 13):
+    if sys.version_info < (3, 13):  # noqa: UP036 -- guards against running on an older interpreter despite the declared target-version
         print("Error: Python version 3.13 or higher required!", file=sys.stderr)
         return 1
 

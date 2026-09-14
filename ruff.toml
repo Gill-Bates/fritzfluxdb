@@ -1,7 +1,10 @@
 # Ruff configuration.
 #
 # Everything stays on ruff's defaults for the pinned version (see the lint job
-# in .github/workflows/ci.yml). Exactly one rule is turned off:
+# in .github/workflows/ci.yml, which runs plain `ruff check .` with no
+# --select/--extend-select). Ruff's default rule set is large (well beyond the
+# old E4/E7/E9/F pycodestyle+Pyflakes subset) and includes flake8-executable,
+# so EXE001 is active out of the box. Exactly one rule is turned off:
 #
 #   EXE001 - "Shebang is present but file is not executable"
 #
@@ -11,8 +14,14 @@
 # the rule would be worse than switching the rule off, so it is disabled here
 # rather than worked around per file.
 #
-# Note this fires only for a non-root user, so a local `ruff check` as root
-# passes while CI does not.
+# EXE001 checks the file's mode bits (0o111), not the running user's
+# privileges, so root vs. non-root makes no difference. Ruff also documents
+# that the check "is only available on Unix-like systems, and is not enforced
+# on Windows or WSL" - development happens under WSL2, which is why it never
+# fires locally, while CI (ubuntu-24.04, a real Linux checkout) enforces it.
+
+required-version = "==0.16.6"
+target-version = "py313"
 
 [lint]
 ignore = ["EXE001"]
