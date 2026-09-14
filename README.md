@@ -194,6 +194,11 @@ All settings can be passed via environment variables (e.g., in `.env` or in Dock
 | `QUESTDB_PASSWORD` | — | QuestDB basic authentication password |
 | `QUESTDB_TOKEN` | — | QuestDB Bearer token authentication |
 
+> **Changing the retention of an existing table:** `QUESTDB_DATA_RETENTION_DAYS` is only applied to a table that has no TTL yet, so a TTL set by an earlier version or by your DB admin is never overwritten. To change it, do it in QuestDB directly:
+> ```sql
+> ALTER TABLE "fritzbox_<serial>" SET TTL 90 DAYS;
+> ```
+
 ---
 
 ## 📊 Grafana Dashboards
