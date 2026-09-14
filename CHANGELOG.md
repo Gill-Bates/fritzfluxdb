@@ -1,13 +1,15 @@
+## [v1.5.2] - 2026-xx-xx
+
+
+<details markdown="1">
+<summary>Previous versions...</summary>
+
 ## [v1.5.1] - 2026-09-14
 
 - ``New`` The default QuestDB data retention is now 90 days (previously 30). It only applies to tables that do not have a TTL yet, so tables created by an earlier version keep their 30 days. `QUESTDB_DATA_RETENTION_DAYS` does not change an existing TTL either — adjust it in QuestDB instead, e.g. `ALTER TABLE "fritzbox_<serial>" SET TTL 90 DAYS;`.
 - ``New`` Added `utils/questdb/server.conf.example`, a sample QuestDB server configuration tuned for small, self-hosted deployments.
 - ``Fix`` Grafana dashboards moved from `grafana/` to `utils/grafana/`; the QuestDB dashboards are now numbered (`01_`–`04_`) so Grafana imports them in the correct order.
 - ``Fix`` QuestDB dashboards no longer show "False" for boolean fields (Upgrade Available, DDNS Enabled, VPN Active/Connected) that were never reported by the FritzBox — QuestDB booleans are never `NULL`, so presence is now detected via a companion column instead.
-
-<details markdown="1">
-<summary>Previous versions...</summary>
-
 
 ## [v1.5.0] - 2026-09-14
 
