@@ -21,7 +21,6 @@
   <a href="https://github.com/Gill-Bates/fritzfluxdb/blob/main/LICENSE">
     <img src="https://img.shields.io/badge/license-MIT-green" alt="License: MIT">
   </a>
-  <img src="https://img.shields.io/badge/python-3.13%2B-yellow" alt="Python 3.13+">
 </p>
 
 > [!NOTE]
