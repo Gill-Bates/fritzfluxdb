@@ -106,7 +106,10 @@ jobs:
       # Runs against the same build that gets deployed. img.shields.io is excluded
       # because the README and landing-page badges are rendered on demand by a third
       # party that throttles: a badge answering 503 says nothing about the docs and
-      # would only produce reruns.
+      # would only produce reruns. The site's own base URL is excluded because every
+      # page carries it as its canonical link: checking it over the network tests the
+      # currently deployed site, not this build, and fails before the first deploy.
+      # Internal link integrity is covered by the strict mkdocs build above.
       - name: Check links
         uses: lycheeverse/lychee-action@e7477775783ea5526144ba13e8db5eec57747ce8 # v2.9.0
         with:
@@ -116,6 +119,7 @@ jobs:
             --root-dir ${{ github.workspace }}
             --exclude 'fonts\.gstatic\.com'
             --exclude 'img\.shields\.io'
+            --exclude 'gill-bates\.github\.io/fritzfluxdb'
             './site/**/*.html'
           fail: true
 
