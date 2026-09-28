@@ -96,6 +96,13 @@ jobs:
           set -euo pipefail
           mkdocs build -f docs/mkdocs.yml --strict
 
+      # site_url puts the site under /fritzfluxdb/, so every internal link in the
+      # generated HTML is root-relative. lychee resolves those against --root-dir,
+      # and this symlink makes that directory look like the deployed site: the
+      # Pages base path resolves back into site/ instead of a missing directory.
+      - name: Mirror the Pages base path for link checking
+        run: ln -sfn site fritzfluxdb
+
       # Runs against the same build that gets deployed. img.shields.io is excluded
       # because the README and landing-page badges are rendered on demand by a third
       # party that throttles: a badge answering 503 says nothing about the docs and
@@ -106,6 +113,7 @@ jobs:
           args: >-
             --verbose
             --no-progress
+            --root-dir ${{ github.workspace }}
             --exclude 'fonts\.gstatic\.com'
             --exclude 'img\.shields\.io'
             './site/**/*.html'
