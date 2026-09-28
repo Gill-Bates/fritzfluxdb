@@ -138,6 +138,7 @@ nav:
       - Architecture: development/architecture.md
       - Local development: development/setup.md
       - Testing and releases: development/contributing.md
+      - Comparison with the original: development/fork-comparison.md
   - Reference:
       - Changelog: changelog.md
       - License: license.md

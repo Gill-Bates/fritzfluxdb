@@ -2,7 +2,6 @@
   <img src="https://raw.githubusercontent.com/Gill-Bates/fritzfluxdb/refs/heads/main/.github/img/fritz_logo.svg" alt="fritzFluxDB Logo" width="350">
 </p>
 
-
 # fritzFluxDB
 
 Lightweight daemon that collects metrics from your AVM FritzBox and pushes them into InfluxDB or QuestDB.
@@ -11,22 +10,21 @@ Lightweight daemon that collects metrics from your AVM FritzBox and pushes them 
 [![Docker Pulls](https://img.shields.io/docker/pulls/giiibates/fritzfluxdb)](https://hub.docker.com/r/giiibates/fritzfluxdb)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green)](https://github.com/Gill-Bates/fritzfluxdb/blob/main/LICENSE)
 
+📖 [**Full documentation**](https://gill-bates.github.io/fritzfluxdb/)
+
 ---
 
 ## Features
 
 - Collects TR-064 & Lua service data from FritzBox
-- Supports InfluxDB v1, InfluxDB v2 and QuestDB
+- Supports InfluxDB v1, InfluxDB v2 and QuestDB, with optional server-side downsampling on QuestDB
 - Home automation, call logs, VPN, network hosts, system stats
-- Multi-arch image (`amd64` / `arm64`)
-- Runs as non-root with Tini as PID 1
+- Multi-arch image (`amd64` / `arm64`), runs as non-root with Tini as PID 1
 - Graceful shutdown with measurement buffer flush
-
----
 
 ## Quick Start
 
-### 1. `.env` file
+Create a `.env` file:
 
 ```env
 FRITZBOX_HOSTNAME=192.168.178.1
@@ -39,19 +37,9 @@ INFLUXDB_PORT=8086
 INFLUXDB_ORGANIZATION=my-org
 INFLUXDB_BUCKET=fritzflux
 INFLUXDB_TOKEN=your-token
-# allow sending the token over plain HTTP inside your trusted home network
-INFLUXDB_ALLOW_PLAINTEXT_CREDENTIALS=true
 ```
 
-For QuestDB use instead:
-
-```env
-DB_TYPE=questdb
-QUESTDB_HOSTNAME=questdb
-QUESTDB_PORT=9000
-```
-
-### 2. `docker-compose.yml`
+Create `docker-compose.yml`:
 
 ```yaml
 services:
@@ -66,64 +54,27 @@ services:
       LOG_LEVEL: INFO
 ```
 
-### 3. Start
+Start it:
 
 ```bash
 docker compose up -d
 ```
 
----
-
-## Environment Variables
-
-| Variable | Default | Description |
-|---|---|---|
-| `FRITZBOX_HOSTNAME` | `192.168.178.1` | FritzBox IP or hostname |
-| `FRITZBOX_USERNAME` | — | FritzBox login user |
-| `FRITZBOX_PASSWORD` | — | FritzBox login password |
-| `DB_TYPE` | `influxdb_v1` | Database backend: `influxdb_v1`, `influxdb_v2` or `questdb` |
-| `INFLUXDB_HOSTNAME` | — | InfluxDB host (or full URL, e.g. `https://influx.example.com`) |
-| `INFLUXDB_PORT` | `8086` | InfluxDB port (`443` enables TLS automatically) |
-| `INFLUXDB_ORGANIZATION` | — | InfluxDB v2 organization |
-| `INFLUXDB_BUCKET` | — | InfluxDB v2 bucket |
-| `INFLUXDB_DATABASE` | — | InfluxDB v1 database |
-| `INFLUXDB_TOKEN` | — | InfluxDB v2 auth token |
-| `INFLUXDB_TLS_ENABLED` | `false` | Enable TLS for InfluxDB connection |
-| `INFLUXDB_ALLOW_PLAINTEXT_CREDENTIALS` | `false` | Allow credentials/token over plain HTTP (trusted networks only) |
-| `QUESTDB_HOSTNAME` | — | QuestDB host (or full URL); `QUESTDB_*` mirrors the `INFLUXDB_*` options |
-| `QUESTDB_PORT` | `9000` | QuestDB ILP/HTTP port |
-| `QUESTDB_DATA_RETENTION_DAYS` | `365` | Total QuestDB retention in days; existing administrator-managed TTLs are preserved (`0` means unlimited rollup retention) |
-| `QUESTDB_DOWNSAMPLING` | — | Optional QuestDB OSS profile: `low` (30d raw/1m), `medium` (7d raw/1m), or `high` (1d raw/5m) |
-| `LOG_LEVEL` | `INFO` | Log level (`DEBUG`, `INFO`, `WARNING`, `ERROR`) |
-| `TZ` | `Europe/Berlin` | Container timezone |
-
-TR-064 data and smart home devices are collected every 60 seconds; active network hosts every
-10 minutes. `FRITZBOX_REQUEST_INTERVAL` can only increase these built-in intervals.
-
-QuestDB downsampling uses native materialized views and requires QuestDB OSS 8.3.1 or newer.
-fritzfluxdb still writes every raw sample; QuestDB maintains the rollup and TTL without cron jobs.
-Logs, call logs and state histories remain raw-only. A raw TTL that fritzfluxdb did not set belongs
-to the administrator and is never overwritten; a TTL it set itself is adjusted on a profile change.
-
-Disabling downsampling does not restore the previous raw window: rollup views and the raw TTL of the
-previous profile are kept, and Grafana falls back to raw data only. Raise the TTL in QuestDB
-yourself to widen it again.
-
----
+For QuestDB, InfluxDB v1, the full environment variable reference, and downsampling profiles, see
+[**Installation**](https://gill-bates.github.io/fritzfluxdb/getting-started/installation/) and
+[**Environment variables**](https://gill-bates.github.io/fritzfluxdb/configuration/environment/)
+in the documentation.
 
 ## Grafana Dashboards
 
-The project includes example dashboards, available in the [GitHub repository](https://github.com/Gill-Bates/fritzfluxdb/tree/main/utils/grafana):
-
-- **System Dashboard** — CPU, memory, uptime, temperatures, traffic
-- **Call Log Dashboard** — Incoming/outgoing calls
-- **Logs Dashboard** — FritzBox system logs
-- **Home Automation Dashboard** — Smart home device metrics (InfluxDB v2 and QuestDB)
-
----
+Example dashboards for every backend ship in the [repository](https://github.com/Gill-Bates/fritzfluxdb/tree/main/utils/grafana)
+— system, call log, router log, and home automation. See
+[**Grafana dashboards**](https://gill-bates.github.io/fritzfluxdb/monitoring/grafana/) for the
+import workflow.
 
 ## Links
 
+- [Documentation](https://gill-bates.github.io/fritzfluxdb/)
 - [GitHub Repository](https://github.com/Gill-Bates/fritzfluxdb)
 - [Changelog](https://github.com/Gill-Bates/fritzfluxdb/blob/main/CHANGELOG.md)
 - [License: MIT](https://github.com/Gill-Bates/fritzfluxdb/blob/main/LICENSE)

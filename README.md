@@ -23,250 +23,66 @@
   </a>
 </p>
 
+<p align="center">
+  📖 <a href="https://gill-bates.github.io/fritzfluxdb/"><strong>Full documentation</strong></a>
+</p>
+
 > [!NOTE]
 > **Built on the shoulders of giants.** This project is a fork of and would not exist without
 > [**bb-Ricardo/fritzinfluxdb**](https://github.com/bb-Ricardo/fritzinfluxdb) by **Ricardo Bartels**.
 > The original laid the entire foundation for collecting FritzBox metrics into InfluxDB —
 > a huge thank you for the years of work behind it. 🙏
 
+## ✨ Why fritzFluxDB?
 
-## 📋 Table of Contents
-
-- [Why this fork?](#-why-this-fork)
-- [Features](#-features)
-- [Quick Start](#-quick-start)
-- [Configuration](#%EF%B8%8F-configuration)
-- [Grafana Dashboards](#-grafana-dashboards)
-- [Local Development](#-local-development)
-- [License](#-license)
-
----
-
-## 🔀 Why this fork?
-
-The original project is excellent and battle-tested. This fork modernises the codebase and
-focuses on **operational reliability**, a **smaller, container-first footprint**, and adds
-**QuestDB** as a third storage backend alongside InfluxDB v1/v2.
-
-| | `fritzFluxDB` (this fork) | `fritzinfluxdb` (original) |
-|---|---|---|
-| **Python** | 3.13 | 3.7+ |
-| **Database backends** | InfluxDB v1, InfluxDB v2 **and QuestDB** | InfluxDB v1 and v2 |
-| **Database client** | `httpx` — single lightweight HTTP dependency | `influxdb` + `influxdb_client` libraries |
-| **Outage logging** | One error on outage, silent retries, one recovery message | Repeated errors per retry |
-| **Graceful shutdown** | Buffered measurements are flushed before exit | Buffer discarded on shutdown |
-| **HTTP backoff** | Exponential backoff on `429`/`5xx`, honours `Retry-After`, auto-shrinks batch on `413` | Fixed retry interval |
-| **Parser robustness** | Hardened against malformed JSON/XML/CSV with descriptive errors | Basic parsing |
-| **Measurement identity** | Named after the FritzBox serial — swapping hardware keeps history cleanly separated | Single static measurement |
-| **Secret handling** | Credentials masked in logs; refuses to send credentials over plain HTTP to remote hosts | — |
-| **Docker image** | Multi-arch (`amd64`/`arm64`), non-root, Tini as PID 1 | Single-arch, runs as root |
-| **Timezone correctness** | Log timestamps are timezone-aware | — |
-
-> The original still ships features this fork intentionally dropped (e.g. automatic
-> InfluxDB retention-policy creation). If you rely on those, the upstream project may suit you better.
-
----
-
-## ✨ Features
-
--  Collects TR-064 & Lua service data from FritzBox
--  Supports InfluxDB v1, InfluxDB v2 and QuestDB as storage backend
--  Home automation metrics (smart home devices)
--  Call logs & telephone data
--  VPN, network hosts, connection info
--  Multi-arch Docker image (`amd64` / `arm64`)
--  Runs as non-root with Tini as PID 1
-
----
-
-## 📊 Grafana Dashboards
+- **Three storage backends** — InfluxDB v1, InfluxDB v2, and QuestDB, with optional server-side
+  downsampling on QuestDB so long-term history doesn't cost full-resolution storage forever.
+- **Sees more of your box** — TR-064 and Lua service data, home automation devices, call logs,
+  VPN, network hosts, and system stats, all in one daemon.
+- **Built for containers** — a small multi-arch (`amd64`/`arm64`) image, non-root, Tini as PID 1,
+  with a watchdog and graceful shutdown that flushes buffered measurements instead of dropping them.
+- **Ready-made Grafana dashboards** — system, call log, router log, and home automation dashboards
+  ship in the repository for every supported backend.
 
 <p align="center">
   <img src=".github/img/dashboard_1.png" alt="Grafana system dashboard showing FritzBox connection, CPU, RAM and traffic panels" width="800">
 </p>
 
-The project ships example dashboards in the `utils/grafana/` directory:
+## 🔀 Why this fork?
 
-- **System Dashboard** — CPU, memory, uptime, temperatures
-- **Call Log Dashboard** — Incoming/outgoing calls
-- **Logs Dashboard** — FritzBox system logs
-- **Home Automation Dashboard** — Smart home device metrics (InfluxDB v2 and QuestDB)
+This fork modernises the original codebase around **operational reliability**, a **smaller,
+container-first footprint**, and **QuestDB** as a third storage backend. It runs on Python 3.13,
+uses a single lightweight HTTP dependency, buffers and flushes measurements on shutdown, and backs
+off exponentially on HTTP errors instead of retrying at a fixed interval.
 
-Import the JSON files from `utils/grafana/influx2_dashboards/`, `influx1_dashboards/` or `questdb_dashboards/` into your Grafana instance.
-
----
+See the [full comparison](https://gill-bates.github.io/fritzfluxdb/development/fork-comparison/)
+in the documentation, including what the original still does that this fork intentionally
+dropped.
 
 ## 🚀 Quick Start
 
-### 1. Create a `.env` file
-
-```env
-FRITZBOX_HOSTNAME=192.168.178.1
-FRITZBOX_USERNAME=admin
-FRITZBOX_PASSWORD=your-secret-password
-
-DB_TYPE=influxdb_v2
-INFLUXDB_HOSTNAME=influxdb
-INFLUXDB_PORT=8086
-INFLUXDB_ORGANIZATION=my-org
-INFLUXDB_BUCKET=fritzflux
-INFLUXDB_TOKEN=your-influxdb-token
-# allow sending the token over plain HTTP inside your trusted home network
-INFLUXDB_ALLOW_PLAINTEXT_CREDENTIALS=true
-```
-
-Using QuestDB instead? Set:
-
-```env
-DB_TYPE=questdb
-QUESTDB_HOSTNAME=questdb
-QUESTDB_PORT=9000
-```
-
-### 2. Create `docker-compose.yml`
-
-```yaml
-services:
-  fritzfluxdb:
-    image: giiibates/fritzfluxdb:latest
-    container_name: fritzfluxdb
-    restart: unless-stopped
-    env_file:
-      - ./.env
-    environment:
-      TZ: Europe/Berlin
-      LOG_LEVEL: INFO
-```
-
-### 3. Run
-
 ```bash
-docker compose up -d
+cp .env.example .env
+# edit .env with your FRITZ!Box and database settings
+docker compose -f docker/docker-compose.influx2.yml up -d
 ```
 
-That's it. Metrics will start flowing into your database.
+That's it — metrics start flowing into InfluxDB v2. For QuestDB, InfluxDB v1, an existing external
+database, or a local Python run instead, see
+**[Installation](https://gill-bates.github.io/fritzfluxdb/getting-started/installation/)** and
+**[Docker Compose](https://gill-bates.github.io/fritzfluxdb/getting-started/docker/)**.
 
----
+## 📚 Documentation
 
-## ⚙️ Configuration
+Configuration reference, QuestDB downsampling, the polling model, Grafana dashboard setup, and the
+architecture all live in the docs site — this README stays short on purpose.
 
-All settings can be passed via environment variables (e.g., in `.env` or in Docker Compose).
-
-### General Settings
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `LOG_LEVEL` | `INFO` | Log level (`DEBUG`, `INFO`, `WARNING`, `ERROR`) |
-| `TZ` | `Europe/Berlin` | Timezone for logging |
-| `DB_TYPE` | `influxdb_v1` | Target database type (`influxdb_v1`, `influxdb_v2` or `questdb`) |
-
-> [!TIP]
-> **TLS auto-detection:** The hostname may be a full URL (e.g. `https://influx.example.com` behind a
-> reverse proxy) — scheme and port are derived automatically. Port `443` always enables TLS.
-
-### FritzBox Configuration
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `FRITZBOX_HOSTNAME` | `192.168.178.1` | FritzBox IP or hostname |
-| `FRITZBOX_USERNAME` | — | FritzBox login user |
-| `FRITZBOX_PASSWORD` | — | FritzBox login password |
-| `FRITZBOX_PORT` | `49000` | FritzBox TR-064 port |
-| `FRITZBOX_TLS_ENABLED` | auto | Automatically try HTTPS, or explicitly enable/disable it |
-| `FRITZBOX_VERIFY_TLS` | `true` | Verify FritzBox TLS certificate |
-| `FRITZBOX_CONNECT_TIMEOUT` | `10` | Connection timeout in seconds |
-| `FRITZBOX_REQUEST_INTERVAL`| `10` | Minimum request interval per service in seconds (services with a longer built-in interval keep theirs) |
-| `FRITZBOX_BOX_TAG` | `fritz.box` | Custom tag to identify the FritzBox |
-| `FRITZBOX_TIMEZONE` | `Europe/Berlin` | Fallback timezone for FritzBox log timestamps if auto-detection fails |
-
-> **Polling intervals:** TR-064 data and smart home devices are collected every 60 seconds;
-> active network hosts every 10 minutes. `FRITZBOX_REQUEST_INTERVAL` can only increase these
-> built-in intervals.
-
-### InfluxDB Configuration (used when `DB_TYPE=influxdb_v1` or `influxdb_v2`)
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `INFLUXDB_HOSTNAME` | — | InfluxDB host (or full URL, e.g. `https://influx.example.com`) |
-| `INFLUXDB_PORT` | `8086` | InfluxDB port |
-| `INFLUXDB_TLS_ENABLED`| `false` | Enable TLS (HTTPS) |
-| `INFLUXDB_VERIFY_TLS` | `true` | Verify TLS certificate |
-| `INFLUXDB_ALLOW_PLAINTEXT_CREDENTIALS` | `false` | Allow sending credentials/token over plain HTTP (trusted networks only) |
-| `INFLUXDB_MEASUREMENT_NAME` | `fritzbox` | Base measurement name (overridden by serial if available) |
-| `INFLUXDB_DATABASE` | — | InfluxDB v1 database name |
-| `INFLUXDB_USERNAME` | — | InfluxDB v1 username |
-| `INFLUXDB_PASSWORD` | — | InfluxDB v1 password |
-| `INFLUXDB_ORGANIZATION`| — | InfluxDB v2 organization |
-| `INFLUXDB_BUCKET` | — | InfluxDB v2 bucket |
-| `INFLUXDB_TOKEN` | — | InfluxDB v2 auth token |
-
-### QuestDB Configuration (used when `DB_TYPE=questdb`)
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `QUESTDB_HOSTNAME` | — | QuestDB host (or full URL, e.g. `https://questdb.example.com`) |
-| `QUESTDB_PORT` | `9000` | QuestDB HTTP API port (InfluxDB Line Protocol over HTTP) |
-| `QUESTDB_TLS_ENABLED` | `false` | Enable TLS (HTTPS) |
-| `QUESTDB_VERIFY_TLS` | `true` | Verify TLS certificate |
-| `QUESTDB_ALLOW_PLAINTEXT_CREDENTIALS` | `false` | Allow sending credentials/token over plain HTTP (trusted networks only) |
-| `QUESTDB_MEASUREMENT_NAME` | `fritzbox` | Base table name (overridden by serial if available) |
-| `QUESTDB_DATA_RETENTION_DAYS` | `365` | Total retention in days; applied only where no administrator-managed TTL exists. `0` means unlimited rollup retention |
-| `QUESTDB_DOWNSAMPLING` | — | Optional QuestDB OSS profile: `low`, `medium` or `high`; missing or empty disables downsampling |
-| `QUESTDB_USERNAME` | — | QuestDB basic authentication username |
-| `QUESTDB_PASSWORD` | — | QuestDB basic authentication password |
-| `QUESTDB_TOKEN` | — | QuestDB Bearer token authentication |
-
-> **Changing the retention of an existing table:** `QUESTDB_DATA_RETENTION_DAYS` is only applied to a table that has no TTL yet, so a TTL set by an earlier version or by your DB admin is never overwritten. To change it, do it in QuestDB directly:
-> ```sql
-> ALTER TABLE "fritzbox_<serial>" SET TTL 365 DAYS;
-> ```
-
-#### QuestDB downsampling
-
-QuestDB OSS 8.3.1 or newer can downsample historical metrics server-side. fritzfluxdb continues
-polling and writing the complete raw samples and only provisions the required materialized view,
-its TTL and a small append-only configuration status. QuestDB refreshes the view incrementally;
-no cron job or maintenance worker is required.
-
-| Profile | Raw history | Rollup interval | Rollup retention |
-|---------|-------------|-----------------|------------------|
-| `low` | 30 days | 1 minute | `QUESTDB_DATA_RETENTION_DAYS` |
-| `medium` | 7 days | 1 minute | `QUESTDB_DATA_RETENTION_DAYS` |
-| `high` | 1 day | 5 minutes | `QUESTDB_DATA_RETENTION_DAYS` |
-
-Grafana uses raw data while the selected range fits inside the profile's raw window and otherwise
-uses the rollup for the complete range. Counters retain their last value per bucket so traffic and
-error deltas remain meaningful. State and event data, including logs and call logs, is never
-downsampled; its detailed history therefore ends with the raw-data TTL.
-
-The initial materialized-view refresh is asynchronous. fritzfluxdb does not shorten a raw-table
-TTL until QuestDB reports the rollup as valid and current, and it only publishes the status after
-the raw TTL has been applied and read back — so the `raw_days` Grafana relies on always describes
-the TTL that QuestDB actually enforces.
-
-**TTL ownership.** A raw TTL that fritzfluxdb did not set belongs to the database administrator and
-is never overwritten. In that case the profile's raw window is not applied and the existing TTL is
-published instead, so switching to `medium` on a table with an administrator TTL of 90 days keeps
-90 days of raw data. Change it in QuestDB directly if you want the profile's window. A TTL that
-fritzfluxdb set itself is tracked in the status table and is adjusted on a profile change, which is
-what lets an existing installation actually reduce its raw storage.
-
-> [!WARNING]
-> **Disabling downsampling does not restore the previous raw window.** Setting
-> `QUESTDB_DOWNSAMPLING` back to empty keeps existing rollup views and the raw TTL that the
-> previous profile applied, and Grafana falls back to raw data only. After `medium`, the dashboards
-> therefore show at most the remaining 7 days even though older rollup data still exists. To get
-> the longer raw window back, raise the TTL in QuestDB yourself, for example
-> `ALTER TABLE "fritzbox_<serial>" SET TTL 365 DAYS;`. Disabling is never interpreted as a request
-> to delete data or database objects.
-
----
-
-## 🛠 Local Development
-
-Settings are read from a `.env` file in the repository root (see `.env.example`):
-
-```bash
-python run.py
-```
-
----
+- [Installation](https://gill-bates.github.io/fritzfluxdb/getting-started/installation/)
+- [Environment variables](https://gill-bates.github.io/fritzfluxdb/configuration/environment/)
+- [Storage backends](https://gill-bates.github.io/fritzfluxdb/storage/overview/) (InfluxDB, QuestDB, downsampling)
+- [Grafana dashboards](https://gill-bates.github.io/fritzfluxdb/monitoring/grafana/)
+- [Local development](https://gill-bates.github.io/fritzfluxdb/development/setup/)
+- [Changelog](CHANGELOG.md)
 
 ## 📄 License
 
