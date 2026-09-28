@@ -295,7 +295,7 @@
         "h": 11,
         "w": 24,
         "x": 0,
-        "y": 1
+        "y": 5
       },
       "id": 47,
       "options": {
@@ -318,7 +318,7 @@
           },
           "format": 0,
           "queryType": "sql",
-          "rawSql": "SELECT timestamp AS time,\n  avg(sendrate)*8 AS \"UP\", avg(receiverate)*8 AS \"DOWN\",\n  avg(downstreammax) AS \"DOWN Max\", avg(downstream_dsl_sync_max)*1000 AS \"DOWN DSL Sync\",\n  avg(downstreamphysicalmax) AS \"DOWN Physical Max\", avg(upstreammax) AS \"UP netto Max\",\n  avg(upstream_dsl_sync_max)*1000 AS \"UP DSL Sync\", avg(upstreamphysicalmax) AS \"UP Physical Max\"\nFROM ${measurement}\nWHERE $__timeFilter(timestamp)\n  AND box ~ '^${boxtag:regex}$'\n  AND (sendrate IS NOT NULL OR receiverate IS NOT NULL\n       OR downstreammax IS NOT NULL OR downstream_dsl_sync_max IS NOT NULL\n       OR upstreammax IS NOT NULL OR upstream_dsl_sync_max IS NOT NULL)\nSAMPLE BY $__sampleByInterval ALIGN TO CALENDAR",
+          "rawSql": "SELECT timestamp AS time,\n  sum(sendrate${metric_source_gauge_sum_suffix:raw}) / ${metric_source_gauge_count_aggregate:raw}(sendrate${metric_source_gauge_count_suffix:raw})*8 AS \"UP\", sum(receiverate${metric_source_gauge_sum_suffix:raw}) / ${metric_source_gauge_count_aggregate:raw}(receiverate${metric_source_gauge_count_suffix:raw})*8 AS \"DOWN\",\n  sum(downstreammax${metric_source_gauge_sum_suffix:raw}) / ${metric_source_gauge_count_aggregate:raw}(downstreammax${metric_source_gauge_count_suffix:raw}) AS \"DOWN Max\", sum(downstream_dsl_sync_max${metric_source_gauge_sum_suffix:raw}) / ${metric_source_gauge_count_aggregate:raw}(downstream_dsl_sync_max${metric_source_gauge_count_suffix:raw})*1000 AS \"DOWN DSL Sync\",\n  sum(downstreamphysicalmax${metric_source_gauge_sum_suffix:raw}) / ${metric_source_gauge_count_aggregate:raw}(downstreamphysicalmax${metric_source_gauge_count_suffix:raw}) AS \"DOWN Physical Max\", sum(upstreammax${metric_source_gauge_sum_suffix:raw}) / ${metric_source_gauge_count_aggregate:raw}(upstreammax${metric_source_gauge_count_suffix:raw}) AS \"UP netto Max\",\n  sum(upstream_dsl_sync_max${metric_source_gauge_sum_suffix:raw}) / ${metric_source_gauge_count_aggregate:raw}(upstream_dsl_sync_max${metric_source_gauge_count_suffix:raw})*1000 AS \"UP DSL Sync\", sum(upstreamphysicalmax${metric_source_gauge_sum_suffix:raw}) / ${metric_source_gauge_count_aggregate:raw}(upstreamphysicalmax${metric_source_gauge_count_suffix:raw}) AS \"UP Physical Max\"\nFROM ${metric_source:raw}\nWHERE $__timeFilter(timestamp)\n  AND box ~ '^${boxtag:regex}$'\n  AND (sendrate${metric_source_gauge_sum_suffix:raw} IS NOT NULL\n       OR receiverate${metric_source_gauge_sum_suffix:raw} IS NOT NULL)\nSAMPLE BY $__sampleByInterval ALIGN TO CALENDAR",
           "refId": "A",
           "selectedFormat": 0
         },
@@ -329,13 +329,21 @@
           },
           "format": 0,
           "queryType": "sql",
-          "rawSql": "SELECT timestamp AS time,\n  sum(crc_errors_delta) AS \"CRC Errors\",\n  sum(errored_seconds_delta) AS \"Errored Seconds\",\n  sum(severely_errored_seconds_delta) AS \"Severely Errored Seconds\"\nFROM (\n  SELECT timestamp,\n    CASE WHEN previous_crc_errors IS NULL THEN 0\n      WHEN crc_errors >= previous_crc_errors THEN crc_errors - previous_crc_errors\n      ELSE 0 END AS crc_errors_delta,\n    CASE WHEN previous_errored_seconds IS NULL THEN 0\n      WHEN errored_seconds >= previous_errored_seconds THEN errored_seconds - previous_errored_seconds\n      ELSE 0 END AS errored_seconds_delta,\n    CASE WHEN previous_severely_errored_seconds IS NULL THEN 0\n      WHEN severely_errored_seconds >= previous_severely_errored_seconds THEN severely_errored_seconds - previous_severely_errored_seconds\n      ELSE 0 END AS severely_errored_seconds_delta\n  FROM (\n    SELECT timestamp, box, crc_errors, errored_seconds, severely_errored_seconds, lag(crc_errors) OVER (PARTITION BY box ORDER BY timestamp) AS previous_crc_errors, lag(errored_seconds) OVER (PARTITION BY box ORDER BY timestamp) AS previous_errored_seconds, lag(severely_errored_seconds) OVER (PARTITION BY box ORDER BY timestamp) AS previous_severely_errored_seconds\n    FROM ${measurement}\n    WHERE $__timeFilter(timestamp)\n      AND box ~ '^${boxtag:regex}$'\n      AND (crc_errors IS NOT NULL OR errored_seconds IS NOT NULL OR severely_errored_seconds IS NOT NULL)\n  )\n)\nSAMPLE BY $__sampleByInterval ALIGN TO CALENDAR",
+          "rawSql": "SELECT timestamp AS time,\n  sum(crc_errors_delta) AS \"CRC Errors\",\n  sum(errored_seconds_delta) AS \"Errored Seconds\",\n  sum(severely_errored_seconds_delta) AS \"Severely Errored Seconds\"\nFROM (\n  SELECT timestamp,\n    CASE WHEN previous_crc_errors IS NULL THEN 0\n      WHEN crc_errors${metric_source_counter_suffix:raw} >= previous_crc_errors THEN crc_errors${metric_source_counter_suffix:raw} - previous_crc_errors\n      ELSE 0 END AS crc_errors_delta,\n    CASE WHEN previous_errored_seconds IS NULL THEN 0\n      WHEN errored_seconds${metric_source_counter_suffix:raw} >= previous_errored_seconds THEN errored_seconds${metric_source_counter_suffix:raw} - previous_errored_seconds\n      ELSE 0 END AS errored_seconds_delta,\n    CASE WHEN previous_severely_errored_seconds IS NULL THEN 0\n      WHEN severely_errored_seconds${metric_source_counter_suffix:raw} >= previous_severely_errored_seconds THEN severely_errored_seconds${metric_source_counter_suffix:raw} - previous_severely_errored_seconds\n      ELSE 0 END AS severely_errored_seconds_delta\n  FROM (\n    SELECT timestamp, box, crc_errors${metric_source_counter_suffix:raw}, errored_seconds${metric_source_counter_suffix:raw}, severely_errored_seconds${metric_source_counter_suffix:raw}, lag(crc_errors${metric_source_counter_suffix:raw}) OVER (PARTITION BY box ORDER BY timestamp) AS previous_crc_errors, lag(errored_seconds${metric_source_counter_suffix:raw}) OVER (PARTITION BY box ORDER BY timestamp) AS previous_errored_seconds, lag(severely_errored_seconds${metric_source_counter_suffix:raw}) OVER (PARTITION BY box ORDER BY timestamp) AS previous_severely_errored_seconds\n    FROM ${metric_source:raw}\n    WHERE $__timeFilter(timestamp)\n      AND box ~ '^${boxtag:regex}$'\n      AND (crc_errors${metric_source_counter_suffix:raw} IS NOT NULL OR errored_seconds${metric_source_counter_suffix:raw} IS NOT NULL OR severely_errored_seconds${metric_source_counter_suffix:raw} IS NOT NULL)\n  )\n)\nSAMPLE BY $__sampleByInterval ALIGN TO CALENDAR",
           "refId": "B",
           "selectedFormat": 0
         }
       ],
       "title": "Current UP/DOWN",
-      "transformations": [],
+      "transformations": [
+        {
+          "id": "renameByRegex",
+          "options": {
+            "regex": "^[A-Z] (.*)$",
+            "renamePattern": "$1"
+          }
+        }
+      ],
       "type": "timeseries"
     },
     {
@@ -347,7 +355,7 @@
         "h": 5,
         "w": 24,
         "x": 0,
-        "y": 12
+        "y": 16
       },
       "hideTimeOverride": true,
       "id": 26,
@@ -435,7 +443,7 @@
         "h": 2,
         "w": 2,
         "x": 0,
-        "y": 17
+        "y": 1
       },
       "id": 10,
       "links": [],
@@ -482,19 +490,8 @@
           "color": {
             "mode": "thresholds"
           },
-          "decimals": 2,
+          "decimals": 0,
           "mappings": [
-            {
-              "options": {
-                "0": {
-                  "text": "Disconnected"
-                },
-                "1": {
-                  "text": "Connected"
-                }
-              },
-              "type": "value"
-            },
             {
               "options": {
                 "match": "null",
@@ -522,7 +519,7 @@
               }
             ]
           },
-          "unit": "dtdurations"
+          "unit": "dthms"
         },
         "overrides": []
       },
@@ -530,7 +527,7 @@
         "h": 2,
         "w": 4,
         "x": 2,
-        "y": 17
+        "y": 1
       },
       "hideTimeOverride": true,
       "id": 9,
@@ -539,8 +536,8 @@
       "options": {
         "colorMode": "none",
         "graphMode": "none",
-        "justifyMode": "auto",
-        "orientation": "horizontal",
+        "justifyMode": "center",
+        "orientation": "vertical",
         "reduceOptions": {
           "calcs": [
             "lastNotNull"
@@ -548,7 +545,7 @@
           "fields": "",
           "values": false
         },
-        "textMode": "auto"
+        "textMode": "value"
       },
       "pluginVersion": "9.2.2",
       "targets": [
@@ -576,7 +573,8 @@
       "fieldConfig": {
         "defaults": {
           "color": {
-            "mode": "continuous-GrYlRd"
+            "mode": "fixed",
+            "fixedColor": "rgb(31, 120, 193)"
           },
           "decimals": 1,
           "mappings": [
@@ -595,7 +593,7 @@
             "mode": "absolute",
             "steps": [
               {
-                "color": "rgba(245, 54, 54, 0.9)",
+                "color": "rgb(31, 120, 193)",
                 "value": null
               }
             ]
@@ -608,7 +606,7 @@
         "h": 4,
         "w": 3,
         "x": 6,
-        "y": 17
+        "y": 1
       },
       "id": 11,
       "links": [],
@@ -650,7 +648,8 @@
       "fieldConfig": {
         "defaults": {
           "color": {
-            "mode": "continuous-GrYlRd"
+            "mode": "fixed",
+            "fixedColor": "green"
           },
           "decimals": 1,
           "mappings": [
@@ -669,7 +668,7 @@
             "mode": "absolute",
             "steps": [
               {
-                "color": "rgba(245, 54, 54, 0.9)",
+                "color": "green",
                 "value": null
               }
             ]
@@ -682,7 +681,7 @@
         "h": 4,
         "w": 3,
         "x": 9,
-        "y": 17
+        "y": 1
       },
       "id": 12,
       "links": [],
@@ -757,7 +756,7 @@
         "h": 4,
         "w": 2,
         "x": 12,
-        "y": 17
+        "y": 1
       },
       "id": 30,
       "options": {
@@ -829,7 +828,7 @@
         "h": 4,
         "w": 2,
         "x": 14,
-        "y": 17
+        "y": 1
       },
       "id": 33,
       "options": {
@@ -901,7 +900,7 @@
         "h": 4,
         "w": 2,
         "x": 16,
-        "y": 17
+        "y": 1
       },
       "id": 34,
       "options": {
@@ -944,7 +943,7 @@
             "fixedColor": "#e24d42",
             "mode": "fixed"
           },
-          "decimals": 3,
+          "decimals": 1,
           "mappings": [
             {
               "options": {
@@ -973,7 +972,7 @@
         "h": 4,
         "w": 3,
         "x": 18,
-        "y": 17
+        "y": 1
       },
       "hideTimeOverride": true,
       "id": 16,
@@ -1002,7 +1001,7 @@
           },
           "format": 0,
           "queryType": "sql",
-          "rawSql": "SELECT timestamp AS time, sum(delta) OVER (ORDER BY timestamp) AS \"Upload Last 24h\"\nFROM (\n  SELECT timestamp,\n    CASE WHEN previous_value IS NULL THEN 0\n      WHEN totalbytessent >= previous_value THEN totalbytessent - previous_value\n      ELSE 0\n    END AS delta\n  FROM (\n    SELECT timestamp, totalbytessent, lag(totalbytessent) OVER (PARTITION BY box ORDER BY timestamp) AS previous_value\n    FROM ${measurement}\n    WHERE timestamp >= dateadd('d', -1, now())\n      AND box ~ '^${boxtag:regex}$'\n      AND totalbytessent IS NOT NULL\n  )\n)",
+          "rawSql": "SELECT timestamp AS time, sum(delta) OVER (ORDER BY timestamp) AS \"Upload Last 24h\"\nFROM (\n  SELECT timestamp,\n    CASE WHEN previous_value IS NULL THEN 0\n      WHEN totalbytessent${metric_source_1d_counter_suffix:raw} >= previous_value THEN totalbytessent${metric_source_1d_counter_suffix:raw} - previous_value\n      ELSE 0\n    END AS delta\n  FROM (\n    SELECT timestamp, totalbytessent${metric_source_1d_counter_suffix:raw}, lag(totalbytessent${metric_source_1d_counter_suffix:raw}) OVER (PARTITION BY box ORDER BY timestamp) AS previous_value\n    FROM ${metric_source_1d:raw}\n    WHERE timestamp >= dateadd('d', -1, now())\n      AND box ~ '^${boxtag:regex}$'\n      AND totalbytessent${metric_source_1d_counter_suffix:raw} IS NOT NULL\n  )\n)",
           "refId": "A",
           "selectedFormat": 0
         }
@@ -1022,7 +1021,7 @@
             "fixedColor": "rgb(31, 120, 193)",
             "mode": "fixed"
           },
-          "decimals": 3,
+          "decimals": 1,
           "mappings": [
             {
               "options": {
@@ -1055,7 +1054,7 @@
         "h": 4,
         "w": 3,
         "x": 21,
-        "y": 17
+        "y": 1
       },
       "hideTimeOverride": true,
       "id": 15,
@@ -1084,7 +1083,7 @@
           },
           "format": 0,
           "queryType": "sql",
-          "rawSql": "SELECT timestamp AS time, sum(delta) OVER (ORDER BY timestamp) AS \"Download Last 24h\"\nFROM (\n  SELECT timestamp,\n    CASE WHEN previous_value IS NULL THEN 0\n      WHEN totalbytesreceived >= previous_value THEN totalbytesreceived - previous_value\n      ELSE 0\n    END AS delta\n  FROM (\n    SELECT timestamp, totalbytesreceived, lag(totalbytesreceived) OVER (PARTITION BY box ORDER BY timestamp) AS previous_value\n    FROM ${measurement}\n    WHERE timestamp >= dateadd('d', -1, now())\n      AND box ~ '^${boxtag:regex}$'\n      AND totalbytesreceived IS NOT NULL\n  )\n)",
+          "rawSql": "SELECT timestamp AS time, sum(delta) OVER (ORDER BY timestamp) AS \"Download Last 24h\"\nFROM (\n  SELECT timestamp,\n    CASE WHEN previous_value IS NULL THEN 0\n      WHEN totalbytesreceived${metric_source_1d_counter_suffix:raw} >= previous_value THEN totalbytesreceived${metric_source_1d_counter_suffix:raw} - previous_value\n      ELSE 0\n    END AS delta\n  FROM (\n    SELECT timestamp, totalbytesreceived${metric_source_1d_counter_suffix:raw}, lag(totalbytesreceived${metric_source_1d_counter_suffix:raw}) OVER (PARTITION BY box ORDER BY timestamp) AS previous_value\n    FROM ${metric_source_1d:raw}\n    WHERE timestamp >= dateadd('d', -1, now())\n      AND box ~ '^${boxtag:regex}$'\n      AND totalbytesreceived${metric_source_1d_counter_suffix:raw} IS NOT NULL\n  )\n)",
           "refId": "A",
           "selectedFormat": 0
         }
@@ -1120,7 +1119,7 @@
         "h": 2,
         "w": 2,
         "x": 0,
-        "y": 19
+        "y": 3
       },
       "id": 37,
       "interval": "2m",
@@ -1165,19 +1164,8 @@
           "color": {
             "mode": "thresholds"
           },
-          "decimals": 2,
+          "decimals": 0,
           "mappings": [
-            {
-              "options": {
-                "0": {
-                  "text": "Disconnected"
-                },
-                "1": {
-                  "text": "Connected"
-                }
-              },
-              "type": "value"
-            },
             {
               "options": {
                 "match": "null",
@@ -1205,7 +1193,7 @@
               }
             ]
           },
-          "unit": "dtdurations"
+          "unit": "dthms"
         },
         "overrides": []
       },
@@ -1213,7 +1201,7 @@
         "h": 2,
         "w": 4,
         "x": 2,
-        "y": 19
+        "y": 3
       },
       "hideTimeOverride": true,
       "id": 13,
@@ -1222,8 +1210,8 @@
       "options": {
         "colorMode": "none",
         "graphMode": "none",
-        "justifyMode": "auto",
-        "orientation": "horizontal",
+        "justifyMode": "center",
+        "orientation": "vertical",
         "reduceOptions": {
           "calcs": [
             "lastNotNull"
@@ -1231,7 +1219,7 @@
           "fields": "",
           "values": false
         },
-        "textMode": "auto"
+        "textMode": "value"
       },
       "pluginVersion": "9.2.2",
       "targets": [
@@ -1301,7 +1289,7 @@
                   "mode": "off"
                 }
               },
-              "decimals": 2,
+              "decimals": 1,
               "links": [],
               "mappings": [],
               "thresholds": {
@@ -1385,7 +1373,7 @@
               },
               "format": 0,
               "queryType": "sql",
-              "rawSql": "SELECT timestamp AS time,\n  sum(totalbytessent_delta) AS \"Upload\",\n  sum(totalbytesreceived_delta) AS \"Download\"\nFROM (\n  SELECT timestamp,\n    CASE WHEN previous_totalbytessent IS NULL THEN 0\n      WHEN totalbytessent >= previous_totalbytessent THEN totalbytessent - previous_totalbytessent\n      ELSE 0 END AS totalbytessent_delta,\n    CASE WHEN previous_totalbytesreceived IS NULL THEN 0\n      WHEN totalbytesreceived >= previous_totalbytesreceived THEN totalbytesreceived - previous_totalbytesreceived\n      ELSE 0 END AS totalbytesreceived_delta\n  FROM (\n    SELECT timestamp, box, totalbytessent, totalbytesreceived, lag(totalbytessent) OVER (PARTITION BY box ORDER BY timestamp) AS previous_totalbytessent, lag(totalbytesreceived) OVER (PARTITION BY box ORDER BY timestamp) AS previous_totalbytesreceived\n    FROM ${measurement}\n    WHERE timestamp >= dateadd('d', -7, now())\n      AND box ~ '^${boxtag:regex}$'\n      AND (totalbytessent IS NOT NULL OR totalbytesreceived IS NOT NULL)\n  )\n)\nSAMPLE BY 1d ALIGN TO CALENDAR",
+              "rawSql": "SELECT timestamp AS time,\n  sum(totalbytessent_delta) AS \"Upload\",\n  sum(totalbytesreceived_delta) AS \"Download\"\nFROM (\n  SELECT timestamp,\n    CASE WHEN previous_totalbytessent IS NULL THEN 0\n      WHEN totalbytessent${metric_source_7d_counter_suffix:raw} >= previous_totalbytessent THEN totalbytessent${metric_source_7d_counter_suffix:raw} - previous_totalbytessent\n      ELSE 0 END AS totalbytessent_delta,\n    CASE WHEN previous_totalbytesreceived IS NULL THEN 0\n      WHEN totalbytesreceived${metric_source_7d_counter_suffix:raw} >= previous_totalbytesreceived THEN totalbytesreceived${metric_source_7d_counter_suffix:raw} - previous_totalbytesreceived\n      ELSE 0 END AS totalbytesreceived_delta\n  FROM (\n    SELECT timestamp, box, totalbytessent${metric_source_7d_counter_suffix:raw}, totalbytesreceived${metric_source_7d_counter_suffix:raw}, lag(totalbytessent${metric_source_7d_counter_suffix:raw}) OVER (PARTITION BY box ORDER BY timestamp) AS previous_totalbytessent, lag(totalbytesreceived${metric_source_7d_counter_suffix:raw}) OVER (PARTITION BY box ORDER BY timestamp) AS previous_totalbytesreceived\n    FROM ${metric_source_7d:raw}\n    WHERE timestamp >= dateadd('d', -7, now())\n      AND box ~ '^${boxtag:regex}$'\n      AND (totalbytessent${metric_source_7d_counter_suffix:raw} IS NOT NULL OR totalbytesreceived${metric_source_7d_counter_suffix:raw} IS NOT NULL)\n  )\n)\nSAMPLE BY 1d ALIGN TO CALENDAR",
               "refId": "B",
               "selectedFormat": 0
             }
@@ -1449,7 +1437,8 @@
                   }
                 ]
               },
-              "unit": "decbytes"
+              "unit": "decbytes",
+              "decimals": 1
             },
             "overrides": [
               {
@@ -1524,7 +1513,7 @@
               },
               "format": 0,
               "queryType": "sql",
-              "rawSql": "SELECT timestamp AS time,\n  sum(totalbytessent_delta) AS \"Upload\",\n  sum(totalbytesreceived_delta) AS \"Download\"\nFROM (\n  SELECT timestamp,\n    CASE WHEN previous_totalbytessent IS NULL THEN 0\n      WHEN totalbytessent >= previous_totalbytessent THEN totalbytessent - previous_totalbytessent\n      ELSE 0 END AS totalbytessent_delta,\n    CASE WHEN previous_totalbytesreceived IS NULL THEN 0\n      WHEN totalbytesreceived >= previous_totalbytesreceived THEN totalbytesreceived - previous_totalbytesreceived\n      ELSE 0 END AS totalbytesreceived_delta\n  FROM (\n    SELECT timestamp, box, totalbytessent, totalbytesreceived, lag(totalbytessent) OVER (PARTITION BY box ORDER BY timestamp) AS previous_totalbytessent, lag(totalbytesreceived) OVER (PARTITION BY box ORDER BY timestamp) AS previous_totalbytesreceived\n    FROM ${measurement}\n    WHERE $__timeFilter(timestamp)\n      AND box ~ '^${boxtag:regex}$'\n      AND (totalbytessent IS NOT NULL OR totalbytesreceived IS NOT NULL)\n  )\n)\nSAMPLE BY $__sampleByInterval ALIGN TO CALENDAR",
+              "rawSql": "SELECT timestamp AS time,\n  sum(totalbytessent_delta) AS \"Upload\",\n  sum(totalbytesreceived_delta) AS \"Download\"\nFROM (\n  SELECT timestamp,\n    CASE WHEN previous_totalbytessent IS NULL THEN 0\n      WHEN totalbytessent${metric_source_1d_counter_suffix:raw} >= previous_totalbytessent THEN totalbytessent${metric_source_1d_counter_suffix:raw} - previous_totalbytessent\n      ELSE 0 END AS totalbytessent_delta,\n    CASE WHEN previous_totalbytesreceived IS NULL THEN 0\n      WHEN totalbytesreceived${metric_source_1d_counter_suffix:raw} >= previous_totalbytesreceived THEN totalbytesreceived${metric_source_1d_counter_suffix:raw} - previous_totalbytesreceived\n      ELSE 0 END AS totalbytesreceived_delta\n  FROM (\n    SELECT timestamp, box, totalbytessent${metric_source_1d_counter_suffix:raw}, totalbytesreceived${metric_source_1d_counter_suffix:raw}, lag(totalbytessent${metric_source_1d_counter_suffix:raw}) OVER (PARTITION BY box ORDER BY timestamp) AS previous_totalbytessent, lag(totalbytesreceived${metric_source_1d_counter_suffix:raw}) OVER (PARTITION BY box ORDER BY timestamp) AS previous_totalbytesreceived\n    FROM ${metric_source_1d:raw}\n    WHERE $__timeFilter(timestamp)\n      AND box ~ '^${boxtag:regex}$'\n      AND (totalbytessent${metric_source_1d_counter_suffix:raw} IS NOT NULL OR totalbytesreceived${metric_source_1d_counter_suffix:raw} IS NOT NULL)\n  )\n)\nSAMPLE BY $__sampleByInterval ALIGN TO CALENDAR",
               "refId": "A",
               "selectedFormat": 0
             }
@@ -1548,7 +1537,7 @@
                 "displayMode": "auto",
                 "inspect": false
               },
-              "decimals": 2,
+              "decimals": 1,
               "displayName": "",
               "mappings": [],
               "thresholds": {
@@ -1638,7 +1627,7 @@
               },
               "format": 1,
               "queryType": "sql",
-              "rawSql": "SELECT timestamp AS day,\n  sum(totalbytessent_delta) AS \"Upload\",\n  sum(totalbytesreceived_delta) AS \"Download\"\nFROM (\n  SELECT timestamp,\n    CASE WHEN previous_totalbytessent IS NULL THEN 0\n      WHEN totalbytessent >= previous_totalbytessent THEN totalbytessent - previous_totalbytessent\n      ELSE 0 END AS totalbytessent_delta,\n    CASE WHEN previous_totalbytesreceived IS NULL THEN 0\n      WHEN totalbytesreceived >= previous_totalbytesreceived THEN totalbytesreceived - previous_totalbytesreceived\n      ELSE 0 END AS totalbytesreceived_delta\n  FROM (\n    SELECT timestamp, box, totalbytessent, totalbytesreceived, lag(totalbytessent) OVER (PARTITION BY box ORDER BY timestamp) AS previous_totalbytessent, lag(totalbytesreceived) OVER (PARTITION BY box ORDER BY timestamp) AS previous_totalbytesreceived\n    FROM ${measurement}\n    WHERE timestamp >= dateadd('d', -7, now())\n      AND box ~ '^${boxtag:regex}$'\n      AND (totalbytessent IS NOT NULL OR totalbytesreceived IS NOT NULL)\n  )\n)\nSAMPLE BY 1d ALIGN TO CALENDAR",
+              "rawSql": "SELECT timestamp AS day,\n  sum(totalbytessent_delta) AS \"Upload\",\n  sum(totalbytesreceived_delta) AS \"Download\"\nFROM (\n  SELECT timestamp,\n    CASE WHEN previous_totalbytessent IS NULL THEN 0\n      WHEN totalbytessent${metric_source_7d_counter_suffix:raw} >= previous_totalbytessent THEN totalbytessent${metric_source_7d_counter_suffix:raw} - previous_totalbytessent\n      ELSE 0 END AS totalbytessent_delta,\n    CASE WHEN previous_totalbytesreceived IS NULL THEN 0\n      WHEN totalbytesreceived${metric_source_7d_counter_suffix:raw} >= previous_totalbytesreceived THEN totalbytesreceived${metric_source_7d_counter_suffix:raw} - previous_totalbytesreceived\n      ELSE 0 END AS totalbytesreceived_delta\n  FROM (\n    SELECT timestamp, box, totalbytessent${metric_source_7d_counter_suffix:raw}, totalbytesreceived${metric_source_7d_counter_suffix:raw}, lag(totalbytessent${metric_source_7d_counter_suffix:raw}) OVER (PARTITION BY box ORDER BY timestamp) AS previous_totalbytessent, lag(totalbytesreceived${metric_source_7d_counter_suffix:raw}) OVER (PARTITION BY box ORDER BY timestamp) AS previous_totalbytesreceived\n    FROM ${metric_source_7d:raw}\n    WHERE timestamp >= dateadd('d', -7, now())\n      AND box ~ '^${boxtag:regex}$'\n      AND (totalbytessent${metric_source_7d_counter_suffix:raw} IS NOT NULL OR totalbytesreceived${metric_source_7d_counter_suffix:raw} IS NOT NULL)\n  )\n)\nSAMPLE BY 1d ALIGN TO CALENDAR",
               "refId": "A",
               "selectedFormat": 1
             }
@@ -1679,7 +1668,7 @@
                 "fixedColor": "#e24d42",
                 "mode": "fixed"
               },
-              "decimals": 3,
+              "decimals": 1,
               "mappings": [
                 {
                   "options": {
@@ -1783,7 +1772,8 @@
                   }
                 ]
               },
-              "unit": "decbytes"
+              "unit": "decbytes",
+              "decimals": 1
             },
             "overrides": []
           },
@@ -1950,7 +1940,7 @@
               },
               "format": 0,
               "queryType": "sql",
-              "rawSql": "SELECT timestamp AS time,\n  avg(wlan1_associations) AS \"wlan1_associations\",\n  avg(wlan2_associations) AS \"wlan2_associations\",\n  avg(wlan3_associations) AS \"wlan3_associations\"\nFROM ${measurement}\nWHERE $__timeFilter(timestamp)\n  AND box ~ '^${boxtag:regex}$'\n  AND (wlan1_associations IS NOT NULL OR wlan2_associations IS NOT NULL OR wlan3_associations IS NOT NULL)\nSAMPLE BY $__sampleByInterval ALIGN TO CALENDAR",
+              "rawSql": "SELECT timestamp AS time,\n  sum(wlan1_associations${metric_source_gauge_sum_suffix:raw}) / ${metric_source_gauge_count_aggregate:raw}(wlan1_associations${metric_source_gauge_count_suffix:raw}) AS \"wlan1_associations\",\n  sum(wlan2_associations${metric_source_gauge_sum_suffix:raw}) / ${metric_source_gauge_count_aggregate:raw}(wlan2_associations${metric_source_gauge_count_suffix:raw}) AS \"wlan2_associations\",\n  sum(wlan3_associations${metric_source_gauge_sum_suffix:raw}) / ${metric_source_gauge_count_aggregate:raw}(wlan3_associations${metric_source_gauge_count_suffix:raw}) AS \"wlan3_associations\"\nFROM ${metric_source:raw}\nWHERE $__timeFilter(timestamp)\n  AND box ~ '^${boxtag:regex}$'\n  AND (wlan1_associations${metric_source_gauge_sum_suffix:raw} IS NOT NULL OR wlan2_associations${metric_source_gauge_sum_suffix:raw} IS NOT NULL OR wlan3_associations${metric_source_gauge_sum_suffix:raw} IS NOT NULL)\nSAMPLE BY $__sampleByInterval ALIGN TO CALENDAR",
               "refId": "A",
               "selectedFormat": 0
             }
@@ -2094,7 +2084,7 @@
               },
               "format": 0,
               "queryType": "sql",
-              "rawSql": "SELECT timestamp AS time,\n  avg(wlan1_channel) AS \"wlan1_channel\",\n  avg(wlan2_channel) AS \"wlan2_channel\",\n  avg(wlan3_channel) AS \"wlan3_channel\"\nFROM ${measurement}\nWHERE $__timeFilter(timestamp)\n  AND box ~ '^${boxtag:regex}$'\n  AND (wlan1_channel IS NOT NULL OR wlan2_channel IS NOT NULL OR wlan3_channel IS NOT NULL)\nSAMPLE BY $__sampleByInterval ALIGN TO CALENDAR",
+              "rawSql": "SELECT timestamp AS time,\n  sum(wlan1_channel${metric_source_gauge_sum_suffix:raw}) / ${metric_source_gauge_count_aggregate:raw}(wlan1_channel${metric_source_gauge_count_suffix:raw}) AS \"wlan1_channel\",\n  sum(wlan2_channel${metric_source_gauge_sum_suffix:raw}) / ${metric_source_gauge_count_aggregate:raw}(wlan2_channel${metric_source_gauge_count_suffix:raw}) AS \"wlan2_channel\",\n  sum(wlan3_channel${metric_source_gauge_sum_suffix:raw}) / ${metric_source_gauge_count_aggregate:raw}(wlan3_channel${metric_source_gauge_count_suffix:raw}) AS \"wlan3_channel\"\nFROM ${metric_source:raw}\nWHERE $__timeFilter(timestamp)\n  AND box ~ '^${boxtag:regex}$'\n  AND (wlan1_channel${metric_source_gauge_sum_suffix:raw} IS NOT NULL OR wlan2_channel${metric_source_gauge_sum_suffix:raw} IS NOT NULL OR wlan3_channel${metric_source_gauge_sum_suffix:raw} IS NOT NULL)\nSAMPLE BY $__sampleByInterval ALIGN TO CALENDAR",
               "refId": "A",
               "selectedFormat": 0
             }
@@ -2301,7 +2291,7 @@
               },
               "format": 0,
               "queryType": "sql",
-              "rawSql": "SELECT timestamp AS time,\n  avg(cpu_utilization) AS \"cpu_utilization\"\nFROM ${measurement}\nWHERE $__timeFilter(timestamp)\n  AND box ~ '^${boxtag:regex}$'\n  AND (cpu_utilization IS NOT NULL)\nSAMPLE BY $__sampleByInterval ALIGN TO CALENDAR",
+              "rawSql": "SELECT timestamp AS time,\n  sum(cpu_utilization${metric_source_gauge_sum_suffix:raw}) / ${metric_source_gauge_count_aggregate:raw}(cpu_utilization${metric_source_gauge_count_suffix:raw}) AS \"cpu_utilization\"\nFROM ${metric_source:raw}\nWHERE $__timeFilter(timestamp)\n  AND box ~ '^${boxtag:regex}$'\n  AND (cpu_utilization${metric_source_gauge_sum_suffix:raw} IS NOT NULL)\nSAMPLE BY $__sampleByInterval ALIGN TO CALENDAR",
               "refId": "A",
               "selectedFormat": 0
             }
@@ -2450,7 +2440,7 @@
               },
               "format": 0,
               "queryType": "sql",
-              "rawSql": "SELECT timestamp AS time,\n  avg(ram_usage_fixed) AS \"ram_usage_fixed\"\nFROM ${measurement}\nWHERE $__timeFilter(timestamp)\n  AND box ~ '^${boxtag:regex}$'\n  AND (ram_usage_fixed IS NOT NULL)\nSAMPLE BY $__sampleByInterval ALIGN TO CALENDAR",
+              "rawSql": "SELECT timestamp AS time,\n  sum(ram_usage_fixed${metric_source_gauge_sum_suffix:raw}) / ${metric_source_gauge_count_aggregate:raw}(ram_usage_fixed${metric_source_gauge_count_suffix:raw}) AS \"ram_usage_fixed\"\nFROM ${metric_source:raw}\nWHERE $__timeFilter(timestamp)\n  AND box ~ '^${boxtag:regex}$'\n  AND (ram_usage_fixed${metric_source_gauge_sum_suffix:raw} IS NOT NULL)\nSAMPLE BY $__sampleByInterval ALIGN TO CALENDAR",
               "refId": "A",
               "selectedFormat": 0
             },
@@ -2461,7 +2451,7 @@
               },
               "format": 0,
               "queryType": "sql",
-              "rawSql": "SELECT timestamp AS time,\n  avg(ram_usage_dynamic) AS \"ram_usage_dynamic\"\nFROM ${measurement}\nWHERE $__timeFilter(timestamp)\n  AND box ~ '^${boxtag:regex}$'\n  AND (ram_usage_dynamic IS NOT NULL)\nSAMPLE BY $__sampleByInterval ALIGN TO CALENDAR",
+              "rawSql": "SELECT timestamp AS time,\n  sum(ram_usage_dynamic${metric_source_gauge_sum_suffix:raw}) / ${metric_source_gauge_count_aggregate:raw}(ram_usage_dynamic${metric_source_gauge_count_suffix:raw}) AS \"ram_usage_dynamic\"\nFROM ${metric_source:raw}\nWHERE $__timeFilter(timestamp)\n  AND box ~ '^${boxtag:regex}$'\n  AND (ram_usage_dynamic${metric_source_gauge_sum_suffix:raw} IS NOT NULL)\nSAMPLE BY $__sampleByInterval ALIGN TO CALENDAR",
               "refId": "B",
               "selectedFormat": 0
             },
@@ -2472,13 +2462,21 @@
               },
               "format": 0,
               "queryType": "sql",
-              "rawSql": "SELECT timestamp AS time,\n  avg(ram_usage_free) AS \"ram_usage_free\"\nFROM ${measurement}\nWHERE $__timeFilter(timestamp)\n  AND box ~ '^${boxtag:regex}$'\n  AND (ram_usage_free IS NOT NULL)\nSAMPLE BY $__sampleByInterval ALIGN TO CALENDAR",
+              "rawSql": "SELECT timestamp AS time,\n  sum(ram_usage_free${metric_source_gauge_sum_suffix:raw}) / ${metric_source_gauge_count_aggregate:raw}(ram_usage_free${metric_source_gauge_count_suffix:raw}) AS \"ram_usage_free\"\nFROM ${metric_source:raw}\nWHERE $__timeFilter(timestamp)\n  AND box ~ '^${boxtag:regex}$'\n  AND (ram_usage_free${metric_source_gauge_sum_suffix:raw} IS NOT NULL)\nSAMPLE BY $__sampleByInterval ALIGN TO CALENDAR",
               "refId": "C",
               "selectedFormat": 0
             }
           ],
           "title": "RAM usage",
-          "transformations": [],
+          "transformations": [
+            {
+              "id": "renameByRegex",
+              "options": {
+                "regex": "^[A-Z] (.*)$",
+                "renamePattern": "$1"
+              }
+            }
+          ],
           "type": "timeseries"
         },
         {
@@ -2567,7 +2565,7 @@
               },
               "format": 0,
               "queryType": "sql",
-              "rawSql": "SELECT timestamp AS time,\n  avg(cpu_temp) AS \"cpu_temp\"\nFROM ${measurement}\nWHERE $__timeFilter(timestamp)\n  AND box ~ '^${boxtag:regex}$'\n  AND (cpu_temp IS NOT NULL)\nSAMPLE BY $__sampleByInterval ALIGN TO CALENDAR",
+              "rawSql": "SELECT timestamp AS time,\n  sum(cpu_temp${metric_source_gauge_sum_suffix:raw}) / ${metric_source_gauge_count_aggregate:raw}(cpu_temp${metric_source_gauge_count_suffix:raw}) AS \"cpu_temp\"\nFROM ${metric_source:raw}\nWHERE $__timeFilter(timestamp)\n  AND box ~ '^${boxtag:regex}$'\n  AND (cpu_temp${metric_source_gauge_sum_suffix:raw} IS NOT NULL)\nSAMPLE BY $__sampleByInterval ALIGN TO CALENDAR",
               "refId": "A",
               "selectedFormat": 0
             }
@@ -2937,7 +2935,7 @@
               },
               "format": 0,
               "queryType": "sql",
-              "rawSql": "SELECT timestamp AS time,\n  avg(vpn_user_num_active) AS \"vpn_user_num_active\"\nFROM ${measurement}\nWHERE $__timeFilter(timestamp)\n  AND box ~ '^${boxtag:regex}$'\n  AND (vpn_user_num_active IS NOT NULL)\nSAMPLE BY $__sampleByInterval ALIGN TO CALENDAR",
+              "rawSql": "SELECT timestamp AS time,\n  sum(vpn_user_num_active${metric_source_gauge_sum_suffix:raw}) / ${metric_source_gauge_count_aggregate:raw}(vpn_user_num_active${metric_source_gauge_count_suffix:raw}) AS \"vpn_user_num_active\"\nFROM ${metric_source:raw}\nWHERE $__timeFilter(timestamp)\n  AND box ~ '^${boxtag:regex}$'\n  AND (vpn_user_num_active${metric_source_gauge_sum_suffix:raw} IS NOT NULL)\nSAMPLE BY $__sampleByInterval ALIGN TO CALENDAR",
               "refId": "A",
               "selectedFormat": 0
             }
@@ -3577,7 +3575,7 @@
         "hide": 0,
         "label": "FritzBox",
         "name": "measurement",
-        "query": "SELECT table_name FROM tables() WHERE table_name LIKE 'fritzbox%' ORDER BY table_name",
+        "query": "SELECT table_name FROM tables() WHERE table_name LIKE 'fritzbox%' AND table_name NOT LIKE '%_rollup_%_v%' ORDER BY table_name",
         "skipUrlSync": false,
         "type": "query",
         "current": {
@@ -3590,7 +3588,7 @@
           "type": "questdb-questdb-datasource",
           "uid": "${DS_QUESTDB}"
         },
-        "definition": "SELECT table_name FROM tables() WHERE table_name LIKE 'fritzbox%' ORDER BY table_name",
+        "definition": "SELECT table_name FROM tables() WHERE table_name LIKE 'fritzbox%' AND table_name NOT LIKE '%_rollup_%_v%' ORDER BY table_name",
         "includeAll": false,
         "multi": false,
         "refresh": 1,
@@ -3642,6 +3640,380 @@
         "refresh": 1,
         "regex": "",
         "skipUrlSync": false,
+        "sort": 0,
+        "type": "query"
+      },
+      {
+        "current": {
+          "selected": false,
+          "text": "disabled",
+          "value": "disabled"
+        },
+        "datasource": {
+          "type": "questdb-questdb-datasource",
+          "uid": "${DS_QUESTDB}"
+        },
+        "definition": "SELECT CASE\n  WHEN enabled = true AND schema_version = 1\n    AND ((profile = 'low' AND raw_days > 0 AND raw_days <= 30 AND rollup_interval = '1m' AND rollup_view = '${measurement}_rollup_1m_v1') OR (profile = 'medium' AND raw_days > 0 AND raw_days <= 7 AND rollup_interval = '1m' AND rollup_view = '${measurement}_rollup_1m_v1') OR (profile = 'high' AND raw_days > 0 AND raw_days <= 1 AND rollup_interval = '5m' AND rollup_view = '${measurement}_rollup_5m_v1')) THEN profile\n  ELSE 'disabled' END\nFROM \"_fritzfluxdb_downsampling\"\nWHERE measurement = '${measurement}'\nLATEST ON timestamp PARTITION BY measurement",
+        "hide": 2,
+        "includeAll": false,
+        "label": "Downsampling Profile",
+        "multi": false,
+        "name": "downsampling_profile",
+        "options": [],
+        "query": "SELECT CASE\n  WHEN enabled = true AND schema_version = 1\n    AND ((profile = 'low' AND raw_days > 0 AND raw_days <= 30 AND rollup_interval = '1m' AND rollup_view = '${measurement}_rollup_1m_v1') OR (profile = 'medium' AND raw_days > 0 AND raw_days <= 7 AND rollup_interval = '1m' AND rollup_view = '${measurement}_rollup_1m_v1') OR (profile = 'high' AND raw_days > 0 AND raw_days <= 1 AND rollup_interval = '5m' AND rollup_view = '${measurement}_rollup_5m_v1')) THEN profile\n  ELSE 'disabled' END\nFROM \"_fritzfluxdb_downsampling\"\nWHERE measurement = '${measurement}'\nLATEST ON timestamp PARTITION BY measurement",
+        "refresh": 1,
+        "sort": 0,
+        "type": "query"
+      },
+      {
+        "current": {
+          "selected": false,
+          "text": "0",
+          "value": "0"
+        },
+        "datasource": {
+          "type": "questdb-questdb-datasource",
+          "uid": "${DS_QUESTDB}"
+        },
+        "definition": "SELECT CASE\n  WHEN enabled = true AND schema_version = 1\n    AND ((profile = 'low' AND raw_days > 0 AND raw_days <= 30 AND rollup_interval = '1m' AND rollup_view = '${measurement}_rollup_1m_v1') OR (profile = 'medium' AND raw_days > 0 AND raw_days <= 7 AND rollup_interval = '1m' AND rollup_view = '${measurement}_rollup_1m_v1') OR (profile = 'high' AND raw_days > 0 AND raw_days <= 1 AND rollup_interval = '5m' AND rollup_view = '${measurement}_rollup_5m_v1')) THEN raw_days\n  ELSE 0 END\nFROM \"_fritzfluxdb_downsampling\"\nWHERE measurement = '${measurement}'\nLATEST ON timestamp PARTITION BY measurement",
+        "hide": 2,
+        "includeAll": false,
+        "label": "Downsampling Raw Days",
+        "multi": false,
+        "name": "downsampling_raw_days",
+        "options": [],
+        "query": "SELECT CASE\n  WHEN enabled = true AND schema_version = 1\n    AND ((profile = 'low' AND raw_days > 0 AND raw_days <= 30 AND rollup_interval = '1m' AND rollup_view = '${measurement}_rollup_1m_v1') OR (profile = 'medium' AND raw_days > 0 AND raw_days <= 7 AND rollup_interval = '1m' AND rollup_view = '${measurement}_rollup_1m_v1') OR (profile = 'high' AND raw_days > 0 AND raw_days <= 1 AND rollup_interval = '5m' AND rollup_view = '${measurement}_rollup_5m_v1')) THEN raw_days\n  ELSE 0 END\nFROM \"_fritzfluxdb_downsampling\"\nWHERE measurement = '${measurement}'\nLATEST ON timestamp PARTITION BY measurement",
+        "refresh": 1,
+        "sort": 0,
+        "type": "query"
+      },
+      {
+        "current": {
+          "selected": false,
+          "text": "${measurement}",
+          "value": "${measurement}"
+        },
+        "datasource": {
+          "type": "questdb-questdb-datasource",
+          "uid": "${DS_QUESTDB}"
+        },
+        "definition": "SELECT source\nFROM (\n  SELECT table_name AS source, 0 AS priority\n  FROM tables()\n  WHERE (('${downsampling_profile:raw}' = 'low' AND $__fromTime < dateadd('d', -${downsampling_raw_days:raw}, now()) AND table_name = '${measurement}_rollup_1m_v1')\n      OR ('${downsampling_profile:raw}' = 'medium' AND $__fromTime < dateadd('d', -${downsampling_raw_days:raw}, now()) AND table_name = '${measurement}_rollup_1m_v1')\n      OR ('${downsampling_profile:raw}' = 'high' AND $__fromTime < dateadd('d', -${downsampling_raw_days:raw}, now()) AND table_name = '${measurement}_rollup_5m_v1'))\n  UNION ALL\n  SELECT table_name AS source, 1 AS priority\n  FROM tables()\n  WHERE table_name = '${measurement}'\n)\nORDER BY priority\nLIMIT 1",
+        "hide": 2,
+        "includeAll": false,
+        "label": "metric_source",
+        "multi": false,
+        "name": "metric_source",
+        "options": [],
+        "query": "SELECT source\nFROM (\n  SELECT table_name AS source, 0 AS priority\n  FROM tables()\n  WHERE (('${downsampling_profile:raw}' = 'low' AND $__fromTime < dateadd('d', -${downsampling_raw_days:raw}, now()) AND table_name = '${measurement}_rollup_1m_v1')\n      OR ('${downsampling_profile:raw}' = 'medium' AND $__fromTime < dateadd('d', -${downsampling_raw_days:raw}, now()) AND table_name = '${measurement}_rollup_1m_v1')\n      OR ('${downsampling_profile:raw}' = 'high' AND $__fromTime < dateadd('d', -${downsampling_raw_days:raw}, now()) AND table_name = '${measurement}_rollup_5m_v1'))\n  UNION ALL\n  SELECT table_name AS source, 1 AS priority\n  FROM tables()\n  WHERE table_name = '${measurement}'\n)\nORDER BY priority\nLIMIT 1",
+        "refresh": 2,
+        "sort": 0,
+        "type": "query"
+      },
+      {
+        "current": {
+          "selected": false,
+          "text": "",
+          "value": ""
+        },
+        "datasource": {
+          "type": "questdb-questdb-datasource",
+          "uid": "${DS_QUESTDB}"
+        },
+        "definition": "SELECT CASE WHEN '${metric_source:raw}' LIKE '%_rollup_%_v1' THEN '_sum' ELSE '/*raw*/' END",
+        "hide": 2,
+        "includeAll": false,
+        "label": "metric_source_gauge_sum_suffix",
+        "multi": false,
+        "name": "metric_source_gauge_sum_suffix",
+        "options": [],
+        "query": "SELECT CASE WHEN '${metric_source:raw}' LIKE '%_rollup_%_v1' THEN '_sum' ELSE '/*raw*/' END",
+        "refresh": 2,
+        "sort": 0,
+        "type": "query"
+      },
+      {
+        "current": {
+          "selected": false,
+          "text": "",
+          "value": ""
+        },
+        "datasource": {
+          "type": "questdb-questdb-datasource",
+          "uid": "${DS_QUESTDB}"
+        },
+        "definition": "SELECT CASE WHEN '${metric_source:raw}' LIKE '%_rollup_%_v1' THEN '_count' ELSE '/*raw*/' END",
+        "hide": 2,
+        "includeAll": false,
+        "label": "metric_source_gauge_count_suffix",
+        "multi": false,
+        "name": "metric_source_gauge_count_suffix",
+        "options": [],
+        "query": "SELECT CASE WHEN '${metric_source:raw}' LIKE '%_rollup_%_v1' THEN '_count' ELSE '/*raw*/' END",
+        "refresh": 2,
+        "sort": 0,
+        "type": "query"
+      },
+      {
+        "current": {
+          "selected": false,
+          "text": "",
+          "value": ""
+        },
+        "datasource": {
+          "type": "questdb-questdb-datasource",
+          "uid": "${DS_QUESTDB}"
+        },
+        "definition": "SELECT CASE WHEN '${metric_source:raw}' LIKE '%_rollup_%_v1' THEN 'sum' ELSE 'count' END",
+        "hide": 2,
+        "includeAll": false,
+        "label": "metric_source_gauge_count_aggregate",
+        "multi": false,
+        "name": "metric_source_gauge_count_aggregate",
+        "options": [],
+        "query": "SELECT CASE WHEN '${metric_source:raw}' LIKE '%_rollup_%_v1' THEN 'sum' ELSE 'count' END",
+        "refresh": 2,
+        "sort": 0,
+        "type": "query"
+      },
+      {
+        "current": {
+          "selected": false,
+          "text": "",
+          "value": ""
+        },
+        "datasource": {
+          "type": "questdb-questdb-datasource",
+          "uid": "${DS_QUESTDB}"
+        },
+        "definition": "SELECT CASE WHEN '${metric_source:raw}' LIKE '%_rollup_%_v1' THEN '_last' ELSE '/*raw*/' END",
+        "hide": 2,
+        "includeAll": false,
+        "label": "metric_source_counter_suffix",
+        "multi": false,
+        "name": "metric_source_counter_suffix",
+        "options": [],
+        "query": "SELECT CASE WHEN '${metric_source:raw}' LIKE '%_rollup_%_v1' THEN '_last' ELSE '/*raw*/' END",
+        "refresh": 2,
+        "sort": 0,
+        "type": "query"
+      },
+      {
+        "current": {
+          "selected": false,
+          "text": "${measurement}",
+          "value": "${measurement}"
+        },
+        "datasource": {
+          "type": "questdb-questdb-datasource",
+          "uid": "${DS_QUESTDB}"
+        },
+        "definition": "SELECT source\nFROM (\n  SELECT table_name AS source, 0 AS priority\n  FROM tables()\n  WHERE (('${downsampling_profile:raw}' = 'low' AND dateadd('d', -1, now()) < dateadd('d', -${downsampling_raw_days:raw}, now()) AND table_name = '${measurement}_rollup_1m_v1')\n      OR ('${downsampling_profile:raw}' = 'medium' AND dateadd('d', -1, now()) < dateadd('d', -${downsampling_raw_days:raw}, now()) AND table_name = '${measurement}_rollup_1m_v1')\n      OR ('${downsampling_profile:raw}' = 'high' AND dateadd('d', -1, now()) < dateadd('d', -${downsampling_raw_days:raw}, now()) AND table_name = '${measurement}_rollup_5m_v1'))\n  UNION ALL\n  SELECT table_name AS source, 1 AS priority\n  FROM tables()\n  WHERE table_name = '${measurement}'\n)\nORDER BY priority\nLIMIT 1",
+        "hide": 2,
+        "includeAll": false,
+        "label": "metric_source_1d",
+        "multi": false,
+        "name": "metric_source_1d",
+        "options": [],
+        "query": "SELECT source\nFROM (\n  SELECT table_name AS source, 0 AS priority\n  FROM tables()\n  WHERE (('${downsampling_profile:raw}' = 'low' AND dateadd('d', -1, now()) < dateadd('d', -${downsampling_raw_days:raw}, now()) AND table_name = '${measurement}_rollup_1m_v1')\n      OR ('${downsampling_profile:raw}' = 'medium' AND dateadd('d', -1, now()) < dateadd('d', -${downsampling_raw_days:raw}, now()) AND table_name = '${measurement}_rollup_1m_v1')\n      OR ('${downsampling_profile:raw}' = 'high' AND dateadd('d', -1, now()) < dateadd('d', -${downsampling_raw_days:raw}, now()) AND table_name = '${measurement}_rollup_5m_v1'))\n  UNION ALL\n  SELECT table_name AS source, 1 AS priority\n  FROM tables()\n  WHERE table_name = '${measurement}'\n)\nORDER BY priority\nLIMIT 1",
+        "refresh": 2,
+        "sort": 0,
+        "type": "query"
+      },
+      {
+        "current": {
+          "selected": false,
+          "text": "",
+          "value": ""
+        },
+        "datasource": {
+          "type": "questdb-questdb-datasource",
+          "uid": "${DS_QUESTDB}"
+        },
+        "definition": "SELECT CASE WHEN '${metric_source_1d:raw}' LIKE '%_rollup_%_v1' THEN '_sum' ELSE '/*raw*/' END",
+        "hide": 2,
+        "includeAll": false,
+        "label": "metric_source_1d_gauge_sum_suffix",
+        "multi": false,
+        "name": "metric_source_1d_gauge_sum_suffix",
+        "options": [],
+        "query": "SELECT CASE WHEN '${metric_source_1d:raw}' LIKE '%_rollup_%_v1' THEN '_sum' ELSE '/*raw*/' END",
+        "refresh": 2,
+        "sort": 0,
+        "type": "query"
+      },
+      {
+        "current": {
+          "selected": false,
+          "text": "",
+          "value": ""
+        },
+        "datasource": {
+          "type": "questdb-questdb-datasource",
+          "uid": "${DS_QUESTDB}"
+        },
+        "definition": "SELECT CASE WHEN '${metric_source_1d:raw}' LIKE '%_rollup_%_v1' THEN '_count' ELSE '/*raw*/' END",
+        "hide": 2,
+        "includeAll": false,
+        "label": "metric_source_1d_gauge_count_suffix",
+        "multi": false,
+        "name": "metric_source_1d_gauge_count_suffix",
+        "options": [],
+        "query": "SELECT CASE WHEN '${metric_source_1d:raw}' LIKE '%_rollup_%_v1' THEN '_count' ELSE '/*raw*/' END",
+        "refresh": 2,
+        "sort": 0,
+        "type": "query"
+      },
+      {
+        "current": {
+          "selected": false,
+          "text": "",
+          "value": ""
+        },
+        "datasource": {
+          "type": "questdb-questdb-datasource",
+          "uid": "${DS_QUESTDB}"
+        },
+        "definition": "SELECT CASE WHEN '${metric_source_1d:raw}' LIKE '%_rollup_%_v1' THEN 'sum' ELSE 'count' END",
+        "hide": 2,
+        "includeAll": false,
+        "label": "metric_source_1d_gauge_count_aggregate",
+        "multi": false,
+        "name": "metric_source_1d_gauge_count_aggregate",
+        "options": [],
+        "query": "SELECT CASE WHEN '${metric_source_1d:raw}' LIKE '%_rollup_%_v1' THEN 'sum' ELSE 'count' END",
+        "refresh": 2,
+        "sort": 0,
+        "type": "query"
+      },
+      {
+        "current": {
+          "selected": false,
+          "text": "",
+          "value": ""
+        },
+        "datasource": {
+          "type": "questdb-questdb-datasource",
+          "uid": "${DS_QUESTDB}"
+        },
+        "definition": "SELECT CASE WHEN '${metric_source_1d:raw}' LIKE '%_rollup_%_v1' THEN '_last' ELSE '/*raw*/' END",
+        "hide": 2,
+        "includeAll": false,
+        "label": "metric_source_1d_counter_suffix",
+        "multi": false,
+        "name": "metric_source_1d_counter_suffix",
+        "options": [],
+        "query": "SELECT CASE WHEN '${metric_source_1d:raw}' LIKE '%_rollup_%_v1' THEN '_last' ELSE '/*raw*/' END",
+        "refresh": 2,
+        "sort": 0,
+        "type": "query"
+      },
+      {
+        "current": {
+          "selected": false,
+          "text": "${measurement}",
+          "value": "${measurement}"
+        },
+        "datasource": {
+          "type": "questdb-questdb-datasource",
+          "uid": "${DS_QUESTDB}"
+        },
+        "definition": "SELECT source\nFROM (\n  SELECT table_name AS source, 0 AS priority\n  FROM tables()\n  WHERE (('${downsampling_profile:raw}' = 'low' AND dateadd('d', -7, now()) < dateadd('d', -${downsampling_raw_days:raw}, now()) AND table_name = '${measurement}_rollup_1m_v1')\n      OR ('${downsampling_profile:raw}' = 'medium' AND dateadd('d', -7, now()) < dateadd('d', -${downsampling_raw_days:raw}, now()) AND table_name = '${measurement}_rollup_1m_v1')\n      OR ('${downsampling_profile:raw}' = 'high' AND dateadd('d', -7, now()) < dateadd('d', -${downsampling_raw_days:raw}, now()) AND table_name = '${measurement}_rollup_5m_v1'))\n  UNION ALL\n  SELECT table_name AS source, 1 AS priority\n  FROM tables()\n  WHERE table_name = '${measurement}'\n)\nORDER BY priority\nLIMIT 1",
+        "hide": 2,
+        "includeAll": false,
+        "label": "metric_source_7d",
+        "multi": false,
+        "name": "metric_source_7d",
+        "options": [],
+        "query": "SELECT source\nFROM (\n  SELECT table_name AS source, 0 AS priority\n  FROM tables()\n  WHERE (('${downsampling_profile:raw}' = 'low' AND dateadd('d', -7, now()) < dateadd('d', -${downsampling_raw_days:raw}, now()) AND table_name = '${measurement}_rollup_1m_v1')\n      OR ('${downsampling_profile:raw}' = 'medium' AND dateadd('d', -7, now()) < dateadd('d', -${downsampling_raw_days:raw}, now()) AND table_name = '${measurement}_rollup_1m_v1')\n      OR ('${downsampling_profile:raw}' = 'high' AND dateadd('d', -7, now()) < dateadd('d', -${downsampling_raw_days:raw}, now()) AND table_name = '${measurement}_rollup_5m_v1'))\n  UNION ALL\n  SELECT table_name AS source, 1 AS priority\n  FROM tables()\n  WHERE table_name = '${measurement}'\n)\nORDER BY priority\nLIMIT 1",
+        "refresh": 2,
+        "sort": 0,
+        "type": "query"
+      },
+      {
+        "current": {
+          "selected": false,
+          "text": "",
+          "value": ""
+        },
+        "datasource": {
+          "type": "questdb-questdb-datasource",
+          "uid": "${DS_QUESTDB}"
+        },
+        "definition": "SELECT CASE WHEN '${metric_source_7d:raw}' LIKE '%_rollup_%_v1' THEN '_sum' ELSE '/*raw*/' END",
+        "hide": 2,
+        "includeAll": false,
+        "label": "metric_source_7d_gauge_sum_suffix",
+        "multi": false,
+        "name": "metric_source_7d_gauge_sum_suffix",
+        "options": [],
+        "query": "SELECT CASE WHEN '${metric_source_7d:raw}' LIKE '%_rollup_%_v1' THEN '_sum' ELSE '/*raw*/' END",
+        "refresh": 2,
+        "sort": 0,
+        "type": "query"
+      },
+      {
+        "current": {
+          "selected": false,
+          "text": "",
+          "value": ""
+        },
+        "datasource": {
+          "type": "questdb-questdb-datasource",
+          "uid": "${DS_QUESTDB}"
+        },
+        "definition": "SELECT CASE WHEN '${metric_source_7d:raw}' LIKE '%_rollup_%_v1' THEN '_count' ELSE '/*raw*/' END",
+        "hide": 2,
+        "includeAll": false,
+        "label": "metric_source_7d_gauge_count_suffix",
+        "multi": false,
+        "name": "metric_source_7d_gauge_count_suffix",
+        "options": [],
+        "query": "SELECT CASE WHEN '${metric_source_7d:raw}' LIKE '%_rollup_%_v1' THEN '_count' ELSE '/*raw*/' END",
+        "refresh": 2,
+        "sort": 0,
+        "type": "query"
+      },
+      {
+        "current": {
+          "selected": false,
+          "text": "",
+          "value": ""
+        },
+        "datasource": {
+          "type": "questdb-questdb-datasource",
+          "uid": "${DS_QUESTDB}"
+        },
+        "definition": "SELECT CASE WHEN '${metric_source_7d:raw}' LIKE '%_rollup_%_v1' THEN 'sum' ELSE 'count' END",
+        "hide": 2,
+        "includeAll": false,
+        "label": "metric_source_7d_gauge_count_aggregate",
+        "multi": false,
+        "name": "metric_source_7d_gauge_count_aggregate",
+        "options": [],
+        "query": "SELECT CASE WHEN '${metric_source_7d:raw}' LIKE '%_rollup_%_v1' THEN 'sum' ELSE 'count' END",
+        "refresh": 2,
+        "sort": 0,
+        "type": "query"
+      },
+      {
+        "current": {
+          "selected": false,
+          "text": "",
+          "value": ""
+        },
+        "datasource": {
+          "type": "questdb-questdb-datasource",
+          "uid": "${DS_QUESTDB}"
+        },
+        "definition": "SELECT CASE WHEN '${metric_source_7d:raw}' LIKE '%_rollup_%_v1' THEN '_last' ELSE '/*raw*/' END",
+        "hide": 2,
+        "includeAll": false,
+        "label": "metric_source_7d_counter_suffix",
+        "multi": false,
+        "name": "metric_source_7d_counter_suffix",
+        "options": [],
+        "query": "SELECT CASE WHEN '${metric_source_7d:raw}' LIKE '%_rollup_%_v1' THEN '_last' ELSE '/*raw*/' END",
+        "refresh": 2,
         "sort": 0,
         "type": "query"
       }

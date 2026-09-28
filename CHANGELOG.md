@@ -1,13 +1,23 @@
+## [v1.6.0] - 2026-09-28
+
+- ``New`` The default QuestDB data retention is now 365 days (previously 90). It applies only to a table without a TTL, so existing tables keep their current retention; change it in QuestDB with `ALTER TABLE "fritzbox_<serial>" SET TTL 365 DAYS;`.
+- ``New`` Optional QuestDB OSS downsampling with `QUESTDB_DOWNSAMPLING=low|medium|high` (30d/1m, 7d/1m, 1d/5m). fritzfluxdb provisions the materialized view and publishes the active profile; QuestDB aggregates and expires data server-side, raw polling is unchanged and no cron job is required.
+- ``New`` QuestDB Grafana dashboards use raw data for recent ranges and re-aggregatable rollups for longer ones. Logs, call logs, current snapshots and state histories remain raw-only.
+- ``New`` A raw TTL that fritzfluxdb set itself is adjusted when you switch profiles, so raw storage actually shrinks. A TTL of unknown origin is never overwritten; the profile's shorter window is then skipped and the dashboards report the retention that is really in effect.
+- ``New`` Disabling downsampling does not restore the previous raw window: rollups and the shortened raw TTL are kept and dashboards fall back to raw only. Widen it with `ALTER TABLE "fritzbox_<serial>" SET TTL 365 DAYS;`.
+- ``New`` Source installs now use `python -m pip install .`; `requirements.txt` and the `VERSION` file are gone, with dependencies and the version living in `pyproject.toml`.
+- ``Fix`` The startup banner no longer reports version `dev` without build details; it reads the version from the installed package metadata.
+
+
+<details markdown="1">
+<summary>Previous versions...</summary>
+
 ## [v1.5.1] - 2026-09-14
 
 - ``New`` The default QuestDB data retention is now 90 days (previously 30). It only applies to tables that do not have a TTL yet, so tables created by an earlier version keep their 30 days. `QUESTDB_DATA_RETENTION_DAYS` does not change an existing TTL either — adjust it in QuestDB instead, e.g. `ALTER TABLE "fritzbox_<serial>" SET TTL 90 DAYS;`.
 - ``New`` Added `utils/questdb/server.conf.example`, a sample QuestDB server configuration tuned for small, self-hosted deployments.
 - ``Fix`` Grafana dashboards moved from `grafana/` to `utils/grafana/`; the QuestDB dashboards are now numbered (`01_`–`04_`) so Grafana imports them in the correct order.
 - ``Fix`` QuestDB dashboards no longer show "False" for boolean fields (Upgrade Available, DDNS Enabled, VPN Active/Connected) that were never reported by the FritzBox — QuestDB booleans are never `NULL`, so presence is now detected via a companion column instead.
-
-<details markdown="1">
-<summary>Previous versions...</summary>
-
 
 ## [v1.5.0] - 2026-09-14
 

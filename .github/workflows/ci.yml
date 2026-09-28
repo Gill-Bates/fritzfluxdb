@@ -35,7 +35,7 @@ jobs:
         run: |
           set -euo pipefail
           python -m pip install --upgrade pip
-          pip install -r requirements.txt
+          pip install .
           # Both gate the release, so both are pinned: ruff's default rule
           # set grows between releases and pytest changes collection
           # behaviour across majors, which turns an unrelated upstream

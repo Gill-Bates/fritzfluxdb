@@ -92,12 +92,22 @@ docker compose up -d
 | `INFLUXDB_ALLOW_PLAINTEXT_CREDENTIALS` | `false` | Allow credentials/token over plain HTTP (trusted networks only) |
 | `QUESTDB_HOSTNAME` | — | QuestDB host (or full URL); `QUESTDB_*` mirrors the `INFLUXDB_*` options |
 | `QUESTDB_PORT` | `9000` | QuestDB ILP/HTTP port |
-| `QUESTDB_DATA_RETENTION_DAYS` | `90` | TTL in days for a QuestDB table without TTL (`0` disables, requires QuestDB 8.2.2+) |
+| `QUESTDB_DATA_RETENTION_DAYS` | `365` | Total QuestDB retention in days; existing administrator-managed TTLs are preserved (`0` means unlimited rollup retention) |
+| `QUESTDB_DOWNSAMPLING` | — | Optional QuestDB OSS profile: `low` (30d raw/1m), `medium` (7d raw/1m), or `high` (1d raw/5m) |
 | `LOG_LEVEL` | `INFO` | Log level (`DEBUG`, `INFO`, `WARNING`, `ERROR`) |
 | `TZ` | `Europe/Berlin` | Container timezone |
 
 TR-064 data and smart home devices are collected every 60 seconds; active network hosts every
 10 minutes. `FRITZBOX_REQUEST_INTERVAL` can only increase these built-in intervals.
+
+QuestDB downsampling uses native materialized views and requires QuestDB OSS 8.3.1 or newer.
+fritzfluxdb still writes every raw sample; QuestDB maintains the rollup and TTL without cron jobs.
+Logs, call logs and state histories remain raw-only. A raw TTL that fritzfluxdb did not set belongs
+to the administrator and is never overwritten; a TTL it set itself is adjusted on a profile change.
+
+Disabling downsampling does not restore the previous raw window: rollup views and the raw TTL of the
+previous profile are kept, and Grafana falls back to raw data only. Raise the TTL in QuestDB
+yourself to widen it again.
 
 ---
 
@@ -116,6 +126,7 @@ The project includes example dashboards, available in the [GitHub repository](ht
 
 - [GitHub Repository](https://github.com/Gill-Bates/fritzfluxdb)
 - [Changelog](https://github.com/Gill-Bates/fritzfluxdb/blob/main/CHANGELOG.md)
+- [License: MIT](https://github.com/Gill-Bates/fritzfluxdb/blob/main/LICENSE)
 
 ---
 

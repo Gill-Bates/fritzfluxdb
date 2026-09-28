@@ -263,7 +263,7 @@
           },
           "format": 0,
           "queryType": "sql",
-          "rawSql": "SELECT timestamp AS time, name AS metric, median(ha_temperature) AS value\nFROM ${measurement}\nWHERE $__timeFilter(timestamp)\n  AND box ~ '^${boxtag:regex}$'\n  AND name IS NOT NULL\n  AND ha_temperature IS NOT NULL\nSAMPLE BY $__sampleByInterval ALIGN TO CALENDAR",
+          "rawSql": "SELECT timestamp AS time, name AS metric, sum(ha_temperature${metric_source_gauge_sum_suffix:raw}) / ${metric_source_gauge_count_aggregate:raw}(ha_temperature${metric_source_gauge_count_suffix:raw}) AS value\nFROM ${metric_source:raw}\nWHERE $__timeFilter(timestamp)\n  AND box ~ '^${boxtag:regex}$'\n  AND name IS NOT NULL\n  AND ha_temperature${metric_source_gauge_sum_suffix:raw} IS NOT NULL\nSAMPLE BY $__sampleByInterval ALIGN TO CALENDAR",
           "refId": "A",
           "selectedFormat": 0
         }
@@ -391,7 +391,7 @@
               },
               "format": 0,
               "queryType": "sql",
-              "rawSql": "SELECT timestamp AS time, name || ' (actual)' AS metric, median(ha_heating_tist) AS value\nFROM ${measurement}\nWHERE $__timeFilter(timestamp)\n  AND box ~ '^${boxtag:regex}$'\n  AND name IS NOT NULL\n  AND ha_heating_tist IS NOT NULL\n  AND ha_heating_tist < 253\nSAMPLE BY $__sampleByInterval ALIGN TO CALENDAR",
+              "rawSql": "SELECT timestamp AS time, name || ' (actual)' AS metric, sum(ha_heating_tist${metric_source_gauge_sum_suffix:raw}) / ${metric_source_gauge_count_aggregate:raw}(ha_heating_tist${metric_source_gauge_count_suffix:raw}) AS value\nFROM ${metric_source:raw}\nWHERE $__timeFilter(timestamp)\n  AND box ~ '^${boxtag:regex}$'\n  AND name IS NOT NULL\n  AND ha_heating_tist${metric_source_gauge_sum_suffix:raw} IS NOT NULL\nSAMPLE BY $__sampleByInterval ALIGN TO CALENDAR",
               "refId": "A",
               "selectedFormat": 0
             },
@@ -402,13 +402,21 @@
               },
               "format": 0,
               "queryType": "sql",
-              "rawSql": "SELECT timestamp AS time, name || ' (set)' AS metric, first(ha_heating_tsoll) AS value\nFROM ${measurement}\nWHERE $__timeFilter(timestamp)\n  AND box ~ '^${boxtag:regex}$'\n  AND name IS NOT NULL\n  AND ha_heating_tsoll IS NOT NULL\n  AND ha_heating_tsoll < 253\nSAMPLE BY $__sampleByInterval ALIGN TO CALENDAR",
+              "rawSql": "SELECT timestamp AS time, name || ' (set)' AS metric, sum(ha_heating_tsoll${metric_source_gauge_sum_suffix:raw}) / ${metric_source_gauge_count_aggregate:raw}(ha_heating_tsoll${metric_source_gauge_count_suffix:raw}) AS value\nFROM ${metric_source:raw}\nWHERE $__timeFilter(timestamp)\n  AND box ~ '^${boxtag:regex}$'\n  AND name IS NOT NULL\n  AND ha_heating_tsoll${metric_source_gauge_sum_suffix:raw} IS NOT NULL\nSAMPLE BY $__sampleByInterval ALIGN TO CALENDAR",
               "refId": "B",
               "selectedFormat": 0
             }
           ],
           "title": "Heating",
-          "transformations": [],
+          "transformations": [
+            {
+              "id": "renameByRegex",
+              "options": {
+                "regex": "^[A-Z] (.*)$",
+                "renamePattern": "$1"
+              }
+            }
+          ],
           "type": "timeseries"
         },
         {
@@ -940,7 +948,7 @@
               },
               "format": 0,
               "queryType": "sql",
-              "rawSql": "SELECT timestamp AS time, name || ' power' AS metric, avg(ha_powermeter_power) AS value\nFROM ${measurement}\nWHERE $__timeFilter(timestamp)\n  AND box ~ '^${boxtag:regex}$'\n  AND name IS NOT NULL\n  AND ha_powermeter_power IS NOT NULL\nSAMPLE BY $__sampleByInterval ALIGN TO CALENDAR",
+              "rawSql": "SELECT timestamp AS time, name || ' power' AS metric, sum(ha_powermeter_power${metric_source_gauge_sum_suffix:raw}) / ${metric_source_gauge_count_aggregate:raw}(ha_powermeter_power${metric_source_gauge_count_suffix:raw}) AS value\nFROM ${metric_source:raw}\nWHERE $__timeFilter(timestamp)\n  AND box ~ '^${boxtag:regex}$'\n  AND name IS NOT NULL\n  AND ha_powermeter_power${metric_source_gauge_sum_suffix:raw} IS NOT NULL\nSAMPLE BY $__sampleByInterval ALIGN TO CALENDAR",
               "refId": "A",
               "selectedFormat": 0
             },
@@ -951,7 +959,7 @@
               },
               "format": 0,
               "queryType": "sql",
-              "rawSql": "SELECT timestamp AS time, name || ' voltage' AS metric, avg(ha_powermeter_voltage) AS value\nFROM ${measurement}\nWHERE $__timeFilter(timestamp)\n  AND box ~ '^${boxtag:regex}$'\n  AND name IS NOT NULL\n  AND ha_powermeter_voltage IS NOT NULL\nSAMPLE BY $__sampleByInterval ALIGN TO CALENDAR",
+              "rawSql": "SELECT timestamp AS time, name || ' voltage' AS metric, sum(ha_powermeter_voltage${metric_source_gauge_sum_suffix:raw}) / ${metric_source_gauge_count_aggregate:raw}(ha_powermeter_voltage${metric_source_gauge_count_suffix:raw}) AS value\nFROM ${metric_source:raw}\nWHERE $__timeFilter(timestamp)\n  AND box ~ '^${boxtag:regex}$'\n  AND name IS NOT NULL\n  AND ha_powermeter_voltage${metric_source_gauge_sum_suffix:raw} IS NOT NULL\nSAMPLE BY $__sampleByInterval ALIGN TO CALENDAR",
               "refId": "B",
               "selectedFormat": 0
             },
@@ -962,13 +970,22 @@
               },
               "format": 0,
               "queryType": "sql",
-              "rawSql": "SELECT timestamp AS time, name || ' energy' AS metric, avg(ha_powermeter_energy) AS value\nFROM ${measurement}\nWHERE $__timeFilter(timestamp)\n  AND box ~ '^${boxtag:regex}$'\n  AND name IS NOT NULL\n  AND ha_powermeter_energy IS NOT NULL\nSAMPLE BY $__sampleByInterval ALIGN TO CALENDAR",
+              "rawSql": "SELECT timestamp AS time, name || ' energy' AS metric, last(ha_powermeter_energy${metric_source_counter_suffix:raw}) AS \"energy\"\nFROM ${metric_source:raw}\nWHERE $__timeFilter(timestamp)\n  AND box ~ '^${boxtag:regex}$'\n  AND name IS NOT NULL\n  AND ha_powermeter_energy${metric_source_counter_suffix:raw} IS NOT NULL\nSAMPLE BY $__sampleByInterval ALIGN TO CALENDAR",
               "refId": "C",
               "selectedFormat": 0
             }
           ],
           "title": "Energy",
-          "type": "timeseries"
+          "type": "timeseries",
+          "transformations": [
+            {
+              "id": "renameByRegex",
+              "options": {
+                "regex": "^[A-Z] (.*)$",
+                "renamePattern": "$1"
+              }
+            }
+          ]
         }
       ],
       "title": "Energy",
@@ -1622,7 +1639,7 @@
         "hide": 0,
         "label": "FritzBox",
         "name": "measurement",
-        "query": "SELECT table_name FROM tables() WHERE table_name LIKE 'fritzbox%' ORDER BY table_name",
+        "query": "SELECT table_name FROM tables() WHERE table_name LIKE 'fritzbox%' AND table_name NOT LIKE '%_rollup_%_v%' ORDER BY table_name",
         "skipUrlSync": false,
         "type": "query",
         "current": {
@@ -1635,7 +1652,7 @@
           "type": "questdb-questdb-datasource",
           "uid": "${DS_QUESTDB}"
         },
-        "definition": "SELECT table_name FROM tables() WHERE table_name LIKE 'fritzbox%' ORDER BY table_name",
+        "definition": "SELECT table_name FROM tables() WHERE table_name LIKE 'fritzbox%' AND table_name NOT LIKE '%_rollup_%_v%' ORDER BY table_name",
         "includeAll": false,
         "multi": false,
         "refresh": 1,
@@ -1664,6 +1681,160 @@
         "regex": "",
         "skipUrlSync": false,
         "sort": 1,
+        "type": "query"
+      },
+      {
+        "current": {
+          "selected": false,
+          "text": "disabled",
+          "value": "disabled"
+        },
+        "datasource": {
+          "type": "questdb-questdb-datasource",
+          "uid": "${DS_QUESTDB}"
+        },
+        "definition": "SELECT CASE\n  WHEN enabled = true AND schema_version = 1\n    AND ((profile = 'low' AND raw_days > 0 AND raw_days <= 30 AND rollup_interval = '1m' AND rollup_view = '${measurement}_rollup_1m_v1') OR (profile = 'medium' AND raw_days > 0 AND raw_days <= 7 AND rollup_interval = '1m' AND rollup_view = '${measurement}_rollup_1m_v1') OR (profile = 'high' AND raw_days > 0 AND raw_days <= 1 AND rollup_interval = '5m' AND rollup_view = '${measurement}_rollup_5m_v1')) THEN profile\n  ELSE 'disabled' END\nFROM \"_fritzfluxdb_downsampling\"\nWHERE measurement = '${measurement}'\nLATEST ON timestamp PARTITION BY measurement",
+        "hide": 2,
+        "includeAll": false,
+        "label": "Downsampling Profile",
+        "multi": false,
+        "name": "downsampling_profile",
+        "options": [],
+        "query": "SELECT CASE\n  WHEN enabled = true AND schema_version = 1\n    AND ((profile = 'low' AND raw_days > 0 AND raw_days <= 30 AND rollup_interval = '1m' AND rollup_view = '${measurement}_rollup_1m_v1') OR (profile = 'medium' AND raw_days > 0 AND raw_days <= 7 AND rollup_interval = '1m' AND rollup_view = '${measurement}_rollup_1m_v1') OR (profile = 'high' AND raw_days > 0 AND raw_days <= 1 AND rollup_interval = '5m' AND rollup_view = '${measurement}_rollup_5m_v1')) THEN profile\n  ELSE 'disabled' END\nFROM \"_fritzfluxdb_downsampling\"\nWHERE measurement = '${measurement}'\nLATEST ON timestamp PARTITION BY measurement",
+        "refresh": 1,
+        "sort": 0,
+        "type": "query"
+      },
+      {
+        "current": {
+          "selected": false,
+          "text": "0",
+          "value": "0"
+        },
+        "datasource": {
+          "type": "questdb-questdb-datasource",
+          "uid": "${DS_QUESTDB}"
+        },
+        "definition": "SELECT CASE\n  WHEN enabled = true AND schema_version = 1\n    AND ((profile = 'low' AND raw_days > 0 AND raw_days <= 30 AND rollup_interval = '1m' AND rollup_view = '${measurement}_rollup_1m_v1') OR (profile = 'medium' AND raw_days > 0 AND raw_days <= 7 AND rollup_interval = '1m' AND rollup_view = '${measurement}_rollup_1m_v1') OR (profile = 'high' AND raw_days > 0 AND raw_days <= 1 AND rollup_interval = '5m' AND rollup_view = '${measurement}_rollup_5m_v1')) THEN raw_days\n  ELSE 0 END\nFROM \"_fritzfluxdb_downsampling\"\nWHERE measurement = '${measurement}'\nLATEST ON timestamp PARTITION BY measurement",
+        "hide": 2,
+        "includeAll": false,
+        "label": "Downsampling Raw Days",
+        "multi": false,
+        "name": "downsampling_raw_days",
+        "options": [],
+        "query": "SELECT CASE\n  WHEN enabled = true AND schema_version = 1\n    AND ((profile = 'low' AND raw_days > 0 AND raw_days <= 30 AND rollup_interval = '1m' AND rollup_view = '${measurement}_rollup_1m_v1') OR (profile = 'medium' AND raw_days > 0 AND raw_days <= 7 AND rollup_interval = '1m' AND rollup_view = '${measurement}_rollup_1m_v1') OR (profile = 'high' AND raw_days > 0 AND raw_days <= 1 AND rollup_interval = '5m' AND rollup_view = '${measurement}_rollup_5m_v1')) THEN raw_days\n  ELSE 0 END\nFROM \"_fritzfluxdb_downsampling\"\nWHERE measurement = '${measurement}'\nLATEST ON timestamp PARTITION BY measurement",
+        "refresh": 1,
+        "sort": 0,
+        "type": "query"
+      },
+      {
+        "current": {
+          "selected": false,
+          "text": "${measurement}",
+          "value": "${measurement}"
+        },
+        "datasource": {
+          "type": "questdb-questdb-datasource",
+          "uid": "${DS_QUESTDB}"
+        },
+        "definition": "SELECT source\nFROM (\n  SELECT table_name AS source, 0 AS priority\n  FROM tables()\n  WHERE (('${downsampling_profile:raw}' = 'low' AND $__fromTime < dateadd('d', -${downsampling_raw_days:raw}, now()) AND table_name = '${measurement}_rollup_1m_v1')\n      OR ('${downsampling_profile:raw}' = 'medium' AND $__fromTime < dateadd('d', -${downsampling_raw_days:raw}, now()) AND table_name = '${measurement}_rollup_1m_v1')\n      OR ('${downsampling_profile:raw}' = 'high' AND $__fromTime < dateadd('d', -${downsampling_raw_days:raw}, now()) AND table_name = '${measurement}_rollup_5m_v1'))\n  UNION ALL\n  SELECT table_name AS source, 1 AS priority\n  FROM tables()\n  WHERE table_name = '${measurement}'\n)\nORDER BY priority\nLIMIT 1",
+        "hide": 2,
+        "includeAll": false,
+        "label": "metric_source",
+        "multi": false,
+        "name": "metric_source",
+        "options": [],
+        "query": "SELECT source\nFROM (\n  SELECT table_name AS source, 0 AS priority\n  FROM tables()\n  WHERE (('${downsampling_profile:raw}' = 'low' AND $__fromTime < dateadd('d', -${downsampling_raw_days:raw}, now()) AND table_name = '${measurement}_rollup_1m_v1')\n      OR ('${downsampling_profile:raw}' = 'medium' AND $__fromTime < dateadd('d', -${downsampling_raw_days:raw}, now()) AND table_name = '${measurement}_rollup_1m_v1')\n      OR ('${downsampling_profile:raw}' = 'high' AND $__fromTime < dateadd('d', -${downsampling_raw_days:raw}, now()) AND table_name = '${measurement}_rollup_5m_v1'))\n  UNION ALL\n  SELECT table_name AS source, 1 AS priority\n  FROM tables()\n  WHERE table_name = '${measurement}'\n)\nORDER BY priority\nLIMIT 1",
+        "refresh": 2,
+        "sort": 0,
+        "type": "query"
+      },
+      {
+        "current": {
+          "selected": false,
+          "text": "",
+          "value": ""
+        },
+        "datasource": {
+          "type": "questdb-questdb-datasource",
+          "uid": "${DS_QUESTDB}"
+        },
+        "definition": "SELECT CASE WHEN '${metric_source:raw}' LIKE '%_rollup_%_v1' THEN '_sum' ELSE '/*raw*/' END",
+        "hide": 2,
+        "includeAll": false,
+        "label": "metric_source_gauge_sum_suffix",
+        "multi": false,
+        "name": "metric_source_gauge_sum_suffix",
+        "options": [],
+        "query": "SELECT CASE WHEN '${metric_source:raw}' LIKE '%_rollup_%_v1' THEN '_sum' ELSE '/*raw*/' END",
+        "refresh": 2,
+        "sort": 0,
+        "type": "query"
+      },
+      {
+        "current": {
+          "selected": false,
+          "text": "",
+          "value": ""
+        },
+        "datasource": {
+          "type": "questdb-questdb-datasource",
+          "uid": "${DS_QUESTDB}"
+        },
+        "definition": "SELECT CASE WHEN '${metric_source:raw}' LIKE '%_rollup_%_v1' THEN '_count' ELSE '/*raw*/' END",
+        "hide": 2,
+        "includeAll": false,
+        "label": "metric_source_gauge_count_suffix",
+        "multi": false,
+        "name": "metric_source_gauge_count_suffix",
+        "options": [],
+        "query": "SELECT CASE WHEN '${metric_source:raw}' LIKE '%_rollup_%_v1' THEN '_count' ELSE '/*raw*/' END",
+        "refresh": 2,
+        "sort": 0,
+        "type": "query"
+      },
+      {
+        "current": {
+          "selected": false,
+          "text": "",
+          "value": ""
+        },
+        "datasource": {
+          "type": "questdb-questdb-datasource",
+          "uid": "${DS_QUESTDB}"
+        },
+        "definition": "SELECT CASE WHEN '${metric_source:raw}' LIKE '%_rollup_%_v1' THEN 'sum' ELSE 'count' END",
+        "hide": 2,
+        "includeAll": false,
+        "label": "metric_source_gauge_count_aggregate",
+        "multi": false,
+        "name": "metric_source_gauge_count_aggregate",
+        "options": [],
+        "query": "SELECT CASE WHEN '${metric_source:raw}' LIKE '%_rollup_%_v1' THEN 'sum' ELSE 'count' END",
+        "refresh": 2,
+        "sort": 0,
+        "type": "query"
+      },
+      {
+        "current": {
+          "selected": false,
+          "text": "",
+          "value": ""
+        },
+        "datasource": {
+          "type": "questdb-questdb-datasource",
+          "uid": "${DS_QUESTDB}"
+        },
+        "definition": "SELECT CASE WHEN '${metric_source:raw}' LIKE '%_rollup_%_v1' THEN '_last' ELSE '/*raw*/' END",
+        "hide": 2,
+        "includeAll": false,
+        "label": "metric_source_counter_suffix",
+        "multi": false,
+        "name": "metric_source_counter_suffix",
+        "options": [],
+        "query": "SELECT CASE WHEN '${metric_source:raw}' LIKE '%_rollup_%_v1' THEN '_last' ELSE '/*raw*/' END",
+        "refresh": 2,
+        "sort": 0,
         "type": "query"
       }
     ]

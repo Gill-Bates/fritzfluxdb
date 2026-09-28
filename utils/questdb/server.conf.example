@@ -101,6 +101,10 @@ cairo.commit.mode=async
 cairo.wal.supported=true
 cairo.wal.enabled.default=true
 
+# Required for optional QUESTDB_DOWNSAMPLING. Enabled by default in supported
+# QuestDB OSS versions, but kept explicit in this example.
+cairo.mat.view.enabled=true
+
 cairo.max.uncommitted.rows=500000
 
 # O3 uses two buffers per column. Small pages suit low-volume, wide tables.

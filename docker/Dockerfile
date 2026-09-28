@@ -1,4 +1,4 @@
-FROM python:3.13-slim-trixie AS base
+FROM python:3.13-slim AS base
 SHELL ["/bin/sh", "-eu", "-c"]
 
 # --- Runtime environment ---------------------------------------------------
@@ -20,28 +20,37 @@ RUN apt-get update \
     && apt-get install -y --no-install-recommends tini tzdata \
     && rm -rf /var/lib/apt/lists/*
 
-# --- Python dependencies (cached layer) ------------------------------------
-# pip is removed once the dependencies are installed: the daemon never installs
+# --- Python package (cached layer) ------------------------------------------
+# pyproject.toml + app/ are installed as the "fritzfluxdb" distribution into
+# site-packages - not also copied to /app/app - so the app exists exactly
+# once in the image and app/version.py can read its own version back from
+# the installed metadata (importlib.metadata) instead of parsing
+# pyproject.toml again at runtime. README.md is required by pyproject.toml's
+# readme= field. pip is removed once installed: the daemon never installs
 # anything at runtime, and pip's bundled third-party copies (pip/_vendor) are
 # the only source of CVE findings in this image. Dropping it also keeps the
 # runtime surface smaller. Dependency consistency is verified here, at build
 # time, while pip is still present.
-COPY requirements.txt ./
-RUN pip install -r requirements.txt \
+COPY pyproject.toml README.md ./
+COPY app ./app
+RUN pip install --no-cache-dir . \
     && pip check \
-    && python -m pip uninstall -y pip
+    && python -m pip uninstall -y pip \
+    && rm -rf ./app
 
-# --- Application sources ----------------------------------------------------
+# --- Remaining application sources ------------------------------------------
 # run.py + BUILD_INFO (BUILD_INFO* tolerates the file being absent; the banner
-# falls back to a "dev" version in that case).
+# falls back to a "dev" version in that case). Copied after the pip install so
+# a change to either does not invalidate the dependency layer above.
 COPY run.py BUILD_INFO* ./
-COPY fritzfluxdb ./fritzfluxdb
 COPY docker/entrypoint.sh /usr/local/bin/entrypoint.sh
 
 # --- Build-time sanity check + privilege drop (single layer) ---------------
+# app/ now lives in site-packages (installed above), not under /app, so its
+# path is resolved via the import system rather than assumed as /app/app.
 RUN chmod 0555 /usr/local/bin/entrypoint.sh \
-    && python -m compileall -q /app/run.py /app/fritzfluxdb \
-    && python -c "import fritzfluxdb.main" \
+    && python -c "import app.main" \
+    && python -m compileall -q /app/run.py "$(python -c 'import app, os; print(os.path.dirname(app.__file__))')" \
     && groupadd --gid 10001 fritzfluxdb \
     && useradd --uid 10001 --gid 10001 --create-home --shell /usr/sbin/nologin fritzfluxdb \
     && chmod -R a-w /app
@@ -74,4 +83,4 @@ LABEL org.opencontainers.image.title="fritzFluxDB" \
 # CMD is the default command the watchdog supervises; override it (e.g.
 # `docker run <image> python /app/run.py --help`) to run one-off commands.
 ENTRYPOINT ["/usr/bin/tini", "--", "/usr/local/bin/entrypoint.sh"]
-CMD ["python", "/app/run.py", "-d"]
+CMD ["python", "/app/run.py"]

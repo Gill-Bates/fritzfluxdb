@@ -8,14 +8,14 @@ from dataclasses import dataclass
 
 import pytest
 
-from fritzfluxdb.classes.fritzbox.service_definitions import (
+from app.classes.fritzbox.service_definitions import (
     connection_info,
     logs,
     network_hosts,
     system_stats,
     vpn_data,
 )
-from fritzfluxdb.classes.fritzbox.service_definitions.helpers import (
+from app.classes.fritzbox.service_definitions.helpers import (
     parse_fritzbox_bool,
     parse_optional_json_response,
     parse_required_json_response,

@@ -89,7 +89,7 @@ terminating=0
 # NOTE: launched via run.py (not an installed console-script) because the
 # project is intentionally run from source -- see Dockerfile rationale.
 if [ "$#" -eq 0 ]; then
-    set -- python /app/run.py -d
+    set -- python /app/run.py
 fi
 
 # --- graceful shutdown -----------------------------------------------------

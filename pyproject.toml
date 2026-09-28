@@ -1,0 +1,33 @@
+#
+# pyproject.toml
+# Copyright (C) 2026 Gill-Bates http://github.com/Gill-Bates
+#
+# Single source of truth for the project version and its dependencies.
+# Replaces the former VERSION and requirements.txt files: docker/build.sh,
+# docker/validate-version.sh and the docker-build.yml workflow all read the
+# version back from here, and app/version.py reads it at runtime for the
+# startup banner.
+
+[build-system]
+requires = ["setuptools>=77"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "fritzfluxdb"
+version = "1.6.0"
+description = "Tiny daemon fetching FritzBox data into InfluxDB"
+readme = "README.md"
+requires-python = ">=3.13"
+license = "MIT"
+authors = [{ name = "Gill-Bates" }]
+urls = { Homepage = "https://github.com/Gill-Bates/fritzfluxdb" }
+
+dependencies = [
+    "fritzconnection==1.15.1",
+    "httpx==0.28.1",
+    "python-dotenv==1.2.3",
+    "xmltodict==1.0.4",
+]
+
+[tool.setuptools.packages.find]
+include = ["app*"]

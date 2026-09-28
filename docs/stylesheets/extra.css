@@ -1,0 +1,17 @@
+/* Keep the site compact while retaining Material's light/dark variables. */
+.md-typeset h1 {
+  font-weight: 700;
+}
+
+.md-typeset .feature-grid {
+  display: grid;
+  gap: 1rem;
+  grid-template-columns: repeat(auto-fit, minmax(13rem, 1fr));
+}
+
+.md-typeset .feature-card {
+  background: var(--md-code-bg-color);
+  border: 1px solid var(--md-default-fg-color--lightest);
+  border-radius: 0.5rem;
+  padding: 1rem;
+}

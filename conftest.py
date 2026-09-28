@@ -10,5 +10,5 @@
 Running `python -m pytest` happens to work because that adds the working
 directory, but the plain `pytest` entry point used by CI does not. An empty
 conftest.py in the repository root makes pytest prepend this directory, so
-`import fritzfluxdb` resolves either way.
+`import app` and `import tools` resolve either way.
 """

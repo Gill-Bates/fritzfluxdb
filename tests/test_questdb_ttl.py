@@ -10,7 +10,7 @@ from types import SimpleNamespace
 import httpx
 import pytest
 
-from fritzfluxdb.classes.influxdb.handler import InfluxHandler
+from app.classes.influxdb.handler import InfluxHandler
 
 
 def make_handler(retention_days, responses):

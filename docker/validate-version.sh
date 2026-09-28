@@ -1,5 +1,9 @@
 #!/usr/bin/env bash
 #
+# docker/validate-version.sh
+# Copyright (C) 2026 Gill-Bates http://github.com/Gill-Bates
+#
+
 # Validate the release version used by local builds and CI.
 
 set -eu

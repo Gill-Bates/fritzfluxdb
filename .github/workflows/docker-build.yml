@@ -133,22 +133,22 @@ jobs:
         run: |
           set -euo pipefail
 
-          if [ ! -f VERSION ]; then
-            echo "ERROR: VERSION file not found"
+          if [ ! -f pyproject.toml ]; then
+            echo "ERROR: pyproject.toml not found"
             exit 1
           fi
 
-          VERSION="$(tr -d '[:space:]' < VERSION)"
+          VERSION="$(python3 -c "import tomllib; print(tomllib.load(open('pyproject.toml', 'rb'))['project']['version'])")"
 
           bash docker/validate-version.sh "$VERSION"
 
-          # A tag push must always match the VERSION file - otherwise a release
+          # A tag push must always match pyproject.toml - otherwise a release
           # would publish a version tag that reads differently inside the image
           # than on the outside.
           if [[ "$GITHUB_REF_TYPE" == "tag" ]]; then
             TAG_VERSION="${GITHUB_REF_NAME#v}"
             if [[ "$TAG_VERSION" != "$VERSION" ]]; then
-              echo "ERROR: Git tag (v${TAG_VERSION}) does not match VERSION file (${VERSION})"
+              echo "ERROR: Git tag (v${TAG_VERSION}) does not match pyproject.toml (${VERSION})"
               exit 1
             fi
           fi
@@ -167,7 +167,7 @@ jobs:
               END { print (peeled != "" ? peeled : direct) }')"
             if [[ -n "$TAG_COMMIT" && "$TAG_COMMIT" != "$BUILD_COMMIT" ]]; then
               echo "ERROR: tag ${RELEASE_TAG} points at ${TAG_COMMIT}, but this run builds ${BUILD_COMMIT}"
-              echo "       Bump VERSION or dispatch the run on ${RELEASE_TAG}."
+              echo "       Bump the version in pyproject.toml or dispatch the run on ${RELEASE_TAG}."
               exit 1
             fi
           fi
@@ -265,8 +265,8 @@ jobs:
           import os
           import sys
 
-          import fritzfluxdb.main  # noqa: F401 - import must succeed
-          import fritzfluxdb.version as v
+          import app.main  # noqa: F401 - import must succeed
+          import app.version as v
 
           expected = {
               "VERSION": os.environ["EXPECTED_VERSION"],

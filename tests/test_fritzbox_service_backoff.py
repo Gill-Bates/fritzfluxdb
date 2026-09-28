@@ -4,7 +4,7 @@
 # Copyright (C) 2026 Gill-Bates http://github.com/Gill-Bates
 #
 
-from fritzfluxdb.classes.fritzbox.service_handler import FritzBoxService
+from app.classes.fritzbox.service_handler import FritzBoxService
 
 
 def make_service(interval=10):

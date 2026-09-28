@@ -1,0 +1,297 @@
+#!/usr/bin/env python3
+#
+# app/classes/fritzbox/service_definitions/network_hosts.py
+# Copyright (C) 2026 Gill-Bates http://github.com/Gill-Bates
+#
+
+import re
+
+from app.classes.fritzbox.service_definitions import lua_services
+from app.classes.fritzbox.service_definitions.helpers import (
+    parse_required_json_response as prepare_json_response_data,
+)
+
+# precompile active_host_txt_regex
+#  used this neat tool: https://regex101.com/r/ut4KdU/1
+# Needs to match following strings:
+#   166 / 150 Mbit/s
+#   2,4 GHz, 50 / 836 Mbit/s
+#   5 GHz, 50 / 836 Mbit/s
+#   2,4 GHz
+#   5 GHz
+active_host_txt_regex = re.compile(
+    r"^\s*(?:(?P<frequency>[0-9,.]+)\s*GHz(?:,\s*)?)?"
+    r"(?:(?P<downstream>\d+)\s*/\s*(?P<upstream>\d+)\s*.*bit.*)?\s*$",
+    re.IGNORECASE,
+)
+
+
+def nested_value(data, key: str, child_key: str, fallback=None):
+    if not isinstance(data, dict):
+        return fallback
+    value = data.get(key)
+    if not isinstance(value, dict):
+        return fallback
+    return value.get(child_key, fallback)
+
+
+def get_active_host_details(data, desired_value: str, fallback_value):
+    if not isinstance(data, dict):
+        return fallback_value
+
+    property_list = data.get("properties")
+
+    if not isinstance(property_list, list):
+        property_list = []
+
+    txt_list = [
+        item.get("txt")
+        for item in property_list
+        if isinstance(item, dict) and isinstance(item.get("txt"), str)
+    ]
+
+    if desired_value == "additional_text":
+        return ", ".join(txt_list)
+
+    if desired_value == "is_mesh":
+        return "Mesh" in txt_list
+
+    regex_matches = active_host_txt_regex.fullmatch(
+        next((x for x in txt_list if "GHz" in x or "bit" in x), "")
+    )
+
+    if regex_matches is None:
+        return fallback_value
+
+    value = regex_matches.groupdict(fallback_value).get(desired_value, fallback_value)
+    if desired_value in {"downstream", "upstream"}:
+        return int(value) if str(value).isdigit() else fallback_value
+
+    return value
+
+
+def host_uid_tag(data) -> dict[str, str]:
+    if not isinstance(data, dict):
+        return {"uid": "unknown"}
+    uid = data.get("UID") or data.get("uid") or data.get("mac") or "unknown"
+    return {"uid": str(uid)}
+
+
+def host_uid_name_tag(data) -> dict[str, str]:
+    tags = host_uid_tag(data)
+    if isinstance(data, dict):
+        tags["name"] = str(data.get("name") or "")
+    return tags
+
+
+def count_hosts(data, key: str) -> int:
+    payload = data.get("data") if isinstance(data, dict) else None
+    hosts = payload.get(key) if isinstance(payload, dict) else None
+    return len(hosts) if isinstance(hosts, list) else 0
+
+
+# every 10 minutes
+lua_services.append(
+    {
+        "name": "Active network hosts",
+        "os_min_versions": "7.29",
+        "method": "POST",
+        "params": {
+            "page": "netDev",
+            "useajax": 1,
+            "xhrId": "all",
+            "xhr": 1,
+            "initial": True
+        },
+        "response_parser": prepare_json_response_data,
+        "interval": 600,
+        "value_instances": {
+            "active_hosts_name": {
+                "data_path": "data.active",
+                "type": list,
+                "next": {
+                    # data struct type: dict
+                    "type": str,
+                    "tags_function": host_uid_tag,
+                    "value_function": lambda data: data.get("name")
+                }
+            },
+            "active_hosts_mac": {
+                "data_path": "data.active",
+                "type": list,
+                "next": {
+                    # data struct type: dict
+                    "type": str,
+                    "tags_function": host_uid_tag,
+                    "value_function": lambda data: data.get("mac")
+                }
+            },
+            "active_hosts_type": {
+                "data_path": "data.active",
+                "type": list,
+                "next": {
+                    # data struct type: dict
+                    "type": str,
+                    "tags_function": host_uid_tag,
+                    "value_function": lambda data: data.get("type")
+                }
+            },
+            "active_hosts_parent": {
+                "data_path": "data.active",
+                "type": list,
+                "next": {
+                    # data struct type: dict
+                    "type": str,
+                    "tags_function": host_uid_tag,
+                    "value_function": lambda data: nested_value(data, "parent", "name")
+                }
+            },
+            "active_hosts_port": {
+                "data_path": "data.active",
+                "type": list,
+                "next": {
+                    # data struct type: dict
+                    "type": str,
+                    "tags_function": host_uid_tag,
+                    "value_function": lambda data: data.get("port")
+                }
+            },
+            "active_hosts_ipv4": {
+                "data_path": "data.active",
+                "type": list,
+                "next": {
+                    # data struct type: dict
+                    "type": str,
+                    "tags_function": host_uid_tag,
+                    "value_function": lambda data: nested_value(data, "ipv4", "ip")
+                }
+            },
+            "active_hosts_ipv4_last_used": {
+                "data_path": "data.active",
+                "type": list,
+                "next": {
+                    # data struct type: dict
+                    "type": int,
+                    "tags_function": host_uid_name_tag,
+                    "value_function": lambda data: nested_value(data, "ipv4", "lastused", 0)
+                }
+            },
+            "active_hosts_additional_text": {
+                "data_path": "data.active",
+                "type": list,
+                "next": {
+                    # data struct type: dict
+                    "type": str,
+                    "tags_function": host_uid_name_tag,
+                    "value_function": lambda data: get_active_host_details(data, "additional_text", "")
+                }
+            },
+            "active_hosts_is_mesh": {
+                "data_path": "data.active",
+                "type": list,
+                "next": {
+                    # data struct type: dict
+                    "type": bool,
+                    "tags_function": host_uid_name_tag,
+                    "value_function": lambda data: get_active_host_details(data, "is_mesh", False)
+                }
+            },
+            "active_hosts_frequency": {
+                "data_path": "data.active",
+                "type": list,
+                "next": {
+                    # data struct type: dict
+                    "type": str,
+                    "tags_function": host_uid_name_tag,
+                    "value_function": lambda data: get_active_host_details(data, "frequency", "")
+                }
+            },
+            "active_hosts_downstream": {
+                "data_path": "data.active",
+                "type": list,
+                "next": {
+                    # data struct type: dict
+                    "type": int,
+                    "tags_function": host_uid_name_tag,
+                    "value_function": lambda data: get_active_host_details(data, "downstream", 0)
+                }
+            },
+            "active_hosts_upstream": {
+                "data_path": "data.active",
+                "type": list,
+                "next": {
+                    # data struct type: dict
+                    "type": int,
+                    "tags_function": host_uid_name_tag,
+                    "value_function": lambda data: get_active_host_details(data, "upstream", 0)
+                }
+            },
+            "num_active_host": {
+                "type": int,
+                "value_function": lambda data: count_hosts(data, "active")
+            }
+        }
+    }
+)
+
+# every 10 minutes
+lua_services.append({
+        "name": "Passive network hosts",
+        "os_min_versions": "7.29",
+        "method": "POST",
+        "params": {
+            "page": "netDev",
+            "useajax": 1,
+            "xhrId": "cleanup",
+            "xhr": 1,
+        },
+        "response_parser": prepare_json_response_data,
+        "interval": 600,
+        "value_instances": {
+            "passive_hosts_name": {
+                "data_path": "data.passive",
+                "type": list,
+                "next": {
+                    # data struct type: dict
+                    "type": str,
+                    "tags_function": host_uid_tag,
+                    "value_function": lambda data: data.get("name")
+                }
+            },
+            "passive_hosts_mac": {
+                "data_path": "data.passive",
+                "type": list,
+                "next": {
+                    # data struct type: dict
+                    "type": str,
+                    "tags_function": host_uid_tag,
+                    "value_function": lambda data: data.get("mac")
+                }
+            },
+            "passive_hosts_port": {
+                "data_path": "data.passive",
+                "type": list,
+                "next": {
+                    # data struct type: dict
+                    "type": str,
+                    "tags_function": host_uid_tag,
+                    "value_function": lambda data: data.get("port")
+                }
+            },
+            "passive_hosts_ipv4": {
+                "data_path": "data.passive",
+                "type": list,
+                "next": {
+                    # data struct type: dict
+                    "type": str,
+                    "tags_function": host_uid_tag,
+                    "value_function": lambda data: nested_value(data, "ipv4", "ip")
+                }
+            },
+            "num_passive_host": {
+                "type": int,
+                "value_function": lambda data: count_hosts(data, "passive"),
+            }
+        }
+    }
+)

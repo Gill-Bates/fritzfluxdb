@@ -14,6 +14,45 @@ Run from the repo root:  python3 tools/build_questdb_dashboards.py
 import copy
 import json
 import os
+import sys
+
+REPO_ROOT = os.path.dirname(os.path.dirname(__file__))
+if REPO_ROOT not in sys.path:
+    sys.path.insert(0, REPO_ROOT)
+
+def load_downsampling_contract():
+    from app.classes.influxdb.config import (
+        QUESTDB_DOWNSAMPLING_DISABLED_PROFILE,
+        QUESTDB_DOWNSAMPLING_PROFILES,
+        QUESTDB_DOWNSAMPLING_SCHEMA_VERSION,
+        QUESTDB_DOWNSAMPLING_STATE_TABLE,
+    )
+    from app.classes.influxdb.handler import (
+        QUESTDB_COUNTER_METRICS,
+        QUESTDB_GAUGE_METRICS,
+        questdb_rollup_view_name,
+    )
+
+    return (
+        QUESTDB_DOWNSAMPLING_DISABLED_PROFILE,
+        QUESTDB_DOWNSAMPLING_PROFILES,
+        QUESTDB_DOWNSAMPLING_SCHEMA_VERSION,
+        QUESTDB_DOWNSAMPLING_STATE_TABLE,
+        QUESTDB_COUNTER_METRICS,
+        QUESTDB_GAUGE_METRICS,
+        questdb_rollup_view_name,
+    )
+
+
+(
+    QUESTDB_DOWNSAMPLING_DISABLED_PROFILE,
+    QUESTDB_DOWNSAMPLING_PROFILES,
+    QUESTDB_DOWNSAMPLING_SCHEMA_VERSION,
+    QUESTDB_DOWNSAMPLING_STATE_TABLE,
+    QUESTDB_COUNTER_METRICS,
+    QUESTDB_GAUGE_METRICS,
+    questdb_rollup_view_name,
+) = load_downsampling_contract()
 
 DS_VAR = "${DS_QUESTDB}"
 DS_TYPE = "questdb-questdb-datasource"
@@ -24,7 +63,12 @@ MEASUREMENT = "${measurement}"
 TF = "$__timeFilter(timestamp)"
 SAMPLE_BY = "$__sampleByInterval"
 LOG_TYPE = "^${log_type:regex}$"
-TABLES_QUERY = "SELECT table_name FROM tables() WHERE table_name LIKE 'fritzbox%' ORDER BY table_name"
+TABLES_QUERY = (
+    "SELECT table_name FROM tables() "
+    "WHERE table_name LIKE 'fritzbox%' "
+    "AND table_name NOT LIKE '%_rollup_%_v%' "
+    "ORDER BY table_name"
+)
 BOX_FILTER = "box ~ '^${boxtag:regex}$'"
 BOXES_QUERY = (
     f"SELECT DISTINCT box\n"
@@ -59,6 +103,160 @@ def target_table(query, ref="A"):
     return target(query, ref, "table")
 
 
+def rollup_view_name(profile):
+    # Delegates to the handler's own naming function (with the Grafana measurement
+    # variable as the table name) so the dashboards and the app can never drift on
+    # the view-name format, including the schema-version suffix.
+    return questdb_rollup_view_name(MEASUREMENT, profile)
+
+
+def downsampling_status_condition():
+    profiles = []
+    for profile_name, profile in QUESTDB_DOWNSAMPLING_PROFILES.items():
+        profiles.append(
+            f"(profile = '{profile_name}' AND raw_days > 0 "
+            f"AND raw_days <= {profile.raw_retention_days} "
+            f"AND rollup_interval = '{profile.rollup_interval}' "
+            f"AND rollup_view = '{rollup_view_name(profile)}')"
+        )
+    return (
+        f"enabled = true AND schema_version = {QUESTDB_DOWNSAMPLING_SCHEMA_VERSION}\n"
+        f"    AND ({' OR '.join(profiles)})"
+    )
+
+
+def downsampling_status_variable(name, expression, default_sql, default_value):
+    condition = downsampling_status_condition()
+    query = (
+        "SELECT CASE\n"
+        f"  WHEN {condition} THEN {expression}\n"
+        f"  ELSE {default_sql} END\n"
+        f"FROM \"{QUESTDB_DOWNSAMPLING_STATE_TABLE}\"\n"
+        f"WHERE measurement = '{MEASUREMENT}'\n"
+        "LATEST ON timestamp PARTITION BY measurement"
+    )
+    return {
+        "current": {"selected": False, "text": default_value, "value": default_value},
+        "datasource": ds(),
+        "definition": query,
+        "hide": 2,
+        "includeAll": False,
+        "label": name.replace("_", " ").title(),
+        "multi": False,
+        "name": name,
+        "options": [],
+        "query": query,
+        "refresh": 1,
+        "sort": 0,
+        "type": "query",
+    }
+
+
+def downsampling_profile_variable():
+    disabled = f"'{QUESTDB_DOWNSAMPLING_DISABLED_PROFILE}'"
+    return downsampling_status_variable(
+        "downsampling_profile",
+        "profile",
+        disabled,
+        QUESTDB_DOWNSAMPLING_DISABLED_PROFILE,
+    )
+
+
+def downsampling_raw_days_variable():
+    return downsampling_status_variable("downsampling_raw_days", "raw_days", "0", "0")
+
+
+def source_variable(name, requested_from="$__fromTime"):
+    raw_days = "${downsampling_raw_days:raw}"
+    query = (
+        "SELECT source\n"
+        "FROM (\n"
+        "  SELECT table_name AS source, 0 AS priority\n"
+        "  FROM tables()\n"
+        "  WHERE ("
+        + "\n      OR ".join(
+            f"('${{downsampling_profile:raw}}' = '{profile_name}' "
+            f"AND {requested_from} < dateadd('d', -{raw_days}, now()) "
+            f"AND table_name = '{rollup_view_name(profile)}')"
+            for profile_name, profile in QUESTDB_DOWNSAMPLING_PROFILES.items()
+        )
+        + ")\n"
+        "  UNION ALL\n"
+        "  SELECT table_name AS source, 1 AS priority\n"
+        "  FROM tables()\n"
+        f"  WHERE table_name = '{MEASUREMENT}'\n"
+        ")\n"
+        "ORDER BY priority\n"
+        "LIMIT 1"
+    )
+    return {
+        "current": {"selected": False, "text": MEASUREMENT, "value": MEASUREMENT},
+        "datasource": ds(),
+        "definition": query,
+        "hide": 2,
+        "includeAll": False,
+        "label": name,
+        "multi": False,
+        "name": name,
+        "options": [],
+        "query": query,
+        "refresh": 2,
+        "sort": 0,
+        "type": "query",
+    }
+
+
+def routing_variables(name, requested_from="$__fromTime"):
+    source = source_variable(name, requested_from)
+    source_ref = f"${{{name}:raw}}"
+    specs = (
+        (f"{name}_gauge_sum_suffix", "'_sum'", "'/*raw*/'"),
+        (f"{name}_gauge_count_suffix", "'_count'", "'/*raw*/'"),
+        (f"{name}_gauge_count_aggregate", "'sum'", "'count'"),
+        (f"{name}_counter_suffix", "'_last'", "'/*raw*/'"),
+    )
+    variables = [source]
+    for variable_name, rollup_value, raw_value in specs:
+        query = (
+            f"SELECT CASE WHEN '{source_ref}' LIKE "
+            f"'%_rollup_%_v{QUESTDB_DOWNSAMPLING_SCHEMA_VERSION}' "
+            f"THEN {rollup_value} ELSE {raw_value} END"
+        )
+        variables.append({
+            "current": {"selected": False, "text": "", "value": ""},
+            "datasource": ds(),
+            "definition": query,
+            "hide": 2,
+            "includeAll": False,
+            "label": variable_name,
+            "multi": False,
+            "name": variable_name,
+            "options": [],
+            "query": query,
+            "refresh": 2,
+            "sort": 0,
+            "type": "query",
+        })
+    return variables
+
+
+def gauge_avg(field, source_var="metric_source"):
+    if field not in QUESTDB_GAUGE_METRICS:
+        raise ValueError(f"QuestDB rollup does not classify '{field}' as a gauge")
+    return (
+        f"sum({field}${{{source_var}_gauge_sum_suffix:raw}}) / "
+        f"${{{source_var}_gauge_count_aggregate:raw}}"
+        f"({field}${{{source_var}_gauge_count_suffix:raw}})"
+    )
+
+
+def routed_field(field, source_var, kind):
+    expected_metrics = QUESTDB_COUNTER_METRICS if kind == "counter" else QUESTDB_GAUGE_METRICS
+    if field not in expected_metrics:
+        raise ValueError(f"QuestDB rollup does not provide '{field}' as {kind}")
+    return f"{field}${{{source_var}_{kind}_suffix:raw}}"
+
+
 def ts_last(field, alias=None, present_if=None):
     a = alias or field
     return (
@@ -71,12 +269,14 @@ def ts_last(field, alias=None, present_if=None):
     )
 
 
-def ts_agg(*fields):
-    cols = ",\n  ".join(f'avg({f}) AS "{f}"' for f in fields)
-    null_check = " OR ".join(f"{f} IS NOT NULL" for f in fields)
+def ts_agg(*fields, source_var="metric_source"):
+    cols = ",\n  ".join(f'{gauge_avg(f, source_var)} AS "{f}"' for f in fields)
+    null_check = " OR ".join(
+        f"{routed_field(f, source_var, 'gauge_sum')} IS NOT NULL" for f in fields
+    )
     return (
         f"SELECT timestamp AS time,\n  {cols}\n"
-        f"FROM {MEASUREMENT}\n"
+        f"FROM ${{{source_var}:raw}}\n"
         f"WHERE {TF}\n"
         f"  AND {BOX_FILTER}\n"
         f"  AND ({null_check})\n"
@@ -92,57 +292,83 @@ def ts_agg_by_name(
     value_expr=None,
     extra_filter=None,
     metric_expr=None,
+    source_var="metric_source",
+    routed=True,
 ):
-    expr = value_expr or field
+    source = f"${{{source_var}:raw}}" if routed else MEASUREMENT
+    expr = gauge_avg(field, source_var) if routed else f"{aggregate}({value_expr or field})"
+    field_check = routed_field(field, source_var, "gauge_sum") if routed else field
     filters = [
         f"{TF}",
         BOX_FILTER,
         "name IS NOT NULL",
-        f"{field} IS NOT NULL",
+        f"{field_check} IS NOT NULL",
     ]
     if extra_filter:
         filters.append(extra_filter)
     where_clause = "\n  AND ".join(filters)
     if metric_expr:
         return (
-            f"SELECT timestamp AS time, {metric_expr} AS metric, {aggregate}({expr}) AS value\n"
-            f"FROM {MEASUREMENT}\n"
+            f"SELECT timestamp AS time, {metric_expr} AS metric, {expr} AS value\n"
+            f"FROM {source}\n"
             f"WHERE {where_clause}\n"
             f"SAMPLE BY {SAMPLE_BY} ALIGN TO CALENDAR"
         )
     return (
-        f"SELECT timestamp AS time, name, {aggregate}({expr}) AS \"{alias}\"\n"
-        f"FROM {MEASUREMENT}\n"
+        f"SELECT timestamp AS time, name, {expr} AS \"{alias}\"\n"
+        f"FROM {source}\n"
         f"WHERE {where_clause}\n"
         f"SAMPLE BY {SAMPLE_BY} ALIGN TO CALENDAR"
     )
 
 
-def counter_delta_series(fields, aliases, *, time_filter=TF, sample_by=SAMPLE_BY, time_alias="time"):
+def ts_counter_last_by_name(field, alias, *, metric_expr="name", source_var="metric_source"):
+    routed = routed_field(field, source_var, "counter")
+    return (
+        f"SELECT timestamp AS time, {metric_expr} AS metric, last({routed}) AS \"{alias}\"\n"
+        f"FROM ${{{source_var}:raw}}\n"
+        f"WHERE {TF}\n"
+        f"  AND {BOX_FILTER}\n"
+        f"  AND name IS NOT NULL\n"
+        f"  AND {routed} IS NOT NULL\n"
+        f"SAMPLE BY {SAMPLE_BY} ALIGN TO CALENDAR"
+    )
+
+
+def counter_delta_series(
+    fields,
+    aliases,
+    *,
+    time_filter=TF,
+    sample_by=SAMPLE_BY,
+    time_alias="time",
+    source_var="metric_source",
+):
+    routed_fields = [routed_field(field, source_var, "counter") for field in fields]
     lag_cols = [
-        f"lag({field}) OVER (PARTITION BY box ORDER BY timestamp) AS previous_{field}"
-        for field in fields
+        f"lag({routed}) OVER (PARTITION BY box ORDER BY timestamp) AS previous_{field}"
+        for field, routed in zip(fields, routed_fields)
     ]
     delta_cols = [
         (
             f"CASE WHEN previous_{field} IS NULL THEN 0\n"
-            f"      WHEN {field} >= previous_{field} THEN {field} - previous_{field}\n"
+            f"      WHEN {routed} >= previous_{field} THEN {routed} - previous_{field}\n"
             f"      ELSE 0 END AS {field}_delta"
         )
-        for field in fields
+        for field, routed in zip(fields, routed_fields)
     ]
     sum_cols = ",\n  ".join(
         f'sum({field}_delta) AS "{alias}"'
         for field, alias in zip(fields, aliases)
     )
-    field_checks = " OR ".join(f"{field} IS NOT NULL" for field in fields)
+    field_checks = " OR ".join(f"{field} IS NOT NULL" for field in routed_fields)
     return (
         f"SELECT timestamp AS {time_alias},\n  {sum_cols}\n"
         f"FROM (\n"
         f"  SELECT timestamp,\n    " + ",\n    ".join(delta_cols) + "\n"
         "  FROM (\n"
-        "    SELECT timestamp, box, " + ", ".join(fields + lag_cols) + "\n"
-        f"    FROM {MEASUREMENT}\n"
+        "    SELECT timestamp, box, " + ", ".join(routed_fields + lag_cols) + "\n"
+        f"    FROM ${{{source_var}:raw}}\n"
         f"    WHERE {time_filter}\n"
         f"      AND {BOX_FILTER}\n"
         f"      AND ({field_checks})\n"
@@ -211,21 +437,22 @@ def wlan_info_select(prefix, band):
     )
 
 
-def counter_delta_24h(field, alias):
+def counter_delta_24h(field, alias, source_var="metric_source_1d"):
+    routed = routed_field(field, source_var, "counter")
     return (
         f"SELECT timestamp AS time, sum(delta) OVER (ORDER BY timestamp) AS \"{alias}\"\n"
         f"FROM (\n"
         f"  SELECT timestamp,\n"
         f"    CASE WHEN previous_value IS NULL THEN 0\n"
-        f"      WHEN {field} >= previous_value THEN {field} - previous_value\n"
+        f"      WHEN {routed} >= previous_value THEN {routed} - previous_value\n"
         f"      ELSE 0\n"
         f"    END AS delta\n"
         f"  FROM (\n"
-        f"    SELECT timestamp, {field}, lag({field}) OVER (PARTITION BY box ORDER BY timestamp) AS previous_value\n"
-        f"    FROM {MEASUREMENT}\n"
+        f"    SELECT timestamp, {routed}, lag({routed}) OVER (PARTITION BY box ORDER BY timestamp) AS previous_value\n"
+        f"    FROM ${{{source_var}:raw}}\n"
         f"    WHERE timestamp >= {ago('d', 1)}\n"
         f"      AND {BOX_FILTER}\n"
-        f"      AND {field} IS NOT NULL\n"
+        f"      AND {routed} IS NOT NULL\n"
         f"  )\n"
         f")"
     )
@@ -316,16 +543,15 @@ SYSTEM_QUERIES = {
     # Current UP/DOWN
     (47, "A"): (
         (f"SELECT timestamp AS time,\n"
-            f"  avg(sendrate)*8 AS \"UP\", avg(receiverate)*8 AS \"DOWN\",\n"
-            f"  avg(downstreammax) AS \"DOWN Max\", avg(downstream_dsl_sync_max)*1000 AS \"DOWN DSL Sync\",\n"
-            f"  avg(downstreamphysicalmax) AS \"DOWN Physical Max\", avg(upstreammax) AS \"UP netto Max\",\n"
-            f"  avg(upstream_dsl_sync_max)*1000 AS \"UP DSL Sync\", avg(upstreamphysicalmax) AS \"UP Physical Max\"\n"
-            f"FROM {MEASUREMENT}\n"
+            f"  {gauge_avg('sendrate')}*8 AS \"UP\", {gauge_avg('receiverate')}*8 AS \"DOWN\",\n"
+            f"  {gauge_avg('downstreammax')} AS \"DOWN Max\", {gauge_avg('downstream_dsl_sync_max')}*1000 AS \"DOWN DSL Sync\",\n"
+            f"  {gauge_avg('downstreamphysicalmax')} AS \"DOWN Physical Max\", {gauge_avg('upstreammax')} AS \"UP netto Max\",\n"
+            f"  {gauge_avg('upstream_dsl_sync_max')}*1000 AS \"UP DSL Sync\", {gauge_avg('upstreamphysicalmax')} AS \"UP Physical Max\"\n"
+            f"FROM ${{metric_source:raw}}\n"
             f"WHERE {TF}\n"
             f"  AND {BOX_FILTER}\n"
-            f"  AND (sendrate IS NOT NULL OR receiverate IS NOT NULL\n"
-            f"       OR downstreammax IS NOT NULL OR downstream_dsl_sync_max IS NOT NULL\n"
-            f"       OR upstreammax IS NOT NULL OR upstream_dsl_sync_max IS NOT NULL)\n"
+            f"  AND (sendrate${{metric_source_gauge_sum_suffix:raw}} IS NOT NULL\n"
+            f"       OR receiverate${{metric_source_gauge_sum_suffix:raw}} IS NOT NULL)\n"
             f"SAMPLE BY {SAMPLE_BY} ALIGN TO CALENDAR"),
         "time_series",
     ),
@@ -381,6 +607,7 @@ SYSTEM_QUERIES = {
             ["Upload", "Download"],
             time_filter=f"timestamp >= {ago('d', 7)}",
             sample_by="1d",
+            source_var="metric_source_7d",
         ),
         "time_series",
     ),
@@ -388,6 +615,7 @@ SYSTEM_QUERIES = {
         counter_delta_series(
             ["totalbytessent", "totalbytesreceived"],
             ["Upload", "Download"],
+            source_var="metric_source_1d",
         ),
         "time_series",
     ),
@@ -398,6 +626,7 @@ SYSTEM_QUERIES = {
             time_filter=f"timestamp >= {ago('d', 7)}",
             sample_by="1d",
             time_alias="day",
+            source_var="metric_source_7d",
         ),
         "table",
     ),
@@ -566,6 +795,15 @@ def build_system(src):
             patch_timezone_var(v)
             new_vars.append(v)
     d["templating"]["list"] = new_vars
+    d["templating"]["list"].append(downsampling_profile_variable())
+    d["templating"]["list"].append(downsampling_raw_days_variable())
+    d["templating"]["list"].extend(routing_variables("metric_source"))
+    d["templating"]["list"].extend(
+        routing_variables("metric_source_1d", requested_from=ago("d", 1))
+    )
+    d["templating"]["list"].extend(
+        routing_variables("metric_source_7d", requested_from=ago("d", 7))
+    )
 
     def patch_panels(panels):
         for p in panels:
@@ -746,7 +984,6 @@ HA_QUERIES = {
             "ha_heating_tist",
             "Temp ist",
             "median",
-            extra_filter="ha_heating_tist < 253",
             metric_expr="name || ' (actual)'",
         ),
         "time_series",
@@ -756,7 +993,6 @@ HA_QUERIES = {
             "ha_heating_tsoll",
             "Temp soll",
             "first",
-            extra_filter="ha_heating_tsoll < 253",
             metric_expr="name || ' (set)'",
         ),
         "time_series",
@@ -808,6 +1044,7 @@ HA_QUERIES = {
             "first",
             value_expr="CASE WHEN ha_heating_windowopenactiv != 0 THEN 1 ELSE 0 END",
             metric_expr="name",
+            routed=False,
         ),
         "time_series",
     ),
@@ -820,7 +1057,11 @@ HA_QUERIES = {
         "time_series",
     ),
     (6, "C"): (
-        ts_agg_by_name("ha_powermeter_energy", "energy", "avg", metric_expr="name || ' energy'"),
+        ts_counter_last_by_name(
+            "ha_powermeter_energy",
+            "energy",
+            metric_expr="name || ' energy'",
+        ),
         "time_series",
     ),
     (28, "A"): (
@@ -857,6 +1098,7 @@ HA_QUERIES = {
             "first",
             value_expr="CASE WHEN ha_switch_state != 0 THEN 1 ELSE 0 END",
             metric_expr="name",
+            routed=False,
         ),
         "time_series",
     ),
@@ -867,6 +1109,7 @@ HA_QUERIES = {
             "first",
             value_expr="CASE WHEN ha_simpleonoff_state != 0 THEN 1 ELSE 0 END",
             metric_expr="name",
+            routed=False,
         ),
         "time_series",
     ),
@@ -877,6 +1120,7 @@ HA_QUERIES = {
             "first",
             value_expr="CASE WHEN ha_alert != 0 THEN 1 ELSE 0 END",
             metric_expr="name",
+            routed=False,
         ),
         "time_series",
     ),
@@ -893,6 +1137,9 @@ def build_homeauto(src):
             patch_measurement_var(v)
         elif v["name"] == "boxtag":
             patch_boxtag_var(v)
+    d["templating"]["list"].append(downsampling_profile_variable())
+    d["templating"]["list"].append(downsampling_raw_days_variable())
+    d["templating"]["list"].extend(routing_variables("metric_source"))
 
     def patch_panels(panels):
         filtered = []
@@ -928,8 +1175,7 @@ def build_homeauto(src):
 # ---------------------------------------------------------------------------
 
 if __name__ == "__main__":
-    repo_root = os.path.dirname(os.path.dirname(__file__))
-    grafana_dir = os.path.join(repo_root, "utils", "grafana")
+    grafana_dir = os.path.join(REPO_ROOT, "utils", "grafana")
     base = os.path.join(grafana_dir, "influx2_dashboards")
     out  = os.path.join(grafana_dir, "questdb_dashboards")
     os.makedirs(out, exist_ok=True)
@@ -942,10 +1188,10 @@ if __name__ == "__main__":
     ]
 
     for fname, dest_fname, builder in pairs:
-        with open(os.path.join(base, fname)) as f:
+        with open(os.path.join(base, fname), encoding="utf-8") as f:
             src = json.load(f)
         result = builder(src)
         dest = os.path.join(out, dest_fname)
-        with open(dest, "w") as f:
+        with open(dest, "w", encoding="utf-8") as f:
             json.dump(result, f, indent=2, ensure_ascii=False)
         print(f"Written: {dest}")

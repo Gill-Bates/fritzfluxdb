@@ -28,7 +28,7 @@
 set -eu
 
 # Verify required commands before performing any side effects
-for command in docker git date; do
+for command in docker git date python3; do
     if ! command -v "${command}" >/dev/null 2>&1; then
         echo "ERROR: required command not found: ${command}" >&2
         exit 1
@@ -70,20 +70,19 @@ cleanup_build_info() {
 trap cleanup_build_info EXIT
 
 # Always (re)generate BUILD_INFO so GIT_SHA / BUILD_DATE are current and the
-# version stays in sync with the VERSION file (the single source of truth,
+# version stays in sync with pyproject.toml (the single source of truth,
 # same as the CI workflow). APP_VERSION never falls back to a stale value.
-VERSION_FILE="${REPO_ROOT}/VERSION"
-if [ ! -f "${VERSION_FILE}" ]; then
-    echo "ERROR: VERSION file not found at ${VERSION_FILE}" >&2
+PYPROJECT_FILE="${REPO_ROOT}/pyproject.toml"
+if [ ! -f "${PYPROJECT_FILE}" ]; then
+    echo "ERROR: pyproject.toml not found at ${PYPROJECT_FILE}" >&2
     exit 1
 fi
 
-# Read single line and trim CR.
-if ! IFS= read -r APP_VERSION < "${VERSION_FILE}" && [ -z "${APP_VERSION}" ]; then
-    echo "ERROR: VERSION file is empty or cannot be read" >&2
+APP_VERSION="$(python3 -c "import tomllib; print(tomllib.load(open('${PYPROJECT_FILE}', 'rb'))['project']['version'])")"
+if [ -z "${APP_VERSION}" ]; then
+    echo "ERROR: could not read [project].version from pyproject.toml" >&2
     exit 1
 fi
-APP_VERSION="${APP_VERSION%$'\r'}"
 
 bash "${SCRIPT_DIR}/validate-version.sh" "${APP_VERSION}"
 

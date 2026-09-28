@@ -7,8 +7,8 @@
 from datetime import UTC, datetime
 from types import SimpleNamespace
 
-from fritzfluxdb.classes.common import FritzMeasurement
-from fritzfluxdb.classes.influxdb.handler import InfluxHandler
+from app.classes.common import FritzMeasurement
+from app.classes.influxdb.handler import InfluxHandler
 
 TIMESTAMP = datetime(2026, 9, 14, 12, 0, 0, tzinfo=UTC)
 TS = int(TIMESTAMP.timestamp())

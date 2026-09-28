@@ -315,7 +315,7 @@
         "hide": 0,
         "label": "FritzBox",
         "name": "measurement",
-        "query": "SELECT table_name FROM tables() WHERE table_name LIKE 'fritzbox%' ORDER BY table_name",
+        "query": "SELECT table_name FROM tables() WHERE table_name LIKE 'fritzbox%' AND table_name NOT LIKE '%_rollup_%_v%' ORDER BY table_name",
         "skipUrlSync": false,
         "type": "query",
         "current": {
@@ -328,7 +328,7 @@
           "type": "questdb-questdb-datasource",
           "uid": "${DS_QUESTDB}"
         },
-        "definition": "SELECT table_name FROM tables() WHERE table_name LIKE 'fritzbox%' ORDER BY table_name",
+        "definition": "SELECT table_name FROM tables() WHERE table_name LIKE 'fritzbox%' AND table_name NOT LIKE '%_rollup_%_v%' ORDER BY table_name",
         "includeAll": false,
         "multi": false,
         "refresh": 1,

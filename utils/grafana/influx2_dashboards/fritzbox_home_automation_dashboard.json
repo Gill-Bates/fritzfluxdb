@@ -405,7 +405,15 @@
             }
           ],
           "title": "Heating",
-          "transformations": [],
+          "transformations": [
+            {
+              "id": "renameByRegex",
+              "options": {
+                "regex": "^[A-Z] (.*)$",
+                "renamePattern": "$1"
+              }
+            }
+          ],
           "type": "timeseries"
         },
         {
@@ -487,15 +495,15 @@
                         "options": {
                           "0": {
                             "index": 4,
-                            "text": "<=0 \u00b0C"
+                            "text": "<=0 °C"
                           },
                           "8": {
                             "index": 2,
-                            "text": "<=8 \u00b0C"
+                            "text": "<=8 °C"
                           },
                           "28": {
                             "index": 3,
-                            "text": ">=28 \u00b0C"
+                            "text": ">=28 °C"
                           },
                           "253": {
                             "index": 0,
@@ -958,7 +966,16 @@
             }
           ],
           "title": "Energy",
-          "type": "timeseries"
+          "type": "timeseries",
+          "transformations": [
+            {
+              "id": "renameByRegex",
+              "options": {
+                "regex": "^[A-Z] (.*)$",
+                "renamePattern": "$1"
+              }
+            }
+          ]
         }
       ],
       "title": "Energy",

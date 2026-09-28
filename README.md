@@ -79,6 +79,23 @@ focuses on **operational reliability**, a **smaller, container-first footprint**
 
 ---
 
+## 📊 Grafana Dashboards
+
+<p align="center">
+  <img src=".github/img/dashboard_1.png" alt="Grafana system dashboard showing FritzBox connection, CPU, RAM and traffic panels" width="800">
+</p>
+
+The project ships example dashboards in the `utils/grafana/` directory:
+
+- **System Dashboard** — CPU, memory, uptime, temperatures
+- **Call Log Dashboard** — Incoming/outgoing calls
+- **Logs Dashboard** — FritzBox system logs
+- **Home Automation Dashboard** — Smart home device metrics (InfluxDB v2 and QuestDB)
+
+Import the JSON files from `utils/grafana/influx2_dashboards/`, `influx1_dashboards/` or `questdb_dashboards/` into your Grafana instance.
+
+---
+
 ## 🚀 Quick Start
 
 ### 1. Create a `.env` file
@@ -189,28 +206,55 @@ All settings can be passed via environment variables (e.g., in `.env` or in Dock
 | `QUESTDB_VERIFY_TLS` | `true` | Verify TLS certificate |
 | `QUESTDB_ALLOW_PLAINTEXT_CREDENTIALS` | `false` | Allow sending credentials/token over plain HTTP (trusted networks only) |
 | `QUESTDB_MEASUREMENT_NAME` | `fritzbox` | Base table name (overridden by serial if available) |
-| `QUESTDB_DATA_RETENTION_DAYS` | `90` | TTL in days, applied only to a table without TTL; `0` disables it (requires QuestDB 8.2.2+) |
+| `QUESTDB_DATA_RETENTION_DAYS` | `365` | Total retention in days; applied only where no administrator-managed TTL exists. `0` means unlimited rollup retention |
+| `QUESTDB_DOWNSAMPLING` | — | Optional QuestDB OSS profile: `low`, `medium` or `high`; missing or empty disables downsampling |
 | `QUESTDB_USERNAME` | — | QuestDB basic authentication username |
 | `QUESTDB_PASSWORD` | — | QuestDB basic authentication password |
 | `QUESTDB_TOKEN` | — | QuestDB Bearer token authentication |
 
 > **Changing the retention of an existing table:** `QUESTDB_DATA_RETENTION_DAYS` is only applied to a table that has no TTL yet, so a TTL set by an earlier version or by your DB admin is never overwritten. To change it, do it in QuestDB directly:
 > ```sql
-> ALTER TABLE "fritzbox_<serial>" SET TTL 90 DAYS;
+> ALTER TABLE "fritzbox_<serial>" SET TTL 365 DAYS;
 > ```
 
----
+#### QuestDB downsampling
 
-## 📊 Grafana Dashboards
+QuestDB OSS 8.3.1 or newer can downsample historical metrics server-side. fritzfluxdb continues
+polling and writing the complete raw samples and only provisions the required materialized view,
+its TTL and a small append-only configuration status. QuestDB refreshes the view incrementally;
+no cron job or maintenance worker is required.
 
-The project ships example dashboards in the `utils/grafana/` directory:
+| Profile | Raw history | Rollup interval | Rollup retention |
+|---------|-------------|-----------------|------------------|
+| `low` | 30 days | 1 minute | `QUESTDB_DATA_RETENTION_DAYS` |
+| `medium` | 7 days | 1 minute | `QUESTDB_DATA_RETENTION_DAYS` |
+| `high` | 1 day | 5 minutes | `QUESTDB_DATA_RETENTION_DAYS` |
 
-- **System Dashboard** — CPU, memory, uptime, temperatures
-- **Call Log Dashboard** — Incoming/outgoing calls
-- **Logs Dashboard** — FritzBox system logs
-- **Home Automation Dashboard** — Smart home device metrics (InfluxDB v2 and QuestDB)
+Grafana uses raw data while the selected range fits inside the profile's raw window and otherwise
+uses the rollup for the complete range. Counters retain their last value per bucket so traffic and
+error deltas remain meaningful. State and event data, including logs and call logs, is never
+downsampled; its detailed history therefore ends with the raw-data TTL.
 
-Import the JSON files from `utils/grafana/influx2_dashboards/`, `influx1_dashboards/` or `questdb_dashboards/` into your Grafana instance.
+The initial materialized-view refresh is asynchronous. fritzfluxdb does not shorten a raw-table
+TTL until QuestDB reports the rollup as valid and current, and it only publishes the status after
+the raw TTL has been applied and read back — so the `raw_days` Grafana relies on always describes
+the TTL that QuestDB actually enforces.
+
+**TTL ownership.** A raw TTL that fritzfluxdb did not set belongs to the database administrator and
+is never overwritten. In that case the profile's raw window is not applied and the existing TTL is
+published instead, so switching to `medium` on a table with an administrator TTL of 90 days keeps
+90 days of raw data. Change it in QuestDB directly if you want the profile's window. A TTL that
+fritzfluxdb set itself is tracked in the status table and is adjusted on a profile change, which is
+what lets an existing installation actually reduce its raw storage.
+
+> [!WARNING]
+> **Disabling downsampling does not restore the previous raw window.** Setting
+> `QUESTDB_DOWNSAMPLING` back to empty keeps existing rollup views and the raw TTL that the
+> previous profile applied, and Grafana falls back to raw data only. After `medium`, the dashboards
+> therefore show at most the remaining 7 days even though older rollup data still exists. To get
+> the longer raw window back, raise the TTL in QuestDB yourself, for example
+> `ALTER TABLE "fritzbox_<serial>" SET TTL 365 DAYS;`. Disabling is never interpreted as a request
+> to delete data or database objects.
 
 ---
 

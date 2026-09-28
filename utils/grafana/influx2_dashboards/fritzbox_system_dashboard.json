@@ -300,7 +300,7 @@
         "h": 11,
         "w": 24,
         "x": 0,
-        "y": 1
+        "y": 5
       },
       "id": 47,
       "options": {
@@ -336,7 +336,15 @@
         }
       ],
       "title": "Current UP/DOWN",
-      "transformations": [],
+      "transformations": [
+        {
+          "id": "renameByRegex",
+          "options": {
+            "regex": "^[A-Z] (.*)$",
+            "renamePattern": "$1"
+          }
+        }
+      ],
       "type": "timeseries"
     },
     {
@@ -348,7 +356,7 @@
         "h": 5,
         "w": 24,
         "x": 0,
-        "y": 12
+        "y": 16
       },
       "hideTimeOverride": true,
       "id": 26,
@@ -435,7 +443,7 @@
         "h": 2,
         "w": 2,
         "x": 0,
-        "y": 17
+        "y": 1
       },
       "id": 10,
       "links": [],
@@ -482,19 +490,8 @@
           "color": {
             "mode": "thresholds"
           },
-          "decimals": 2,
+          "decimals": 0,
           "mappings": [
-            {
-              "options": {
-                "0": {
-                  "text": "Disconnected"
-                },
-                "1": {
-                  "text": "Connected"
-                }
-              },
-              "type": "value"
-            },
             {
               "options": {
                 "match": "null",
@@ -522,7 +519,7 @@
               }
             ]
           },
-          "unit": "dtdurations"
+          "unit": "dthms"
         },
         "overrides": []
       },
@@ -530,7 +527,7 @@
         "h": 2,
         "w": 4,
         "x": 2,
-        "y": 17
+        "y": 1
       },
       "hideTimeOverride": true,
       "id": 9,
@@ -539,8 +536,8 @@
       "options": {
         "colorMode": "none",
         "graphMode": "none",
-        "justifyMode": "auto",
-        "orientation": "horizontal",
+        "justifyMode": "center",
+        "orientation": "vertical",
         "reduceOptions": {
           "calcs": [
             "lastNotNull"
@@ -548,7 +545,7 @@
           "fields": "",
           "values": false
         },
-        "textMode": "auto"
+        "textMode": "value"
       },
       "pluginVersion": "9.2.2",
       "targets": [
@@ -576,7 +573,8 @@
       "fieldConfig": {
         "defaults": {
           "color": {
-            "mode": "continuous-GrYlRd"
+            "mode": "fixed",
+            "fixedColor": "rgb(31, 120, 193)"
           },
           "decimals": 1,
           "mappings": [
@@ -595,7 +593,7 @@
             "mode": "absolute",
             "steps": [
               {
-                "color": "rgba(245, 54, 54, 0.9)",
+                "color": "rgb(31, 120, 193)",
                 "value": null
               }
             ]
@@ -608,7 +606,7 @@
         "h": 4,
         "w": 3,
         "x": 6,
-        "y": 17
+        "y": 1
       },
       "id": 11,
       "links": [],
@@ -626,7 +624,19 @@
         "showThresholdMarkers": false
       },
       "pluginVersion": "9.2.2",
-      "targets": [],
+      "targets": [
+        {
+          "datasource": {
+            "type": "influxdb",
+            "uid": "${DS_INFLUXDB}"
+          },
+          "dsType": "influxdb",
+          "query": "from(bucket: v.defaultBucket)\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r[\"_measurement\"] == \"${measurement}\" and r[\"_field\"] == \"receiverate\" and r.box == \"${boxtag}\")\n  |> last()\n  |> map(fn: (r) => ({ r with _value: r._value * 8.0 }))\n  |> keep(columns: [\"_value\"])\n  |> rename(columns: {_value: \"receiverate\"})",
+          "rawQuery": false,
+          "refId": "A",
+          "target": ""
+        }
+      ],
       "title": "Current Download",
       "type": "gauge"
     },
@@ -638,7 +648,8 @@
       "fieldConfig": {
         "defaults": {
           "color": {
-            "mode": "continuous-GrYlRd"
+            "mode": "fixed",
+            "fixedColor": "green"
           },
           "decimals": 1,
           "mappings": [
@@ -657,7 +668,7 @@
             "mode": "absolute",
             "steps": [
               {
-                "color": "rgba(245, 54, 54, 0.9)",
+                "color": "green",
                 "value": null
               }
             ]
@@ -670,7 +681,7 @@
         "h": 4,
         "w": 3,
         "x": 9,
-        "y": 17
+        "y": 1
       },
       "id": 12,
       "links": [],
@@ -688,7 +699,19 @@
         "showThresholdMarkers": false
       },
       "pluginVersion": "9.2.2",
-      "targets": [],
+      "targets": [
+        {
+          "datasource": {
+            "type": "influxdb",
+            "uid": "${DS_INFLUXDB}"
+          },
+          "dsType": "influxdb",
+          "query": "from(bucket: v.defaultBucket)\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r[\"_measurement\"] == \"${measurement}\" and r[\"_field\"] == \"sendrate\" and r.box == \"${boxtag}\")\n  |> last()\n  |> map(fn: (r) => ({ r with _value: r._value * 8.0 }))\n  |> keep(columns: [\"_value\"])\n  |> rename(columns: {_value: \"sendrate\"})",
+          "rawQuery": false,
+          "refId": "A",
+          "target": ""
+        }
+      ],
       "title": "Current Upload",
       "transformations": [],
       "type": "gauge"
@@ -733,7 +756,7 @@
         "h": 4,
         "w": 2,
         "x": 12,
-        "y": 17
+        "y": 1
       },
       "id": 30,
       "options": {
@@ -802,7 +825,7 @@
         "h": 4,
         "w": 2,
         "x": 14,
-        "y": 17
+        "y": 1
       },
       "id": 33,
       "options": {
@@ -871,7 +894,7 @@
         "h": 4,
         "w": 2,
         "x": 16,
-        "y": 17
+        "y": 1
       },
       "id": 34,
       "options": {
@@ -912,7 +935,7 @@
             "fixedColor": "#e24d42",
             "mode": "fixed"
           },
-          "decimals": 3,
+          "decimals": 1,
           "mappings": [
             {
               "options": {
@@ -941,7 +964,7 @@
         "h": 4,
         "w": 3,
         "x": 18,
-        "y": 17
+        "y": 1
       },
       "hideTimeOverride": true,
       "id": 16,
@@ -990,7 +1013,7 @@
             "fixedColor": "rgb(31, 120, 193)",
             "mode": "fixed"
           },
-          "decimals": 3,
+          "decimals": 1,
           "mappings": [
             {
               "options": {
@@ -1023,7 +1046,7 @@
         "h": 4,
         "w": 3,
         "x": 21,
-        "y": 17
+        "y": 1
       },
       "hideTimeOverride": true,
       "id": 15,
@@ -1088,7 +1111,7 @@
         "h": 2,
         "w": 2,
         "x": 0,
-        "y": 19
+        "y": 3
       },
       "id": 37,
       "interval": "2m",
@@ -1131,19 +1154,8 @@
           "color": {
             "mode": "thresholds"
           },
-          "decimals": 2,
+          "decimals": 0,
           "mappings": [
-            {
-              "options": {
-                "0": {
-                  "text": "Disconnected"
-                },
-                "1": {
-                  "text": "Connected"
-                }
-              },
-              "type": "value"
-            },
             {
               "options": {
                 "match": "null",
@@ -1171,7 +1183,7 @@
               }
             ]
           },
-          "unit": "dtdurations"
+          "unit": "dthms"
         },
         "overrides": []
       },
@@ -1179,7 +1191,7 @@
         "h": 2,
         "w": 4,
         "x": 2,
-        "y": 19
+        "y": 3
       },
       "hideTimeOverride": true,
       "id": 13,
@@ -1188,8 +1200,8 @@
       "options": {
         "colorMode": "none",
         "graphMode": "none",
-        "justifyMode": "auto",
-        "orientation": "horizontal",
+        "justifyMode": "center",
+        "orientation": "vertical",
         "reduceOptions": {
           "calcs": [
             "lastNotNull"
@@ -1197,7 +1209,7 @@
           "fields": "",
           "values": false
         },
-        "textMode": "auto"
+        "textMode": "value"
       },
       "pluginVersion": "9.2.2",
       "targets": [
@@ -1267,7 +1279,7 @@
                   "mode": "off"
                 }
               },
-              "decimals": 2,
+              "decimals": 1,
               "links": [],
               "mappings": [],
               "thresholds": {
@@ -1413,7 +1425,8 @@
                   }
                 ]
               },
-              "unit": "decbytes"
+              "unit": "decbytes",
+              "decimals": 1
             },
             "overrides": [
               {
@@ -1519,7 +1532,7 @@
                 "displayMode": "auto",
                 "inspect": false
               },
-              "decimals": 2,
+              "decimals": 1,
               "displayName": "",
               "mappings": [],
               "thresholds": {
@@ -1650,7 +1663,7 @@
                 "fixedColor": "#e24d42",
                 "mode": "fixed"
               },
-              "decimals": 3,
+              "decimals": 1,
               "mappings": [
                 {
                   "options": {
@@ -1754,7 +1767,8 @@
                   }
                 ]
               },
-              "unit": "decbytes"
+              "unit": "decbytes",
+              "decimals": 1
             },
             "overrides": []
           },
@@ -2481,7 +2495,15 @@
             }
           ],
           "title": "RAM usage",
-          "transformations": [],
+          "transformations": [
+            {
+              "id": "renameByRegex",
+              "options": {
+                "regex": "^[A-Z] (.*)$",
+                "renamePattern": "$1"
+              }
+            }
+          ],
           "type": "timeseries"
         },
         {
@@ -3224,191 +3246,6 @@
               "limit": "1",
               "query": "from(bucket: v.defaultBucket)\n  |> range(start: -1d)\n  |> filter(fn: (r) => r._measurement == \"${measurement}\" and r.box == \"${boxtag}\" and\n    (\n      r._field == \"ddns_domain\" or\n      r._field == \"ddns_enabled\" or\n      r._field == \"ddns_mode\" or\n      r._field == \"ddns_provider_name\" or\n      r._field == \"ddns_status_ipv4\" or\n      r._field == \"ddns_status_ipv6\"\n    ) \n  )\n  |> last()\n  |> toString()\n  |> drop(columns: [\"box\", \"_measurement\", \"_start\", \"_stop\", \"_time\"])\n  |> map(fn: (r) =>  ({\n        r with _field:\n          if r._field == \"ddns_domain\" then \"Domain\"\n          else if r._field == \"ddns_enabled\" then \"Enabled\"\n          else if r._field == \"ddns_mode\" then \"Mode\"\n          else if r._field == \"ddns_provider_name\" then \"Provider\"\n          else if r._field == \"ddns_status_ipv4\" then \"Status IPv4\"\n          else if r._field == \"ddns_status_ipv6\" then \"Status IPv6\"\n          else r._field\n        })\n      )\n",
               "refId": "A"
-            },
-            {
-              "datasource": {
-                "type": "influxdb",
-                "uid": "${DS_INFLUXDB}"
-              },
-              "groupBy": [],
-              "hide": false,
-              "limit": "1",
-              "measurement": "/^$measurement$/",
-              "orderByTime": "ASC",
-              "policy": "default",
-              "refId": "B",
-              "resultFormat": "table",
-              "select": [
-                [
-                  {
-                    "params": [
-                      "ddns_enabled"
-                    ],
-                    "type": "field"
-                  },
-                  {
-                    "params": [
-                      "Enabled"
-                    ],
-                    "type": "alias"
-                  }
-                ]
-              ],
-              "tags": [
-                {
-                  "key": "box",
-                  "operator": "=~",
-                  "value": "/^$boxtag$/"
-                }
-              ]
-            },
-            {
-              "datasource": {
-                "type": "influxdb",
-                "uid": "${DS_INFLUXDB}"
-              },
-              "groupBy": [],
-              "hide": false,
-              "limit": "1",
-              "measurement": "/^$measurement$/",
-              "orderByTime": "ASC",
-              "policy": "default",
-              "refId": "C",
-              "resultFormat": "table",
-              "select": [
-                [
-                  {
-                    "params": [
-                      "ddns_mode"
-                    ],
-                    "type": "field"
-                  },
-                  {
-                    "params": [
-                      "Mode"
-                    ],
-                    "type": "alias"
-                  }
-                ]
-              ],
-              "tags": [
-                {
-                  "key": "box",
-                  "operator": "=~",
-                  "value": "/^$boxtag$/"
-                }
-              ]
-            },
-            {
-              "datasource": {
-                "type": "influxdb",
-                "uid": "${DS_INFLUXDB}"
-              },
-              "groupBy": [],
-              "hide": false,
-              "limit": "1",
-              "measurement": "/^$measurement$/",
-              "orderByTime": "ASC",
-              "policy": "default",
-              "refId": "D",
-              "resultFormat": "table",
-              "select": [
-                [
-                  {
-                    "params": [
-                      "ddns_provider_name"
-                    ],
-                    "type": "field"
-                  },
-                  {
-                    "params": [
-                      "Provider"
-                    ],
-                    "type": "alias"
-                  }
-                ]
-              ],
-              "tags": [
-                {
-                  "key": "box",
-                  "operator": "=~",
-                  "value": "/^$boxtag$/"
-                }
-              ]
-            },
-            {
-              "datasource": {
-                "type": "influxdb",
-                "uid": "${DS_INFLUXDB}"
-              },
-              "groupBy": [],
-              "hide": false,
-              "limit": "1",
-              "measurement": "/^$measurement$/",
-              "orderByTime": "ASC",
-              "policy": "default",
-              "refId": "E",
-              "resultFormat": "table",
-              "select": [
-                [
-                  {
-                    "params": [
-                      "ddns_status_ipv4"
-                    ],
-                    "type": "field"
-                  },
-                  {
-                    "params": [
-                      "Status IPv4"
-                    ],
-                    "type": "alias"
-                  }
-                ]
-              ],
-              "tags": [
-                {
-                  "key": "box",
-                  "operator": "=~",
-                  "value": "/^$boxtag$/"
-                }
-              ]
-            },
-            {
-              "datasource": {
-                "type": "influxdb",
-                "uid": "${DS_INFLUXDB}"
-              },
-              "groupBy": [],
-              "hide": false,
-              "limit": "1",
-              "measurement": "/^$measurement$/",
-              "orderByTime": "ASC",
-              "policy": "default",
-              "refId": "F",
-              "resultFormat": "table",
-              "select": [
-                [
-                  {
-                    "params": [
-                      "ddns_status_ipv6"
-                    ],
-                    "type": "field"
-                  },
-                  {
-                    "params": [
-                      "Status IPv6"
-                    ],
-                    "type": "alias"
-                  }
-                ]
-              ],
-              "tags": [
-                {
-                  "key": "box",
-                  "operator": "=~",
-                  "value": "/^$boxtag$/"
-                }
-              ]
             }
           ],
           "title": "DynDNS Info",

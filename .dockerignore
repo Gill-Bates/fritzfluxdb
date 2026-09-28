@@ -1,7 +1,7 @@
 # =============================================================================
 # fritzFluxDB - Docker build context excludes
 # =============================================================================
-# The image only needs: requirements.txt, run.py, BUILD_INFO*, fritzfluxdb/
+# The image only needs: pyproject.toml, README.md, run.py, BUILD_INFO*, app/
 # and docker/entrypoint.sh (see docker/Dockerfile). Everything else is
 # excluded to keep the build context small and to avoid leaking secrets
 # (.env) into it.
@@ -42,7 +42,7 @@ my-fritzfluxdb.xml
 .ruff_cache/
 
 # --- Not needed inside the image (Dockerfile only COPYs run.py, BUILD_INFO*,
-# fritzfluxdb/ and docker/entrypoint.sh) --------------------------------------
+# app/ and docker/entrypoint.sh) --------------------------------------
 tests/
 tools/
 
@@ -57,11 +57,13 @@ docker/build.sh
 grafana/
 *.xml
 *.md
+!README.md
 LICENSE
 setup.conf
-VERSION
 # NOTE: BUILD_INFO is intentionally NOT ignored - it is copied into the image
 # so the startup banner / version.py can read version, git sha and build date.
+# NOTE: pyproject.toml is intentionally NOT ignored - it is the single source
+# of truth for the version and the dependency list (see docker/Dockerfile).
 
 # --- Editors / OS cruft -----------------------------------------------------
 .idea/

@@ -1,0 +1,143 @@
+site_name: fritzFluxDB Documentation
+site_description: Collect Fritz!Box metrics and write them to InfluxDB or QuestDB.
+site_author: Gill-Bates
+site_url: https://gill-bates.github.io/fritzfluxdb/
+
+repo_name: Gill-Bates/fritzfluxdb
+repo_url: https://github.com/Gill-Bates/fritzfluxdb
+edit_uri: edit/main/docs/
+
+docs_dir: .
+site_dir: ../site
+use_directory_urls: true
+
+# Keep contributor instructions in the repository without publishing them.
+exclude_docs: |
+  AGENTS.md
+
+validation:
+  nav:
+    omitted_files: warn
+    absolute_links: warn
+  links:
+    anchors: warn
+    absolute_links: warn
+    unrecognized_links: warn
+
+theme:
+  name: material
+  language: en
+  palette:
+    - media: "(prefers-color-scheme)"
+      toggle:
+        icon: material/brightness-auto
+        name: Switch to light mode
+    - media: "(prefers-color-scheme: light)"
+      scheme: default
+      primary: indigo
+      accent: deep orange
+      toggle:
+        icon: material/brightness-7
+        name: Switch to dark mode
+    - media: "(prefers-color-scheme: dark)"
+      scheme: slate
+      primary: indigo
+      accent: orange
+      toggle:
+        icon: material/brightness-4
+        name: Switch to system preference
+  features:
+    - navigation.instant
+    - navigation.tracking
+    - navigation.tabs
+    - navigation.sections
+    - navigation.top
+    - navigation.footer
+    - search.suggest
+    - search.highlight
+    - search.share
+    - content.code.copy
+    - content.code.annotate
+    - content.tabs.link
+
+plugins:
+  - search
+  - minify:
+      minify_html: true
+  - git-revision-date-localized:
+      enable_creation_date: true
+      type: timeago
+      fallback_to_build_date: true
+      # New, uncommitted pages have no per-file Git history during local builds.
+      strict: false
+      exclude:
+        - changelog.md
+        - license.md
+
+markdown_extensions:
+  - abbr
+  - admonition
+  - attr_list
+  - def_list
+  - footnotes
+  - md_in_html
+  - toc:
+      permalink: true
+      toc_depth: 3
+  - pymdownx.betterem:
+      smart_enable: all
+  - pymdownx.caret
+  - pymdownx.details
+  - pymdownx.emoji:
+      emoji_index: !!python/name:material.extensions.emoji.twemoji
+      emoji_generator: !!python/name:material.extensions.emoji.to_svg
+  - pymdownx.highlight:
+      anchor_linenums: true
+      line_spans: __span
+      pygments_lang_class: true
+  - pymdownx.inlinehilite
+  - pymdownx.keys
+  - pymdownx.mark
+  - pymdownx.smartsymbols
+  - pymdownx.superfences:
+      custom_fences:
+        - name: mermaid
+          class: mermaid
+          format: !!python/name:pymdownx.superfences.fence_code_format
+  - pymdownx.tabbed:
+      alternate_style: true
+  - pymdownx.tasklist:
+      custom_checkbox: true
+  - pymdownx.tilde
+
+extra:
+  generator: false
+
+extra_css:
+  - stylesheets/extra.css
+
+copyright: Copyright &copy; 2026 Gill-Bates
+
+nav:
+  - Home: index.md
+  - Getting started:
+      - Installation: getting-started/installation.md
+      - Docker Compose: getting-started/docker.md
+  - Configuration:
+      - Environment variables: configuration/environment.md
+      - Polling and data model: configuration/data-model.md
+      - Runtime watchdog: configuration/watchdog.md
+  - Storage:
+      - Backend overview: storage/overview.md
+      - InfluxDB: storage/influxdb.md
+      - QuestDB: storage/questdb.md
+  - Monitoring:
+      - Grafana dashboards: monitoring/grafana.md
+      - Troubleshooting: monitoring/troubleshooting.md
+  - Development:
+      - Architecture: development/architecture.md
+      - Local development: development/setup.md
+      - Testing and releases: development/contributing.md
+  - Reference:
+      - Changelog: changelog.md
+      - License: license.md
