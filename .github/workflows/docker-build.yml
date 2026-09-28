@@ -299,6 +299,7 @@ jobs:
           echo "✓ All smoke tests passed for ${IMAGE}"
 
       - name: Trivy vulnerability scan
+        id: trivy_scan
         uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         with:
           image-ref: '${{ env.IMAGE_NAME }}:${{ env.VERSION }}-${{ matrix.arch }}'
@@ -320,8 +321,10 @@ jobs:
       # The single evaluation of the report: writes the step summary and a
       # one-line verdict that the release notes reuse verbatim. An unreadable
       # report fails the step instead of passing as "0 findings".
+      # Skipped when the scan itself never ran (e.g. an earlier step failed):
+      # reporting "report missing" then buries the real failure under a second one.
       - name: Evaluate Trivy report
-        if: always()
+        if: always() && steps.trivy_scan.conclusion != 'skipped'
         env:
           ARCH: ${{ matrix.arch }}
         run: |

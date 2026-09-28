@@ -16,6 +16,7 @@ env/
 # Generated / local-only project files
 BUILD_INFO
 .docker-build.lock
+site/
 full_codebase*
 my-fritzfluxdb.xml
 

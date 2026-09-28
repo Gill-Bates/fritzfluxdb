@@ -16,6 +16,7 @@ fall back to sensible defaults.
 
 from __future__ import annotations
 
+import os
 from importlib.metadata import PackageNotFoundError
 from importlib.metadata import version as _pkg_version
 from pathlib import Path
@@ -25,10 +26,18 @@ DESCRIPTION = "fritzfluxdb"
 URL = "https://github.com/Gill-Bates/fritzfluxdb"
 AUTHOR = "Gill-Bates"
 
-# version.py lives in the package root, so BUILD_INFO sits one level up
-# (the project root, which is /app inside the container).
+# BUILD_INFO sits next to run.py at the project root. In a source checkout that is the
+# package's parent, but the container installs the package into site-packages, so the
+# project root is unrelated to __file__ there and APP_HOME points at it instead.
 _PROJECT_ROOT = Path(__file__).resolve().parent.parent
-_BUILD_INFO_PATH = _PROJECT_ROOT / "BUILD_INFO"
+
+
+def _build_info_candidates() -> tuple[Path, ...]:
+    candidates = [_PROJECT_ROOT / "BUILD_INFO"]
+    app_home = os.environ.get("APP_HOME")
+    if app_home:
+        candidates.append(Path(app_home) / "BUILD_INFO")
+    return tuple(candidates)
 
 
 def read_project_version() -> str:
@@ -42,8 +51,21 @@ def read_project_version() -> str:
 _MAX_BUILD_INFO_BYTES = 16_384
 
 
-def read_build_info(path: Path = _BUILD_INFO_PATH) -> dict[str, str]:
-    """Parse the KEY=VALUE BUILD_INFO file. Returns {} if absent/unreadable."""
+def read_build_info(path: Path | None = None) -> dict[str, str]:
+    """Parse the KEY=VALUE BUILD_INFO file. Returns {} if absent/unreadable.
+
+    Without an explicit path the known project-root locations are tried in order.
+    """
+    if path is not None:
+        return _parse_build_info(path)
+    for candidate in _build_info_candidates():
+        info = _parse_build_info(candidate)
+        if info:
+            return info
+    return {}
+
+
+def _parse_build_info(path: Path) -> dict[str, str]:
     info: dict[str, str] = {}
     try:
         if path.stat().st_size > _MAX_BUILD_INFO_BYTES:
