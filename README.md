@@ -21,6 +21,9 @@
   <a href="https://github.com/Gill-Bates/fritzfluxdb/blob/main/LICENSE">
     <img src="https://img.shields.io/badge/license-MIT-green" alt="License: MIT">
   </a>
+  <a href="https://hub.docker.com/r/giiibates/fritzfluxdb/tags">
+    <img src="https://img.shields.io/badge/platform-amd64%20%7C%20arm64-blue?logo=docker&logoColor=white" alt="Multi-arch: amd64, arm64">
+  </a>
 </p>
 
 <p align="center">

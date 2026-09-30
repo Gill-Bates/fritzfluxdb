@@ -11,6 +11,7 @@
 .env
 .env.*
 *.env
+.trivyignore
 
 # --- Version control & CI ---------------------------------------------------
 .git
@@ -37,14 +38,19 @@ htmlcov/
 *.egg-info/
 build/
 dist/
+site/
 full_codebase*
 my-fritzfluxdb.xml
 .ruff_cache/
+.docker-build.lock
 
 # --- Not needed inside the image (Dockerfile only COPYs run.py, BUILD_INFO*,
 # app/ and docker/entrypoint.sh) --------------------------------------
 tests/
 tools/
+docs/
+utils/
+conftest.py
 
 # --- Docker files not needed inside the image ------------------------------
 # (docker/entrypoint.sh IS copied by the Dockerfile, so it is NOT ignored)
@@ -53,8 +59,7 @@ docker/Dockerfile
 docker/docker-compose*.yml
 docker/build.sh
 
-# --- Project assets unrelated to the runtime -------------------------------
-grafana/
+# --- Project assets unrelated to the runtime (dashboards live in utils/) ---
 *.xml
 *.md
 !README.md

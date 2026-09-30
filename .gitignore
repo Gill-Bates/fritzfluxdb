@@ -3,15 +3,20 @@ __pycache__/
 *.py[cod]
 *$py.class
 *.so
+*.egg-info/
+build/
+dist/
 
-# Virtual environment
+# Virtual environments
 .venv/
 venv/
 ENV/
 env/
 
-# Secrets / local runtime config
+# Secrets / local runtime config (only the *.example templates are tracked)
 .env
+.env.*
+!.env*.example
 
 # Generated / local-only project files
 BUILD_INFO
@@ -20,7 +25,7 @@ site/
 full_codebase*
 my-fritzfluxdb.xml
 
-# IDEs, editors and local tooling
+# IDEs, editors, OS and local agent tooling
 .idea/
 .vscode/
 .claude/
