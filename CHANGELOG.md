@@ -1,3 +1,12 @@
+## [v1.6.2] - 2026-xx-xx
+
+- ``New`` QuestDB is now the documented, recommended storage backend; the READMEs and the Quick Start use the bundled QuestDB Compose setup. InfluxDB v1 and v2 remain supported, and `DB_TYPE` still defaults to `influxdb_v1`.
+- ``Fix`` The Compose files no longer override settings from `.env` with empty values. Values such as `FRITZBOX_USERNAME`, `FRITZBOX_PASSWORD` and `QUESTDB_DOWNSAMPLING` were resolved from `docker/.env` instead of the root `.env`; all user settings now come from `.env` only. Settings that previously fell back to a Compose default, such as `INFLUXDB_DATABASE`, must be set in `.env`, and `TZ` from `.env` (`Etc/UTC` in `.env.example`) now takes effect instead of the former `Europe/Berlin` default.
+
+
+<details markdown="1">
+<summary>Previous versions...</summary>
+
 ## [v1.6.1] - 2026-09-30
 
 - ``New`` Added `fritzflux-cli` for QuestDB checks, table and partition listing, rollup refreshes, and managed-table cleanup; mutating commands need `--apply` and a confirmation.
@@ -13,9 +22,6 @@
 - ``Security`` InfluxDB Compose no longer ships a placeholder `INFLUXDB_TOKEN` and refuses plaintext credentials by default; enable `INFLUXDB_ALLOW_PLAINTEXT_CREDENTIALS` only on a trusted network.
 - ``Security`` **Breaking:** QuestDB Open Source rejects `QUESTDB_TOKEN`; use `QUESTDB_USERNAME` and `QUESTDB_PASSWORD` instead.
 - ``Security`` **Breaking:** `FRITZBOX_TLS_ENABLED` and `FRITZBOX_VERIFY_TLS` no longer control the connection; HTTPS is tried first and the Lua client accepts the FRITZ!Box's private certificate.
-
-<details markdown="1">
-<summary>Previous versions...</summary>
 
 ## [v1.6.0] - 2026-09-28
 

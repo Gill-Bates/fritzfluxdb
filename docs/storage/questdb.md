@@ -1,5 +1,8 @@
 # QuestDB
 
+!!! tip "Recommended backend"
+    QuestDB is the author's recommended storage backend and the one fritzFluxDB prefers.
+
 Set `DB_TYPE=questdb` and provide `QUESTDB_HOSTNAME`. The default HTTP endpoint is port `9000`.
 
 ```env

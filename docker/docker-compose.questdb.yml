@@ -21,20 +21,13 @@ services:
     env_file:
       - ../.env
     environment:
-      TZ: ${TZ:-Europe/Berlin}
-      FRITZBOX_HOSTNAME: ${FRITZBOX_HOSTNAME:-192.168.178.1}
-      FRITZBOX_USERNAME: ${FRITZBOX_USERNAME}
-      FRITZBOX_PASSWORD: ${FRITZBOX_PASSWORD}
+      # User settings come from ../.env only; keep ${...} interpolation out of here,
+      # because Compose resolves it from docker/.env and would override env_file with empty values.
       DB_TYPE: "questdb"
-      # QuestDB connection settings
+      # Bundled QuestDB service on the Compose network (HTTP, no TLS).
       QUESTDB_HOSTNAME: questdb
       QUESTDB_PORT: 9000
-      QUESTDB_USERNAME: ${QUESTDB_USERNAME:-}
-      QUESTDB_PASSWORD: ${QUESTDB_PASSWORD:-}
-      QUESTDB_TLS_ENABLED: ${QUESTDB_TLS_ENABLED:-false}
-      QUESTDB_DATA_RETENTION_DAYS: ${QUESTDB_DATA_RETENTION_DAYS:-365}
-      QUESTDB_DOWNSAMPLING: ${QUESTDB_DOWNSAMPLING:-}
-      QUESTDB_ALLOW_PLAINTEXT_CREDENTIALS: ${QUESTDB_ALLOW_PLAINTEXT_CREDENTIALS:-true}
+      QUESTDB_ALLOW_PLAINTEXT_CREDENTIALS: "true"
 
     logging:
       driver: json-file

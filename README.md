@@ -35,6 +35,8 @@
 
 ## ✨ Why fritzFluxDB?
 
+- **Prefers QuestDB** — fritzFluxDB prefers QuestDB, and QuestDB is the author's recommended
+  storage backend. InfluxDB v1 and v2 remain fully supported.
 - **Three storage backends** — InfluxDB v1, InfluxDB v2, and QuestDB, with optional server-side
   downsampling on QuestDB so long-term history doesn't cost full-resolution storage forever.
 - **Sees more of your box** — TR-064 and Lua service data, home automation devices, call logs,
@@ -63,15 +65,16 @@ dropped.
 ## 🚀 Quick Start
 
 ```bash
-test -e .env || cat .env.example .env.influxdb.example > .env
-# edit .env with your FRITZ!Box settings and an existing InfluxDB endpoint
-# use INFLUXDB_TLS_ENABLED=true for HTTPS, or explicitly allow HTTP credentials on a trusted network
-docker compose -f docker/docker-compose.influx2.yml up -d
+test -e .env || cat .env.example .env.questdb.example > .env
+# edit .env with your FRITZ!Box settings
+docker compose -f docker/docker-compose.questdb.yml up -d
 ```
 
-The Compose file starts fritzfluxdb only. An InfluxDB v2 instance must already be running and
-reachable from its container; credential transmission over plaintext is disabled by default.
-For QuestDB, InfluxDB v1, or a local Python run instead, see
+The Compose file starts QuestDB (recommended) together with fritzfluxdb and connects them
+automatically. To use InfluxDB instead, build `.env` from `.env.example` plus `.env.influxdb.example` and start
+`docker/docker-compose.influx2.yml` (or `docker-compose.influx1.yml`); those files start fritzfluxdb
+only, so an existing InfluxDB endpoint must be reachable from the container and credential
+transmission over plaintext is disabled by default. For a local Python run instead, see
 **[Installation](https://gill-bates.github.io/fritzfluxdb/getting-started/installation/)** and
 **[Docker Compose](https://gill-bates.github.io/fritzfluxdb/getting-started/docker/)**.
 

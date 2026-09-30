@@ -2,20 +2,27 @@
   <img src="https://raw.githubusercontent.com/Gill-Bates/fritzfluxdb/refs/heads/main/.github/img/fritz_logo.svg" alt="fritzFluxDB Logo" width="350">
 </p>
 
-# fritzFluxDB
+<h1 align="center">fritzFluxDB</h1>
 
-Lightweight daemon that collects metrics from your FRITZ!Box and pushes them into InfluxDB or QuestDB.
+<p align="center">
+  Lightweight daemon that collects metrics from your FRITZ!Box and pushes them into InfluxDB or QuestDB.
+</p>
 
-[![GitHub](https://img.shields.io/github/v/tag/Gill-Bates/fritzfluxdb?label=version&color=blue)](https://github.com/Gill-Bates/fritzfluxdb)
-[![Docker Pulls](https://img.shields.io/docker/pulls/giiibates/fritzfluxdb)](https://hub.docker.com/r/giiibates/fritzfluxdb)
-[![License: MIT](https://img.shields.io/badge/license-MIT-green)](https://github.com/Gill-Bates/fritzfluxdb/blob/main/LICENSE)
+<p align="center">
+  <a href="https://github.com/Gill-Bates/fritzfluxdb"><img src="https://img.shields.io/github/v/tag/Gill-Bates/fritzfluxdb?label=version&color=blue" alt="Version"></a>
+  <a href="https://hub.docker.com/r/giiibates/fritzfluxdb"><img src="https://img.shields.io/docker/pulls/giiibates/fritzfluxdb" alt="Docker Pulls"></a>
+  <a href="https://github.com/Gill-Bates/fritzfluxdb/blob/main/LICENSE"><img src="https://img.shields.io/badge/license-MIT-green" alt="License: MIT"></a>
+</p>
 
-📖 [**Full documentation**](https://gill-bates.github.io/fritzfluxdb/)
+<p align="center">
+  <a href="https://gill-bates.github.io/fritzfluxdb/"><img src="https://img.shields.io/badge/Full%20Documentation-Read%20the%20docs-2563eb?style=for-the-badge&logo=readthedocs&logoColor=white" alt="Full documentation"></a>
+</p>
 
 ---
 
 ## Features
 
+- Prefers QuestDB, the author's recommended storage backend; InfluxDB v1 and v2 remain fully supported
 - Collects TR-064 & Lua service data from FritzBox
 - Supports InfluxDB v1, InfluxDB v2 and QuestDB, with optional server-side downsampling on QuestDB
 - Home automation, call logs, VPN, network hosts, system stats
@@ -24,34 +31,48 @@ Lightweight daemon that collects metrics from your FRITZ!Box and pushes them int
 
 ## Quick Start
 
-Create a `.env` file:
+The recommended setup uses QuestDB. Create a `.env` file:
 
 ```env
 FRITZBOX_HOSTNAME=192.168.178.1
 FRITZBOX_USERNAME=admin
 FRITZBOX_PASSWORD=your-password
-
-DB_TYPE=influxdb_v2
-INFLUXDB_HOSTNAME=<reachable-influxdb-host>
-INFLUXDB_PORT=8086
-INFLUXDB_ORGANIZATION=my-org
-INFLUXDB_BUCKET=fritzflux
-INFLUXDB_TOKEN=your-token
 ```
 
 Create `docker-compose.yml`:
 
 ```yaml
 services:
+  questdb:
+    image: questdb/questdb:latest
+    container_name: questdb
+    restart: unless-stopped
+    ports:
+      - "9000:9000"
+      - "9003:9003"
+    volumes:
+      - questdb_data:/var/lib/questdb
+    environment:
+      - QDB_TELEMETRY_ENABLED=false
+
   fritzfluxdb:
     image: giiibates/fritzfluxdb:latest
     container_name: fritzfluxdb
     restart: unless-stopped
+    depends_on:
+      - questdb
     env_file:
       - ./.env
     environment:
       TZ: Europe/Berlin
       LOG_LEVEL: INFO
+      DB_TYPE: questdb
+      QUESTDB_HOSTNAME: questdb
+      QUESTDB_PORT: 9000
+      QUESTDB_ALLOW_PLAINTEXT_CREDENTIALS: "true"
+
+volumes:
+  questdb_data:
 ```
 
 Start it:
@@ -60,13 +81,13 @@ Start it:
 docker compose up -d
 ```
 
-This Compose file starts only fritzfluxdb; the InfluxDB server must already exist and be reachable
-from the container. If it runs in another Compose project, connect both services to a shared Docker
-network and use the InfluxDB service name, or provide another reachable hostname. Plain HTTP
-credentials are rejected by default; enable `INFLUXDB_ALLOW_PLAINTEXT_CREDENTIALS` only on a trusted
-network. Set `INFLUXDB_TLS_ENABLED=true` when the endpoint supports HTTPS.
+This starts QuestDB and fritzfluxdb on the same Compose network. To use InfluxDB instead, omit the
+`questdb` service and set `DB_TYPE=influxdb_v2` (or `influxdb_v1`) plus the `INFLUXDB_*` settings
+for an existing, reachable InfluxDB server. Plain HTTP credentials are rejected by default; enable
+`INFLUXDB_ALLOW_PLAINTEXT_CREDENTIALS` only on a trusted network, or set `INFLUXDB_TLS_ENABLED=true`
+when the endpoint supports HTTPS.
 
-For QuestDB, InfluxDB v1, the full environment variable reference, and downsampling profiles, see
+For InfluxDB setup, the full environment variable reference, and downsampling profiles, see
 [**Installation**](https://gill-bates.github.io/fritzfluxdb/getting-started/installation/) and
 [**Environment variables**](https://gill-bates.github.io/fritzfluxdb/configuration/environment/)
 in the documentation.

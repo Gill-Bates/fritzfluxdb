@@ -3,7 +3,7 @@
 ## Prerequisites
 
 - A FRITZ!Box reachable from the host running fritzFluxDB.
-- A database endpoint: InfluxDB v1, InfluxDB v2, or QuestDB.
+- A database endpoint: QuestDB (recommended), InfluxDB v1, or InfluxDB v2.
 - Docker Engine with Docker Compose for the container deployment, or Python 3.13+ for local runs.
 - A Grafana instance if you want to use the supplied dashboards.
 
@@ -20,7 +20,7 @@ Lua-based collection is enabled only when the reported FRITZ!OS major version is
 
 ## Configuration order
 
-1. Choose the backend and create its database, bucket, or table policy.
+1. Choose the backend (QuestDB is the author's recommended one) and create its database, bucket, or table policy.
 2. Create a local `.env` from `.env.example` and either `.env.influxdb.example` or
    `.env.questdb.example`, then enter the FRITZ!Box and backend settings.
 3. Start the daemon and inspect its logs for successful connection messages.

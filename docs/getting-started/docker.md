@@ -3,6 +3,9 @@
 The InfluxDB examples start only the fritzfluxdb application. The QuestDB example also starts
 QuestDB itself.
 
+QuestDB is the author's recommended backend, and its Compose example is the most self-contained
+one because it starts the database as well.
+
 | Backend | Compose file | Services |
 | --- | --- | --- |
 | InfluxDB v1 | `docker/docker-compose.influx1.yml` | `fritzfluxdb`; connect to an existing InfluxDB |
@@ -45,10 +48,14 @@ on the same Compose network and persists its data in a named volume.
 Then start the application and, for QuestDB, its bundled database:
 
 ```bash
+docker compose -f docker/docker-compose.questdb.yml up -d
 docker compose -f docker/docker-compose.influx1.yml up -d
 docker compose -f docker/docker-compose.influx2.yml up -d
-docker compose -f docker/docker-compose.questdb.yml up -d
 ```
+
+All user settings come from the root `.env` through `env_file`. The Compose files set only
+`DB_TYPE` and, for QuestDB, the bundled service's hostname, port, and plaintext switch; those
+values override the same keys in `.env`.
 
 The QuestDB example uses the service name `questdb` as the database hostname and persists its data
 in a named volume. All examples apply `no-new-privileges` to the fritzfluxdb service. The

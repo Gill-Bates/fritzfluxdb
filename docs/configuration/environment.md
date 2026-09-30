@@ -8,7 +8,7 @@ and `environment`. Values shown as `<placeholder>` are intentionally not real cr
 
 | Variable | Default | Description |
 | --- | --- | --- |
-| `DB_TYPE` | `influxdb_v1` | `influxdb_v1`, `influxdb_v2`, or `questdb`. Takes precedence over `QUESTDB_HOSTNAME`; when it selects an InfluxDB backend, leftover `QUESTDB_*` variables are ignored and reported at startup. |
+| `DB_TYPE` | `influxdb_v1` | `influxdb_v1`, `influxdb_v2`, or `questdb` (recommended by the author, but not the default). Takes precedence over `QUESTDB_HOSTNAME`; when it selects an InfluxDB backend, leftover `QUESTDB_*` variables are ignored and reported at startup. |
 | `LOG_LEVEL` | `INFO` | `DEBUG`, `INFO`, `WARNING`, or `ERROR`. |
 | `TZ` | `Europe/Berlin` | Container and log timezone. |
 

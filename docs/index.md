@@ -9,20 +9,24 @@ FRITZ!Box and writes them to InfluxDB v1, InfluxDB v2, or QuestDB. It also expos
 router logs, VPN data, network hosts, connection information, system statistics, and supported
 smart-home metrics to the selected time-series backend.
 
+!!! tip "QuestDB is the recommended backend"
+    fritzFluxDB prefers QuestDB, and QuestDB is the author's recommended storage backend.
+    InfluxDB v1 and v2 remain supported. See [Backend overview](storage/overview.md) for the reasons.
+
 ## Start here
 
-The recommended deployment is Docker Compose with an existing database. The repository's InfluxDB
-Compose examples start only the application; its QuestDB example also starts QuestDB:
+The recommended deployment is Docker Compose with QuestDB. The repository's QuestDB Compose example
+starts QuestDB together with the application; its InfluxDB examples start only the application:
 
 ```bash
-test -e .env || cat .env.example .env.influxdb.example > .env
-# Edit .env with your FRITZ!Box values and a reachable InfluxDB endpoint.
-# Use HTTPS, or explicitly allow HTTP credentials on a trusted network.
-docker compose -f docker/docker-compose.influx2.yml up -d
+test -e .env || cat .env.example .env.questdb.example > .env
+# Edit .env with your FRITZ!Box values.
+docker compose -f docker/docker-compose.questdb.yml up -d
 ```
 
-The InfluxDB server must already be running and reachable from the container. For all deployment
-options, see [Docker Compose](getting-started/docker.md). For the first configuration decision,
+To use InfluxDB instead, create `.env` from `.env.influxdb.example` and start
+`docker/docker-compose.influx2.yml`; the InfluxDB server must already be running and reachable
+from the container. For all deployment options, see [Docker Compose](getting-started/docker.md). For the first configuration decision,
 read [Backend overview](storage/overview.md).
 
 !!! warning "Credentials stay local"

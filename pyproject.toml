@@ -14,7 +14,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "fritzfluxdb"
-version = "1.6.1"
+version = "1.6.2"
 description = "Tiny daemon fetching FritzBox data into InfluxDB"
 readme = "README.md"
 requires-python = ">=3.13"
