@@ -1,3 +1,22 @@
+## [v1.6.1] - 2026-09-30
+
+- ``New`` Added `fritzflux-cli` for QuestDB checks, table and partition listing, rollup refreshes, and managed-table cleanup; mutating commands need `--apply` and a confirmation.
+- ``New`` **Breaking:** An unusable configuration value now aborts startup with exit code 78 instead of falling back to a default.
+- ``New`` **Breaking:** The InfluxDB Compose files start only fritzfluxdb; set `INFLUXDB_HOSTNAME` to an existing endpoint reachable from the container.
+- ``New`` The environment template is split into `.env.example` plus `.env.influxdb.example` or `.env.questdb.example`. `FRITZBOX_HOSTNAME` now also accepts an IPv6 address.
+- ``Fix`` Boolean metrics such as `upgrade_available` and `ddns_enabled` were always stored as true, even when the FRITZ!Box reported `0` or `false`.
+- ``Fix`` Log and call-list timestamps no longer shift by an hour across a daylight-saving boundary.
+- ``Fix`` FRITZ!OS versions with a build or lab suffix such as `113.07.90-123456` are recognised again, so Lua-based metrics stay enabled.
+- ``Fix`` An explicit `DB_TYPE` is no longer overridden by a leftover `QUESTDB_HOSTNAME`, and `TESTMODE=false` no longer starts the daemon in test mode.
+- ``Fix`` More robust connection handling: the write backoff now also gates reconnects, TR-064 falls back to HTTP, shutdown waits for running requests, and the container healthcheck works again.
+- ``Fix`` Dashboards: the QuestDB energy panel shows the latest percentage per component, and uptime panels switch to days after 24 hours.
+- ``Security`` InfluxDB Compose no longer ships a placeholder `INFLUXDB_TOKEN` and refuses plaintext credentials by default; enable `INFLUXDB_ALLOW_PLAINTEXT_CREDENTIALS` only on a trusted network.
+- ``Security`` **Breaking:** QuestDB Open Source rejects `QUESTDB_TOKEN`; use `QUESTDB_USERNAME` and `QUESTDB_PASSWORD` instead.
+- ``Security`` **Breaking:** `FRITZBOX_TLS_ENABLED` and `FRITZBOX_VERIFY_TLS` no longer control the connection; HTTPS is tried first and the Lua client accepts the FRITZ!Box's private certificate.
+
+<details markdown="1">
+<summary>Previous versions...</summary>
+
 ## [v1.6.0] - 2026-09-28
 
 - ``New`` The default QuestDB data retention is now 365 days (previously 90). It applies only to a table without a TTL, so existing tables keep their current retention; change it in QuestDB with `ALTER TABLE "fritzbox_<serial>" SET TTL 365 DAYS;`.
@@ -7,10 +26,6 @@
 - ``New`` Disabling downsampling does not restore the previous raw window: rollups and the shortened raw TTL are kept and dashboards fall back to raw only. Widen it with `ALTER TABLE "fritzbox_<serial>" SET TTL 365 DAYS;`.
 - ``New`` Source installs now use `python -m pip install .`; `requirements.txt` and the `VERSION` file are gone, with dependencies and the version living in `pyproject.toml`.
 - ``Fix`` The startup banner no longer reports version `dev` without build details; it reads the version from the installed package metadata.
-
-
-<details markdown="1">
-<summary>Previous versions...</summary>
 
 ## [v1.5.1] - 2026-09-14
 

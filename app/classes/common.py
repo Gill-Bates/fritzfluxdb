@@ -11,7 +11,7 @@ from datetime import UTC, datetime
 from math import isfinite
 from typing import ClassVar
 
-from app.common import do_error_exit
+from app.common import do_error_exit, parse_bool
 from app.log import get_logger
 
 log = get_logger()
@@ -61,7 +61,8 @@ class FritzMeasurement:
 
         if data_type is not None:
             try:
-                self.value = data_type(value)
+                # bool("0") / bool("false") would be True, so route bool through the parser
+                self.value = parse_bool(value) if data_type is bool else data_type(value)
             except (TypeError, ValueError) as exc:
                 if value is not None:
                     log.error(
@@ -274,18 +275,7 @@ class ConfigBase:
         """
             converts a string to a boolean
         """
-        valid = {
-             'true': True, 't': True, '1': True,
-             'false': False, 'f': False, '0': False,
-             }
-
-        if isinstance(value, bool):
-            return value
-
-        elif isinstance(value, str) and value.lower() in valid:
-            return valid[value.lower()]
-
-        raise ValueError
+        return parse_bool(value)
 
     def parse_config(self, config_data):
         """
@@ -320,11 +310,14 @@ class ConfigBase:
             if isinstance(config_value, str) and not config_value.strip():
                 config_value = None
 
+            # an explicitly supplied but unparsable value is a permanent config error;
+            # silently falling back to the default would hide the misconfiguration
             if config_value is not None and var_type is bool:
                 try:
                     config_value = self.to_bool(config_value)
                 except ValueError:
                     log.error(f"Unable to parse '{config_value}' for '{config_option}' as bool")
+                    self.parser_error = True
                     config_value = var_default
 
             elif config_value is not None and var_type is int:
@@ -332,6 +325,7 @@ class ConfigBase:
                     config_value = int(config_value)
                 except ValueError:
                     log.error(f"Unable to parse '{config_value}' for '{config_option}' as int")
+                    self.parser_error = True
                     config_value = var_default
 
             else:

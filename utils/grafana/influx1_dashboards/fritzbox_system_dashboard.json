@@ -842,7 +842,7 @@
               }
             ]
           },
-          "unit": "dtdurations"
+          "unit": "dtdhms"
         },
         "overrides": []
       },
@@ -1890,7 +1890,7 @@
               }
             ]
           },
-          "unit": "dtdurations"
+          "unit": "dtdhms"
         },
         "overrides": []
       },
@@ -4248,7 +4248,7 @@
             "type": "influxdb",
             "uid": "${DS_INFLUXDB}"
           },
-          "description": "",
+          "description": "Current energy use as a percentage of each component’s maximum; this is not a watt reading.",
           "fieldConfig": {
             "defaults": {
               "color": {
@@ -4267,7 +4267,9 @@
                   }
                 ]
               },
-              "unit": "percent"
+              "unit": "percent",
+              "min": 0,
+              "max": 100
             },
             "overrides": []
           },
@@ -4350,7 +4352,7 @@
               ]
             }
           ],
-          "title": "System Energy Consumption",
+          "title": "Energy Use by Component",
           "transformations": [],
           "type": "bargauge"
         },
@@ -4879,7 +4881,7 @@
                   },
                   {
                     "params": [
-                      "DSL Line Length"
+                      "Approx. DSL Length (m)"
                     ],
                     "type": "alias"
                   }

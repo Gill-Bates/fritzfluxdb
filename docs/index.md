@@ -1,23 +1,28 @@
 # fritzFluxDB
 
-fritzFluxDB is a lightweight, container-friendly daemon that collects metrics from an AVM
+<p align="center">
+  <img src="https://raw.githubusercontent.com/Gill-Bates/fritzfluxdb/refs/heads/main/.github/img/fritz_logo.svg" alt="fritzFluxDB Logo" width="350">
+</p>
+
+fritzFluxDB is a lightweight, container-friendly daemon that collects metrics from a
 FRITZ!Box and writes them to InfluxDB v1, InfluxDB v2, or QuestDB. It also exposes call logs,
 router logs, VPN data, network hosts, connection information, system statistics, and supported
 smart-home metrics to the selected time-series backend.
 
 ## Start here
 
-The recommended deployment is Docker Compose with an existing database or one of the repository's
-backend-specific Compose examples:
+The recommended deployment is Docker Compose with an existing database. The repository's InfluxDB
+Compose examples start only the application; its QuestDB example also starts QuestDB:
 
 ```bash
-cp .env.example .env
-# Edit .env with your own FRITZ!Box and database values.
+test -e .env || cat .env.example .env.influxdb.example > .env
+# Edit .env with your FRITZ!Box values and a reachable InfluxDB endpoint.
+# Use HTTPS, or explicitly allow HTTP credentials on a trusted network.
 docker compose -f docker/docker-compose.influx2.yml up -d
 ```
 
-The command above uses the repository's InfluxDB v2 stack. For a minimal application-only
-container, see [Docker Compose](getting-started/docker.md). For the first configuration decision,
+The InfluxDB server must already be running and reachable from the container. For all deployment
+options, see [Docker Compose](getting-started/docker.md). For the first configuration decision,
 read [Backend overview](storage/overview.md).
 
 !!! warning "Credentials stay local"
@@ -50,4 +55,4 @@ plus a watchdog entrypoint.
 
 Current release metadata is in `pyproject.toml`; see the [changelog](changelog.md) for the
 latest released version and its notes.
-The project is independent open source software and is not affiliated with AVM GmbH.
+The project is independent open source software and is not affiliated with FRITZ.com GmbH, Alt-Moabit 95, 10559 Berlin.

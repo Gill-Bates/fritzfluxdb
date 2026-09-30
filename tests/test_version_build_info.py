@@ -7,6 +7,7 @@
 from pathlib import Path
 
 from app import version
+from app.classes.fritzbox.banner import print_banner
 
 
 def write_build_info(directory: Path, sha: str = "abc123") -> Path:
@@ -40,6 +41,40 @@ def test_missing_build_info_returns_empty(tmp_path, monkeypatch):
     monkeypatch.delenv("APP_HOME", raising=False)
 
     assert version.read_build_info() == {}
+
+
+def test_project_version_comes_from_pyproject(tmp_path, monkeypatch):
+    (tmp_path / "pyproject.toml").write_text('[project]\nversion = "9.8.7"\n', encoding="utf-8")
+    monkeypatch.setattr(version, "_PROJECT_ROOT", tmp_path)
+    monkeypatch.delenv("APP_HOME", raising=False)
+    monkeypatch.setattr(version, "_pkg_version", lambda _: "installed-version")
+
+    assert version.read_project_version() == "9.8.7"
+
+
+def test_project_version_falls_back_to_installed_metadata(tmp_path, monkeypatch):
+    monkeypatch.setattr(version, "_PROJECT_ROOT", tmp_path)
+    monkeypatch.delenv("APP_HOME", raising=False)
+    monkeypatch.setattr(version, "_pkg_version", lambda _: "installed-version")
+
+    assert version.read_project_version() == "installed-version"
+
+
+def test_project_version_uses_app_home_for_container_layout(tmp_path, monkeypatch):
+    app_home = tmp_path / "app"
+    app_home.mkdir()
+    (app_home / "pyproject.toml").write_text('[project]\nversion = "4.3.2"\n', encoding="utf-8")
+    monkeypatch.setattr(version, "_PROJECT_ROOT", tmp_path / "site-packages")
+    monkeypatch.setenv("APP_HOME", str(app_home))
+    monkeypatch.setattr(version, "_pkg_version", lambda _: "installed-version")
+
+    assert version.read_project_version() == "4.3.2"
+
+
+def test_startup_banner_uses_project_version(capsys):
+    print_banner()
+
+    assert f"v{version.read_project_version()}" in capsys.readouterr().out
 
 
 def test_oversized_build_info_is_ignored(tmp_path):

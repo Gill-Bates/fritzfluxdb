@@ -1,38 +1,25 @@
 services:
-  influxdb:
-    image: influxdb:1.8-alpine
-    container_name: influxdb_v1
-    restart: unless-stopped
-    ports:
-      - "8086:8086"
-    volumes:
-      - influxdb_data:/var/lib/influxdb
-    environment:
-      - INFLUXDB_DB=fritzflux
-
   fritzfluxdb:
     image: giiibates/fritzfluxdb:latest
     container_name: fritzfluxdb_influx1
     restart: unless-stopped
     stop_grace_period: 20s
-    depends_on:
-      - influxdb
     env_file:
-      - ./.env
+      - ../.env
     environment:
       TZ: ${TZ:-Europe/Berlin}
       FRITZBOX_HOSTNAME: ${FRITZBOX_HOSTNAME:-192.168.178.1}
       FRITZBOX_USERNAME: ${FRITZBOX_USERNAME}
       FRITZBOX_PASSWORD: ${FRITZBOX_PASSWORD}
       DB_TYPE: "influxdb_v1"
-      INFLUXDB_HOSTNAME: influxdb
-      INFLUXDB_PORT: 8086
+      INFLUXDB_HOSTNAME: ${INFLUXDB_HOSTNAME}
+      INFLUXDB_PORT: ${INFLUXDB_PORT:-8086}
       INFLUXDB_DATABASE: ${INFLUXDB_DATABASE:-fritzflux}
       INFLUXDB_USERNAME: ${INFLUXDB_USERNAME:-}
       INFLUXDB_PASSWORD: ${INFLUXDB_PASSWORD:-}
       INFLUXDB_TLS_ENABLED: ${INFLUXDB_TLS_ENABLED:-false}
-      # credentials (if set) are sent over HTTP inside the trusted compose network
-      INFLUXDB_ALLOW_PLAINTEXT_CREDENTIALS: ${INFLUXDB_ALLOW_PLAINTEXT_CREDENTIALS:-true}
+      # Set true only when this external endpoint uses HTTP on a trusted network.
+      INFLUXDB_ALLOW_PLAINTEXT_CREDENTIALS: ${INFLUXDB_ALLOW_PLAINTEXT_CREDENTIALS:-false}
 
     logging:
       driver: json-file
@@ -49,6 +36,3 @@ services:
       timeout: 10s
       retries: 3
       start_period: 15s
-
-volumes:
-  influxdb_data:

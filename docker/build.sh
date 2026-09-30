@@ -28,7 +28,7 @@
 set -eu
 
 # Verify required commands before performing any side effects
-for command in docker git date python3; do
+for command in docker git date python3 flock; do
     if ! command -v "${command}" >/dev/null 2>&1; then
         echo "ERROR: required command not found: ${command}" >&2
         exit 1

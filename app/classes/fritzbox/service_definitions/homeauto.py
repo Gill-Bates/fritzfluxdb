@@ -240,7 +240,12 @@ def prepare_response_data(response):
 
     if in_test_mode():
         if test_data is None:
-            test_data = TEST_FILE_LOCATION.read_text(encoding="utf-8")
+            try:
+                test_data = TEST_FILE_LOCATION.read_text(encoding="utf-8")
+            except OSError as exc:
+                raise ValueError(
+                    f"TESTMODE is enabled but the sample file '{TEST_FILE_LOCATION}' is unavailable: {exc}"
+                ) from exc
 
         content = test_data.encode()
     else:

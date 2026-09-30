@@ -378,7 +378,12 @@ class InfluxHandler:
             self.version = str(self.config.version).lower()
 
         if self.version not in {1, 2, "questdb"}:
-            raise ValueError(f"Unsupported database version/type: {self.version}")
+            # InfluxDBConfig already reported this; keep the object constructible so
+            # main() can exit with EX_CONFIG instead of an unhandled ValueError
+            if not self.config.parser_error:
+                log.error("Unsupported database version/type: %s", self.version)
+                self.config.parser_error = True
+            self.version = 1
 
         if self.version == "questdb":
             self.name = "QuestDB"
@@ -466,8 +471,6 @@ class InfluxHandler:
             headers["User-Agent"] = self.user_agent
         if self.version == 2:
             headers["Authorization"] = f"Token {self.config.token}"
-        elif self.version == "questdb" and self.config.token:
-            headers["Authorization"] = f"Bearer {self.config.token}"
 
         self.client = httpx.AsyncClient(
             base_url=self.base_url,
@@ -1092,11 +1095,18 @@ class InfluxHandler:
             await self._write_data_unlocked(force=force)
 
     async def _write_data_unlocked(self, *, force: bool = False):
-        if self.client is None and not await self._init_client():
-            return
+        # the backoff must gate the reconnect too, otherwise a lost connection is
+        # re-dialled on every loop iteration and the retry interval has no effect
         if not force and not self.permitted_to_write_data():
             return
         if len(self.buffer) == 0:
+            return
+        if self.client is None and not await self._init_client():
+            # a failed reconnect counts as a write attempt so the backoff advances
+            self.last_write_retry = datetime.now(UTC)
+            self.current_retry_interval = min(
+                self.current_retry_interval * 2, self.max_retry_interval
+            )
             return
 
         if self.out_of_retention_period_range and not self.retention_buffer_sorted:

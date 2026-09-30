@@ -8,7 +8,7 @@ import asyncio
 import hashlib
 import time
 import xml.etree.ElementTree as ET
-from datetime import UTC, datetime, timedelta, timezone
+from datetime import UTC, datetime
 
 import httpx
 
@@ -19,6 +19,8 @@ from fritzconnection.core.exceptions import (
     FritzConnectionException,
     FritzServiceError,
 )
+from requests.exceptions import ConnectionError as RequestsConnectionError
+from requests.exceptions import ConnectTimeout as RequestsConnectTimeout
 
 from app.classes.common import FritzMeasurement
 from app.classes.fritzbox import service_definitions
@@ -99,8 +101,26 @@ class FritzBoxHandlerBase:
 
         return result
 
+    @staticmethod
+    async def _drain_pending_queries(pending, timeout: float) -> None:
+        """Wait for in-flight worker threads after this task was cancelled.
+
+        asyncio.to_thread() cannot interrupt a running request, so returning right
+        away would let close() drop the session underneath a live thread.
+        """
+        try:
+            await asyncio.wait_for(asyncio.shield(pending), timeout)
+        except TimeoutError:
+            log.warning("Timed out waiting for in-flight Fritz!Box requests during shutdown")
+        except asyncio.CancelledError:
+            log.debug("Shutdown drain of in-flight Fritz!Box requests was interrupted")
+        except Exception as exc:  # noqa: BLE001 - a failing request must not break shutdown
+            log.debug("In-flight Fritz!Box request failed during shutdown: %s", exc)
+
     async def task_loop(self, queue):
         service_query_limit = asyncio.Semaphore(4)
+        # worst case for one request plus a small margin, used to bound shutdown
+        thread_drain_timeout = self.config.connect_timeout * 4 + 5
 
         async def query_service(service):
             async with service_query_limit:
@@ -113,12 +133,18 @@ class FritzBoxHandlerBase:
                 if self.discovery_done is False or service.should_be_requested() is True
             ]
 
-            await asyncio.gather(
+            pending_queries = asyncio.gather(
                 *[
                     query_service(service)
                     for service in services_to_request
                 ]
             )
+
+            try:
+                await asyncio.shield(pending_queries)
+            except asyncio.CancelledError:
+                await self._drain_pending_queries(pending_queries, thread_drain_timeout)
+                raise
 
             for result in self.current_result_list:
                 log.debug(result)
@@ -153,13 +179,10 @@ class FritzBoxHandler(FritzBoxHandlerBase):
 
         log.debug(f"Initiating new {self.name} session")
 
-        auto_detect = (self.config.tls_enabled is None)
-        use_tls = True if auto_detect else bool(self.config.tls_enabled)
-
-        # For auto-detect, probe the TLS port (default 49000 + 443 = 49443)
+        # Always probe HTTPS first; the TLS port defaults to 49000 + 443 = 49443
         default_port = FritzBoxConfig.port["default"]
         port = self.config.port
-        if auto_detect and port == default_port:
+        if port == default_port:
             port = default_port + 443
 
         def _create_session(use_tls_flag, port_num):
@@ -173,26 +196,21 @@ class FritzBoxHandler(FritzBoxHandlerBase):
             )
 
         try:
-            self.session = _create_session(use_tls, port)
-            if auto_detect:
-                self.config.tls_enabled = use_tls
-        except FritzConnectionException as exc:
-            if auto_detect and use_tls:
-                log.warning(
-                    "FritzBox '%s' TR-069 HTTPS unavailable (%s); falling back to plain HTTP",
-                    self.config.hostname, exc,
-                )
-                self.config.tls_enabled = False
-                try:
-                    self.session = _create_session(False, self.config.port)
-                except FritzConnectionException as exc2:
-                    log.error(f"Failed to connect to FritzBox via TR-069 '{exc2}'")
-                    return
-                except Exception:
-                    log.exception("Unexpected error while creating FritzBox TR-069 session")
-                    return
-            else:
-                log.error(f"Failed to connect to FritzBox via TR-069 '{exc}'")
+            self.session = _create_session(True, port)
+            self.config.tls_enabled = True
+        except (FritzConnectionException, RequestsConnectionError, RequestsConnectTimeout) as exc:
+            log.warning(
+                "FritzBox '%s' TR-069 HTTPS unavailable (%s); falling back to plain HTTP",
+                self.config.hostname, exc,
+            )
+            self.config.tls_enabled = False
+            try:
+                self.session = _create_session(False, self.config.port)
+            except FritzConnectionException as exc2:
+                log.error(f"Failed to connect to FritzBox via TR-069 '{exc2}'")
+                return
+            except Exception:
+                log.exception("Unexpected error while creating FritzBox TR-069 session")
                 return
         except Exception:
             log.exception("Unexpected error while creating FritzBox TR-069 session")
@@ -228,7 +246,7 @@ class FritzBoxHandler(FritzBoxHandlerBase):
         except Exception as exc:  # noqa: BLE001 - link type is optional metadata, never fatal
             log.debug(f"Unable to determine FritzBox link type: {exc}")
 
-        # auto-detect Fritz!Box local timezone via Time:1 -> GetInfo
+        # cross-check the configured time zone against Time:1 -> GetInfo
         try:
             utc_before = datetime.now(UTC)
             time_info = self.session.call_action("Time:1", "GetInfo")
@@ -242,16 +260,24 @@ class FritzBoxHandler(FritzBoxHandlerBase):
                 raw_offset = local_dt - utc_mid.replace(tzinfo=None)
                 # Round to nearest minute (Fritz!Box offsets are always whole minutes)
                 total_seconds = round(raw_offset.total_seconds() / 60) * 60
-                detected_tz = timezone(timedelta(seconds=total_seconds))
-                self.config.timezone = detected_tz
                 sign = "+" if total_seconds >= 0 else "-"
                 abs_s = abs(total_seconds)
-                log.info(
-                    "Fritz!Box timezone auto-detected: UTC%s%02d:%02d",
-                    sign, abs_s // 3600, (abs_s % 3600) // 60,
-                )
-        except Exception as exc:  # noqa: BLE001 - timezone auto-detection is best effort
-            log.warning("Unable to auto-detect Fritz!Box timezone, keeping configured value: %s", exc)
+                detected = f"UTC{sign}{abs_s // 3600:02d}:{(abs_s % 3600) // 60:02d}"
+
+                # Only compare: replacing the configured IANA zone with a fixed offset
+                # would shift historical timestamps across a DST boundary by one hour.
+                configured_offset = self.config.timezone.utcoffset(utc_mid.replace(tzinfo=None))
+                if configured_offset is None or round(configured_offset.total_seconds()) != total_seconds:
+                    log.warning(
+                        "Fritz!Box reports local time %s, but the configured time zone '%s' resolves to "
+                        "a different offset; check FRITZBOX_TIMEZONE",
+                        detected, self.config.timezone,
+                    )
+                else:
+                    log.debug("Fritz!Box local time offset %s matches configured time zone '%s'",
+                              detected, self.config.timezone)
+        except Exception as exc:  # noqa: BLE001 - the time zone cross-check is best effort
+            log.debug("Unable to verify Fritz!Box time zone against the configured value: %s", exc)
 
         proto = "HTTPS" if self.config.tls_enabled else "HTTP"
         log.info(f"Successfully established {self.name} session ({proto})")
@@ -408,18 +434,17 @@ class FritzBoxLuaHandler(FritzBoxHandlerBase):
         self.url = None  # built lazily in connect() after TR-069 auto-detect resolves tls_enabled
         self.sid = None
 
-        # created lazily in connect(): httpx fixes `verify` at client construction,
-        # so the client can only be built once the TLS mode is resolved
+        # created lazily in connect() once the TLS mode is resolved
         self.session = None
 
         self.add_services(FritzBoxLuaService, service_definitions.lua_services)
 
-    def _build_session(self, verify: bool) -> None:
+    def _build_session(self) -> None:
         if self.session is not None:
             self.session.close()
 
         self.session = httpx.Client(
-            verify=verify,
+            verify=False,
             timeout=httpx.Timeout(self.config.connect_timeout * 4, connect=self.config.connect_timeout),
         )
 
@@ -429,19 +454,12 @@ class FritzBoxLuaHandler(FritzBoxHandlerBase):
             return
 
         # Build URL now — TR-069 connect() may have resolved tls_enabled from None to True/False
-        use_tls = bool(self.config.tls_enabled) if self.config.tls_enabled is not None else True
+        use_tls = self.config.tls_enabled is not False
 
-        # In auto-detect mode use HTTPS without cert verification: FritzBox always has a
-        # self-signed certificate, so an SSL error would be a false negative. Only a
-        # connect error (port unreachable) is a real signal to fall back to HTTP.
-        verify = self.config.verify_tls
-        if self.config.tls_auto and use_tls:
-            verify = False
-        elif self.config.tls_enabled is True and not self.config.verify_tls:
-            verify = False
-            log.warning(f"TLS certificate verification is disabled for FritzBox '{self.config.hostname}'")
-
-        self._build_session(verify)
+        # The certificate is not verified: a FritzBox always has a self-signed certificate,
+        # so an SSL error would be a false negative. Only a connect error (port unreachable)
+        # is a real signal to fall back to HTTP.
+        self._build_session()
 
         self.url = f"{'https' if use_tls else 'http'}://{self.config.hostname}"
 
@@ -456,14 +474,14 @@ class FritzBoxLuaHandler(FritzBoxHandlerBase):
             sid = dom.findtext('./SID')
             challenge = dom.findtext('./Challenge')
         except (httpx.ConnectError, httpx.ConnectTimeout) as exc:
-            if self.config.tls_auto and use_tls:
+            if use_tls:
                 # HTTPS port unreachable — fall back to HTTP
                 log.warning(
                     "FritzBox '%s' Lua HTTPS unreachable; falling back to plain HTTP.",
                     self.config.hostname,
                 )
-                self.config.tls_enabled = False
-                self._build_session(True)
+                use_tls = False
+                self._build_session()
                 self.url = f"http://{self.config.hostname}"
                 login_url = f"{self.url}/login_sid.lua"
                 try:
@@ -513,6 +531,7 @@ class FritzBoxLuaHandler(FritzBoxHandlerBase):
                       "Check username and password!")
             return
 
+        self.config.tls_enabled = use_tls
         proto = "HTTPS" if self.config.tls_enabled else "HTTP"
         log.info(f"Successfully established {self.name} session ({proto})")
 

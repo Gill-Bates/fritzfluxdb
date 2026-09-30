@@ -19,22 +19,21 @@ services:
     depends_on:
       - questdb
     env_file:
-      - ./.env
+      - ../.env
     environment:
       TZ: ${TZ:-Europe/Berlin}
       FRITZBOX_HOSTNAME: ${FRITZBOX_HOSTNAME:-192.168.178.1}
       FRITZBOX_USERNAME: ${FRITZBOX_USERNAME}
       FRITZBOX_PASSWORD: ${FRITZBOX_PASSWORD}
       DB_TYPE: "questdb"
+      # QuestDB connection settings
       QUESTDB_HOSTNAME: questdb
       QUESTDB_PORT: 9000
       QUESTDB_USERNAME: ${QUESTDB_USERNAME:-}
       QUESTDB_PASSWORD: ${QUESTDB_PASSWORD:-}
-      QUESTDB_TOKEN: ${QUESTDB_TOKEN:-}
       QUESTDB_TLS_ENABLED: ${QUESTDB_TLS_ENABLED:-false}
       QUESTDB_DATA_RETENTION_DAYS: ${QUESTDB_DATA_RETENTION_DAYS:-365}
       QUESTDB_DOWNSAMPLING: ${QUESTDB_DOWNSAMPLING:-}
-      # credentials (if set) are sent over HTTP inside the trusted compose network
       QUESTDB_ALLOW_PLAINTEXT_CREDENTIALS: ${QUESTDB_ALLOW_PLAINTEXT_CREDENTIALS:-true}
 
     logging:

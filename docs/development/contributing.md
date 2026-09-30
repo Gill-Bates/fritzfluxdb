@@ -2,10 +2,11 @@
 
 ## Tests and lint
 
-Install the runtime dependencies, then run the focused or complete test suite from the repository
-root:
+Install the runtime, test, and lint dependencies from `pyproject.toml`, then run the focused or
+complete test suite from the repository root:
 
 ```bash
+python -m pip install '.[dev]'
 pytest
 ruff check .
 ```

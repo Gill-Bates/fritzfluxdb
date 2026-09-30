@@ -519,7 +519,7 @@
               }
             ]
           },
-          "unit": "dthms"
+          "unit": "dtdhms"
         },
         "overrides": []
       },
@@ -1193,7 +1193,7 @@
               }
             ]
           },
-          "unit": "dthms"
+          "unit": "dtdhms"
         },
         "overrides": []
       },
@@ -2578,7 +2578,7 @@
             "type": "questdb-questdb-datasource",
             "uid": "${DS_QUESTDB}"
           },
-          "description": "",
+          "description": "Current energy use as a percentage of each component’s maximum; this is not a watt reading.",
           "fieldConfig": {
             "defaults": {
               "color": {
@@ -2598,7 +2598,9 @@
                   }
                 ]
               },
-              "unit": "percent"
+              "unit": "percent",
+              "min": 0,
+              "max": 100
             },
             "overrides": []
           },
@@ -2636,12 +2638,12 @@
               },
               "format": 1,
               "queryType": "sql",
-              "rawSql": "SELECT timestamp AS time, energy_consumption AS \"Energy (W)\"\nFROM ${measurement}\nWHERE $__timeFilter(timestamp)\n  AND box ~ '^${boxtag:regex}$'\n  AND energy_consumption IS NOT NULL\nORDER BY timestamp DESC\nLIMIT 1",
+              "rawSql": "SELECT name AS \"Component\", energy_consumption AS \"Current (%)\"\nFROM ${measurement}\nWHERE $__timeFilter(timestamp)\n  AND box ~ '^${boxtag:regex}$'\n  AND name IS NOT NULL\n  AND energy_consumption IS NOT NULL\nLATEST ON timestamp PARTITION BY box, name\nORDER BY name",
               "refId": "A",
               "selectedFormat": 1
             }
           ],
-          "title": "System Energy Consumption",
+          "title": "Energy Use by Component",
           "transformations": [
             {
               "id": "renameByRegex",
@@ -2827,7 +2829,7 @@
               },
               "format": 1,
               "queryType": "sql",
-              "rawSql": "SELECT last_not_null(physicallinktype) AS \"Link Type\", last_not_null(dsl_line_length) AS \"DSL Line Length\",\n  last_not_null(dsl_dslam_vendor) AS \"DSL DSLAM Vendor\", last_not_null(dsl_dslam_sw_version) AS \"DSL Model Version\",\n  last_not_null(dsl_line_mode) AS \"DSL Line Mode\", last_not_null(cable_cmts_vendor) AS \"Cable Vendor\",\n  last_not_null(cable_line_mode) AS \"Cable Line Mode\", last_not_null(cable_modem_version) AS \"Cable Modem Version\",\n  last_not_null(cable_num_ds_channels) AS \"Cable Downstream Channels\", last_not_null(cable_num_us_channels) AS \"Cable Upstream Channels\",\n  last_not_null(connection_status) AS \"IP Connection Status\", last_not_null(last_connection_error) AS \"Last Connection Error\",\n  last_not_null(remote_pop) AS \"Remote Pop\", last_not_null(physical_connection_status) AS \"Link Connection Status\"\nFROM ${measurement}\nWHERE timestamp >= dateadd('d', -1, now())\n  AND box ~ '^${boxtag:regex}$'",
+              "rawSql": "SELECT last_not_null(physicallinktype) AS \"Link Type\", last_not_null(dsl_line_length) AS \"Approx. DSL Length (m)\",\n  last_not_null(dsl_dslam_vendor) AS \"DSL DSLAM Vendor\", last_not_null(dsl_dslam_sw_version) AS \"DSL Model Version\",\n  last_not_null(dsl_line_mode) AS \"DSL Line Mode\", last_not_null(cable_cmts_vendor) AS \"Cable Vendor\",\n  last_not_null(cable_line_mode) AS \"Cable Line Mode\", last_not_null(cable_modem_version) AS \"Cable Modem Version\",\n  last_not_null(cable_num_ds_channels) AS \"Cable Downstream Channels\", last_not_null(cable_num_us_channels) AS \"Cable Upstream Channels\",\n  last_not_null(connection_status) AS \"IP Connection Status\", last_not_null(last_connection_error) AS \"Last Connection Error\",\n  last_not_null(remote_pop) AS \"Remote Pop\", last_not_null(physical_connection_status) AS \"Link Connection Status\"\nFROM ${measurement}\nWHERE timestamp >= dateadd('d', -1, now())\n  AND box ~ '^${boxtag:regex}$'",
               "refId": "B",
               "selectedFormat": 1
             }

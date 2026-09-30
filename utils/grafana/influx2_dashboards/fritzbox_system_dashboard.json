@@ -519,7 +519,7 @@
               }
             ]
           },
-          "unit": "dthms"
+          "unit": "dtdhms"
         },
         "overrides": []
       },
@@ -1183,7 +1183,7 @@
               }
             ]
           },
-          "unit": "dthms"
+          "unit": "dtdhms"
         },
         "overrides": []
       },
@@ -2602,7 +2602,7 @@
             "type": "influxdb",
             "uid": "${DS_INFLUXDB}"
           },
-          "description": "",
+          "description": "Current energy use as a percentage of each component’s maximum; this is not a watt reading.",
           "fieldConfig": {
             "defaults": {
               "color": {
@@ -2622,7 +2622,9 @@
                   }
                 ]
               },
-              "unit": "percent"
+              "unit": "percent",
+              "min": 0,
+              "max": 100
             },
             "overrides": []
           },
@@ -2662,7 +2664,7 @@
               "refId": "A"
             }
           ],
-          "title": "System Energy Consumption",
+          "title": "Energy Use by Component",
           "transformations": [
             {
               "id": "renameByRegex",
@@ -2872,7 +2874,7 @@
                 "uid": "${DS_INFLUXDB}"
               },
               "hide": false,
-              "query": "from(bucket: v.defaultBucket)\n  |> range(start: -1d)\n  |> filter(fn: (r) => r._measurement == \"${measurement}\" and r.box == \"${boxtag}\" and\n    (\n      r._field == \"physicallinktype\" or\n      r._field == \"dsl_line_length\" or\n      r._field == \"dsl_dslam_vendor\" or\n      r._field == \"dsl_dslam_sw_version\" or\n      r._field == \"dsl_line_mode\" or\n      r._field == \"cable_cmts_vendor\" or\n      r._field == \"cable_line_mode\" or\n      r._field == \"cable_modem_version\" or\n      r._field == \"cable_num_ds_channels\" or\n      r._field == \"cable_num_us_channels\" or\n      r._field == \"connection_status\" or\n      r._field == \"last_connection_error\" or\n      r._field == \"remote_pop\" or\n      r._field == \"physical_connection_status\"\n    ) \n  )\n  |> last()\n  |> toString()\n  |> drop(columns: [\"box\", \"_measurement\", \"_start\", \"_stop\", \"_time\"])\n  |> map(fn: (r) =>  ({\n        r with _field:\n          if r._field == \"physicallinktype\" then \"Link Type\"\n          else if r._field == \"dsl_line_length\" then \"DSL Line Length\"\n          else if r._field == \"dsl_dslam_vendor\" then \"DSL DSLAM Vendor\"\n          else if r._field == \"dsl_dslam_sw_version\" then \"DSL Model Version\"\n          else if r._field == \"dsl_line_mode\" then \"DSL Line Mode\"\n          else if r._field == \"cable_cmts_vendor\" then \"Cable Vendor\"\n          else if r._field == \"cable_line_mode\" then \"Cable Line Mode\"\n          else if r._field == \"cable_modem_version\" then \"Cable Modem Version\"\n          else if r._field == \"cable_num_ds_channels\" then \"Cable Downstream Channels\"\n          else if r._field == \"cable_num_us_channels\" then \"Cable Upstream Channels\"\n          else if r._field == \"connection_status\" then \"IP Connection Status\"\n          else if r._field == \"last_connection_error\" then \"Last Connection Error\"\n          else if r._field == \"remote_pop\" then \"Remote Pop\"\n          else if r._field == \"physical_connection_status\" then \"Link Connection Status\"\n          else r._field\n        })\n      )\n",
+              "query": "from(bucket: v.defaultBucket)\n  |> range(start: -1d)\n  |> filter(fn: (r) => r._measurement == \"${measurement}\" and r.box == \"${boxtag}\" and\n    (\n      r._field == \"physicallinktype\" or\n      r._field == \"dsl_line_length\" or\n      r._field == \"dsl_dslam_vendor\" or\n      r._field == \"dsl_dslam_sw_version\" or\n      r._field == \"dsl_line_mode\" or\n      r._field == \"cable_cmts_vendor\" or\n      r._field == \"cable_line_mode\" or\n      r._field == \"cable_modem_version\" or\n      r._field == \"cable_num_ds_channels\" or\n      r._field == \"cable_num_us_channels\" or\n      r._field == \"connection_status\" or\n      r._field == \"last_connection_error\" or\n      r._field == \"remote_pop\" or\n      r._field == \"physical_connection_status\"\n    ) \n  )\n  |> last()\n  |> toString()\n  |> drop(columns: [\"box\", \"_measurement\", \"_start\", \"_stop\", \"_time\"])\n  |> map(fn: (r) =>  ({\n        r with _field:\n          if r._field == \"physicallinktype\" then \"Link Type\"\n          else if r._field == \"dsl_line_length\" then \"Approx. DSL Length (m)\"\n          else if r._field == \"dsl_dslam_vendor\" then \"DSL DSLAM Vendor\"\n          else if r._field == \"dsl_dslam_sw_version\" then \"DSL Model Version\"\n          else if r._field == \"dsl_line_mode\" then \"DSL Line Mode\"\n          else if r._field == \"cable_cmts_vendor\" then \"Cable Vendor\"\n          else if r._field == \"cable_line_mode\" then \"Cable Line Mode\"\n          else if r._field == \"cable_modem_version\" then \"Cable Modem Version\"\n          else if r._field == \"cable_num_ds_channels\" then \"Cable Downstream Channels\"\n          else if r._field == \"cable_num_us_channels\" then \"Cable Upstream Channels\"\n          else if r._field == \"connection_status\" then \"IP Connection Status\"\n          else if r._field == \"last_connection_error\" then \"Last Connection Error\"\n          else if r._field == \"remote_pop\" then \"Remote Pop\"\n          else if r._field == \"physical_connection_status\" then \"Link Connection Status\"\n          else r._field\n        })\n      )\n",
               "refId": "B"
             }
           ],

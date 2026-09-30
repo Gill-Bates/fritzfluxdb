@@ -8,7 +8,7 @@ and `environment`. Values shown as `<placeholder>` are intentionally not real cr
 
 | Variable | Default | Description |
 | --- | --- | --- |
-| `DB_TYPE` | `influxdb_v1` | `influxdb_v1`, `influxdb_v2`, or `questdb`. |
+| `DB_TYPE` | `influxdb_v1` | `influxdb_v1`, `influxdb_v2`, or `questdb`. Takes precedence over `QUESTDB_HOSTNAME`; when it selects an InfluxDB backend, leftover `QUESTDB_*` variables are ignored and reported at startup. |
 | `LOG_LEVEL` | `INFO` | `DEBUG`, `INFO`, `WARNING`, or `ERROR`. |
 | `TZ` | `Europe/Berlin` | Container and log timezone. |
 
@@ -16,16 +16,21 @@ and `environment`. Values shown as `<placeholder>` are intentionally not real cr
 
 | Variable | Default | Description |
 | --- | --- | --- |
-| `FRITZBOX_HOSTNAME` | `192.168.178.1` | IP address, hostname, or reachable endpoint host. |
+| `FRITZBOX_HOSTNAME` | `192.168.178.1` | IPv4 address, IPv6 address (with or without brackets), or hostname. A URL is rejected. |
 | `FRITZBOX_USERNAME` | — | FRITZ!Box login user. |
 | `FRITZBOX_PASSWORD` | — | FRITZ!Box login password. |
 | `FRITZBOX_PORT` | `49000` | TR-064 port. |
-| `FRITZBOX_TLS_ENABLED` | auto | Enable or disable HTTPS explicitly. |
-| `FRITZBOX_VERIFY_TLS` | `true` | Verify the FRITZ!Box certificate. |
 | `FRITZBOX_CONNECT_TIMEOUT` | `10` | Connection timeout in seconds. |
 | `FRITZBOX_REQUEST_INTERVAL` | `10` | Minimum per-service request interval in seconds; it can only increase built-in intervals. |
 | `FRITZBOX_BOX_TAG` | `fritz.box` | Tag used to identify the box. |
-| `FRITZBOX_TIMEZONE` | `Europe/Berlin` | Fallback timezone for FRITZ!Box log timestamps. |
+| `FRITZBOX_TIMEZONE` | `Europe/Berlin` | IANA timezone of the FRITZ!Box, used to interpret its local timestamps (router log, call list). |
+
+Set `FRITZBOX_TIMEZONE` to the timezone configured on the box itself. The named zone is kept as-is
+so that daylight-saving changes are applied per timestamp; the daemon only compares it against the
+box's reported local time at startup and logs a warning when the two disagree.
+
+The TR-064 connection detects HTTP or HTTPS automatically. HTTPS connections to the FRITZ!Box
+accept its private certificate; protocol and certificate verification are not configurable.
 
 ## InfluxDB
 
@@ -33,7 +38,7 @@ Used for `DB_TYPE=influxdb_v1` or `DB_TYPE=influxdb_v2`.
 
 | Variable | Default | Description |
 | --- | --- | --- |
-| `INFLUXDB_HOSTNAME` | — | Host or full `http(s)://` URL. |
+| `INFLUXDB_HOSTNAME` | — | Host or full `http(s)://` URL without a path; a URL path is rejected because the write endpoint is fixed. |
 | `INFLUXDB_PORT` | `8086` | HTTP(S) port; `443` implies TLS. |
 | `INFLUXDB_TLS_ENABLED` | `false` | Use HTTPS. A full HTTPS URL also enables it. |
 | `INFLUXDB_VERIFY_TLS` | `true` | Verify the server certificate. |
@@ -51,7 +56,7 @@ Used for `DB_TYPE=questdb`. QuestDB settings are mapped to the equivalent writer
 
 | Variable | Default | Description |
 | --- | --- | --- |
-| `QUESTDB_HOSTNAME` | — | Host or full `http(s)://` URL. |
+| `QUESTDB_HOSTNAME` | — | Host or full `http(s)://` URL without a path; a URL path is rejected because the write endpoint is fixed. |
 | `QUESTDB_PORT` | `9000` | Influx Line Protocol over HTTP port. |
 | `QUESTDB_TLS_ENABLED` | `false` | Use HTTPS. |
 | `QUESTDB_VERIFY_TLS` | `true` | Verify the server certificate. |
@@ -59,8 +64,20 @@ Used for `DB_TYPE=questdb`. QuestDB settings are mapped to the equivalent writer
 | `QUESTDB_MEASUREMENT_NAME` | `fritzbox` | Base table name; a serial-specific name normally replaces it. |
 | `QUESTDB_DATA_RETENTION_DAYS` | `365` | Initial TTL for a table without a TTL; `0` disables automatic TTL. |
 | `QUESTDB_DOWNSAMPLING` | empty | Optional profile: `low`, `medium`, or `high`. |
-| `QUESTDB_USERNAME` / `QUESTDB_PASSWORD` | — | Optional basic authentication. |
-| `QUESTDB_TOKEN` | — | Optional bearer token authentication. |
+| `QUESTDB_USERNAME` / `QUESTDB_PASSWORD` | — | Optional basic authentication; set both or neither. |
+
+## Validation
+
+Configuration is validated before the first connection. An unusable value stops the daemon with
+exit status `78` instead of falling back to a default, so a typo cannot go unnoticed:
+
+- a non-numeric port, interval, or retention value, or a boolean that is not `true`/`false`
+- a username without a password (InfluxDB v1 and QuestDB)
+- a hostname URL that carries a path, query, or fragment
+- an unknown `DB_TYPE` or downsampling profile
+- a missing mandatory field for the selected backend
+
+Accepted boolean spellings are `true`/`false`, `t`/`f`, `1`/`0`, `yes`/`no`, and `on`/`off`.
 
 ## Security rules
 

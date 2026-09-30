@@ -4,7 +4,7 @@
 
 # fritzFluxDB
 
-Lightweight daemon that collects metrics from your AVM FritzBox and pushes them into InfluxDB or QuestDB.
+Lightweight daemon that collects metrics from your FRITZ!Box and pushes them into InfluxDB or QuestDB.
 
 [![GitHub](https://img.shields.io/github/v/tag/Gill-Bates/fritzfluxdb?label=version&color=blue)](https://github.com/Gill-Bates/fritzfluxdb)
 [![Docker Pulls](https://img.shields.io/docker/pulls/giiibates/fritzfluxdb)](https://hub.docker.com/r/giiibates/fritzfluxdb)
@@ -32,7 +32,7 @@ FRITZBOX_USERNAME=admin
 FRITZBOX_PASSWORD=your-password
 
 DB_TYPE=influxdb_v2
-INFLUXDB_HOSTNAME=influxdb
+INFLUXDB_HOSTNAME=<reachable-influxdb-host>
 INFLUXDB_PORT=8086
 INFLUXDB_ORGANIZATION=my-org
 INFLUXDB_BUCKET=fritzflux
@@ -60,6 +60,12 @@ Start it:
 docker compose up -d
 ```
 
+This Compose file starts only fritzfluxdb; the InfluxDB server must already exist and be reachable
+from the container. If it runs in another Compose project, connect both services to a shared Docker
+network and use the InfluxDB service name, or provide another reachable hostname. Plain HTTP
+credentials are rejected by default; enable `INFLUXDB_ALLOW_PLAINTEXT_CREDENTIALS` only on a trusted
+network. Set `INFLUXDB_TLS_ENABLED=true` when the endpoint supports HTTPS.
+
 For QuestDB, InfluxDB v1, the full environment variable reference, and downsampling profiles, see
 [**Installation**](https://gill-bates.github.io/fritzfluxdb/getting-started/installation/) and
 [**Environment variables**](https://gill-bates.github.io/fritzfluxdb/configuration/environment/)
@@ -81,7 +87,7 @@ import workflow.
 
 ---
 
-> This project is not affiliated with or endorsed by AVM GmbH. FRITZ!Box is a registered trademark of AVM GmbH.
+> This project is not affiliated with or endorsed by FRITZ.com GmbH, Alt-Moabit 95, 10559 Berlin. FRITZ!Box is a registered trademark of FRITZ.com GmbH.
 
 <p align="center">
   <a href="https://www.buymeacoffee.com/tnsteinerx">

@@ -14,7 +14,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "fritzfluxdb"
-version = "1.6.0"
+version = "1.6.1"
 description = "Tiny daemon fetching FritzBox data into InfluxDB"
 readme = "README.md"
 requires-python = ">=3.13"
@@ -29,5 +29,31 @@ dependencies = [
     "xmltodict==1.0.4",
 ]
 
+[project.scripts]
+fritzflux-cli = "app.questdb_admin:main"
+
+[project.optional-dependencies]
+dev = [
+    "pytest==9.1.1",
+    "ruff==0.16.9",
+]
+docs = [
+    "mkdocs==1.6.1",
+    "mkdocs-git-revision-date-localized-plugin==1.6.0",
+    "mkdocs-material==9.7.7",
+    "mkdocs-minify-plugin==0.8.0",
+    "pymdown-extensions==12.1",
+]
+
 [tool.setuptools.packages.find]
 include = ["app*"]
+
+[tool.ruff]
+# Keep the local and CI checks on the same Ruff version and Python target.
+# `ruff check .` uses Ruff's default rule set; formatting is not a CI gate.
+required-version = "==0.16.9"
+target-version = "py313"
+
+[tool.ruff.lint]
+# Project modules keep shebangs even though most are not executable scripts.
+ignore = ["EXE001"]

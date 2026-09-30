@@ -31,6 +31,7 @@ def energy_consumption_value(data) -> int:
     return data["actPerc"]
 
 
+# Cable FritzBox devices with FritzOS 8.00 no longer expose these stats.
 lua_services.append(
     {
         "name": "System Stats",
@@ -46,31 +47,26 @@ lua_services.append(
             "cpu_temp": {
                 "data_path": "data.cputemp.series.0.-1",
                 "type": int,
-                # Cable FritzBox with FritzOS 8.00 got these stats removed
                 "exclude_filter_function": missing_data_key("cputemp")
             },
             "cpu_utilization": {
                 "data_path": "data.cpuutil.series.0.-1",
                 "type": int,
-                # Cable FritzBox with FritzOS 8.00 got these stats removed
                 "exclude_filter_function": missing_data_key("cpuutil")
             },
             "ram_usage_fixed": {
                 "data_path": "data.ramusage.series.0.-1",
                 "type": int,
-                # Cable FritzBox with FritzOS 8.00 got these stats removed
                 "exclude_filter_function": missing_data_key("ramusage")
             },
             "ram_usage_dynamic": {
                 "data_path": "data.ramusage.series.1.-1",
                 "type": int,
-                # Cable FritzBox with FritzOS 8.00 got these stats removed
                 "exclude_filter_function": missing_data_key("ramusage")
             },
             "ram_usage_free": {
                 "data_path": "data.ramusage.series.2.-1",
                 "type": int,
-                # Cable FritzBox with FritzOS 8.00 got these stats removed
                 "exclude_filter_function": missing_data_key("ramusage")
             }
         }
@@ -98,7 +94,6 @@ lua_services.append(
                     "value_function": energy_consumption_value,
                     "exclude_filter_function": is_lan_energy_entry
                 },
-                # Cable FritzBox with FritzOS 8.00 got these stats removed
                 "exclude_filter_function": missing_data_key("drain")
             }
         }

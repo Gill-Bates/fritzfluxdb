@@ -21,7 +21,8 @@ Lua-based collection is enabled only when the reported FRITZ!OS major version is
 ## Configuration order
 
 1. Choose the backend and create its database, bucket, or table policy.
-2. Create a local `.env` file containing the FRITZ!Box and backend settings.
+2. Create a local `.env` from `.env.example` and either `.env.influxdb.example` or
+   `.env.questdb.example`, then enter the FRITZ!Box and backend settings.
 3. Start the daemon and inspect its logs for successful connection messages.
 4. Import the matching [Grafana dashboards](../monitoring/grafana.md), if required.
 5. Confirm that new timestamps and the expected measurement/table name are receiving data.

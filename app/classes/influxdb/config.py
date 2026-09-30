@@ -149,13 +149,20 @@ class InfluxDBConfig(ConfigBase):
             mapped_version = explicit_version
 
         _questdb_host_vars = frozenset({"QUESTDB_HOSTNAME", "QUESTDB_HOST"})
-        is_questdb = (
-            mapped_version == "questdb" or
-            any(os.environ.get(var, "").strip() for var in _questdb_host_vars)
-        )
+        questdb_host_configured = any(os.environ.get(var, "").strip() for var in _questdb_host_vars)
+
+        # A QUESTDB_* host only selects QuestDB when no backend was chosen explicitly;
+        # otherwise a stale variable would silently override DB_TYPE/INFLUXDB_VERSION.
+        explicit_backend = bool(db_type) or bool(explicit_version)
+        is_questdb = mapped_version == "questdb" or (questdb_host_configured and not explicit_backend)
 
         if is_questdb:
             mapped_version = "questdb"
+        elif questdb_host_configured:
+            log.warning(
+                "Ignoring QUESTDB_* environment variables: the configured backend is '%s'",
+                mapped_version or "influxdb",
+            )
 
         env_overrides: dict[str, str] = {}
         if mapped_version:
@@ -169,7 +176,6 @@ class InfluxDBConfig(ConfigBase):
                 "QUESTDB_PORT": "INFLUXDB_PORT",
                 "QUESTDB_USERNAME": "INFLUXDB_USERNAME",
                 "QUESTDB_PASSWORD": "INFLUXDB_PASSWORD",
-                "QUESTDB_TOKEN": "INFLUXDB_TOKEN",
                 "QUESTDB_TLS_ENABLED": "INFLUXDB_TLS_ENABLED",
                 "QUESTDB_SSL": "INFLUXDB_TLS_ENABLED",
                 "QUESTDB_VERIFY_TLS": "INFLUXDB_VERIFY_TLS",
@@ -208,7 +214,16 @@ class InfluxDBConfig(ConfigBase):
             tls_set_by_url = False
             if "://" in hostname_str:
                 parsed = urlsplit(hostname_str)
-                if parsed.scheme in {"http", "https"} and parsed.hostname:
+                url_path = parsed.path.strip("/")
+                if url_path or parsed.query or parsed.fragment:
+                    # a sub-path is never applied to the /write and /exec endpoints,
+                    # so accepting it would silently write to the wrong URL
+                    log.error(
+                        "%s hostname URL must not contain a path, query or fragment: '%s'",
+                        db_label, hostname_str,
+                    )
+                    self.parser_error = True
+                elif parsed.scheme in {"http", "https"} and parsed.hostname:
                     self.tls_enabled = parsed.scheme == "https"
                     tls_set_by_url = True
                     self.hostname = parsed.hostname
@@ -254,8 +269,11 @@ class InfluxDBConfig(ConfigBase):
                 self.parser_error = True
 
             # an empty hostname is already reported by the mandatory key check
+            credentials = (self.username, self.password) if self.version == "questdb" else (
+                self.username, self.password, self.token
+            )
             if (not self.tls_enabled
-                    and any(bool(v) for v in (self.username, self.password, self.token))
+                    and any(bool(v) for v in credentials)
                     and self.hostname
                     and self.hostname not in {"localhost", "127.0.0.1", "::1"}):
                 if self.allow_plaintext_credentials:
@@ -289,6 +307,16 @@ class InfluxDBConfig(ConfigBase):
                 mandatory_keys = ["hostname", "token", "organization", "bucket"]
             elif self.version == "questdb":
                 mandatory_keys = ["hostname"]
+
+                username_defined = bool(str(self.username or "").strip())
+                password_defined = bool(str(self.password or "").strip())
+                if username_defined != password_defined:
+                    log.error("QuestDB username and password must be defined together or not at all")
+                    self.parser_error = True
+
+                if os.environ.get("QUESTDB_TOKEN", "").strip():
+                    log.error("QUESTDB_TOKEN is unsupported by QuestDB Open Source; use HTTP basic authentication")
+                    self.parser_error = True
             else:
                 log.error(f"Invalid database version/type '{self.version}'.")
                 self.parser_error = True

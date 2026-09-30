@@ -26,6 +26,18 @@ from replaced hardware separated while preserving history for the same box.
 The same logical name is an InfluxDB measurement or a QuestDB table. The supplied dashboards use a
 configurable measurement variable because the serial-specific name is discovered at runtime.
 
+## Metric units
+
+`energy_consumption` is the FRITZ!Box Energy Monitor's current percentage (`actPerc`) for each
+component, relative to its maximum operating load. It is not a power reading in watts; an unused
+component can legitimately report `0%`.
+
+`dsl_line_length` is the FRITZ!Box's approximate DSL line length in metres. It is an estimate, not
+a surveyed cable distance; a value of `363` means approximately 363 m.
+
+`systemuptime` and `linkuptime` are reported in seconds. The dashboards display them as days,
+hours, minutes, and seconds instead of accumulating hours beyond 24.
+
 ## Failure and shutdown behaviour
 
 - A missing or invalid configuration returns exit status `78` and is not retried by the Docker

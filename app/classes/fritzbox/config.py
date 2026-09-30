@@ -5,6 +5,8 @@
 #
 
 import configparser
+import re
+from ipaddress import ip_address
 from typing import ClassVar
 from urllib.parse import urlsplit
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
@@ -37,16 +39,6 @@ class FritzBoxConfig(ConfigBase):
         "type": int,
         "default": 49000
     }
-    tls_enabled: ClassVar[dict] = {
-        "type": bool,
-        "alt": "ssl",
-        "default": None
-    }
-    verify_tls: ClassVar[dict] = {
-        "type": bool,
-        "alt": "verify_ssl",
-        "default": True
-    }
     connect_timeout: ClassVar[dict] = {
         "type": int,
         "alt": "timeout",
@@ -75,7 +67,9 @@ class FritzBoxConfig(ConfigBase):
 
     def __init__(self, config_data):
 
-        self.tls_auto = False  # set after tls_enabled has been parsed
+        # runtime state, not a config option: None until the handlers have probed
+        # HTTPS/HTTP, then True/False for the protocol that actually works
+        self.tls_enabled = None
         super().__init__(config_data)
 
         self._fw_version = None
@@ -127,22 +121,24 @@ class FritzBoxConfig(ConfigBase):
             log.error(f"Defined FritzBox time zone '{self.timezone}' is invalid/unknown: {e}")
             self.parser_error = True
 
-        # record whether HTTPS was requested by the user or should be auto-detected
-        self.tls_auto = (self.tls_enabled is None)
-
-        # set TR-069 TLS port if explicitly enabled and port is still the default
-        if self.tls_enabled is True and self.port == self.DEFAULT_TR064_HTTP_PORT:
-            self.port = self.DEFAULT_TR064_HTTPS_PORT
-
-        if self.tls_enabled is True and not self.verify_tls:
-            log.warning(f"TLS certificate verification is disabled for {self.hostname}; use only on trusted networks")
-
     def _validate_hostname(self) -> None:
         hostname = str(self.hostname or "").strip()
 
         if not hostname:
             log.error("FritzBox hostname must not be empty")
             self.parser_error = True
+            return
+
+        # an IPv6 literal (bracketed or bare) is a valid host but would trip the URL
+        # check below, because urlsplit() reads its first group as a scheme
+        literal = hostname[1:-1] if hostname.startswith("[") and hostname.endswith("]") else hostname
+        try:
+            is_ipv6_literal = ip_address(literal).version == 6
+        except ValueError:
+            is_ipv6_literal = False
+
+        if is_ipv6_literal:
+            self.hostname = literal
             return
 
         parsed = urlsplit(hostname)
@@ -164,15 +160,19 @@ class FritzBoxConfig(ConfigBase):
 
     @fw_version.setter
     def fw_version(self, version):
-        parts = str(version or "").split(".")
+        # AVM reports e.g. '113.07.90', '7.90' or '113.07.90-123456' (lab/build suffix),
+        # so take the leading digits of each dot-separated component
+        parts = []
+        for chunk in str(version or "").strip().split("."):
+            match = re.match(r"\d+", chunk)
+            if match is None:
+                break
+            parts.append(match.group())
 
-        try:
-            if len(parts) >= 3:
-                self._fw_version = f"{int(parts[1])}.{int(parts[2])}"
-            elif len(parts) == 2:
-                self._fw_version = f"{int(parts[0])}.{int(parts[1])}"
-            else:
-                raise ValueError
-        except ValueError:
+        if len(parts) >= 3:
+            self._fw_version = f"{int(parts[1])}.{int(parts[2])}"
+        elif len(parts) == 2:
+            self._fw_version = f"{int(parts[0])}.{int(parts[1])}"
+        else:
             log.warning(f"Unable to parse FritzOS version: {version!r}")
             self._fw_version = None

@@ -5,7 +5,7 @@
 <h1 align="center">fritzFluxDB</h1>
 
 <p align="center">
-  Lightweight daemon that collects metrics from your AVM FritzBox and pushes them into InfluxDB or QuestDB.
+  Lightweight daemon that collects metrics from your FRITZ!Box and pushes them into InfluxDB or QuestDB.
 </p>
 
 <p align="center">
@@ -52,8 +52,9 @@
 
 This fork modernises the original codebase around **operational reliability**, a **smaller,
 container-first footprint**, and **QuestDB** as a third storage backend. It runs on Python 3.13,
-uses a single lightweight HTTP dependency, buffers and flushes measurements on shutdown, and backs
-off exponentially on HTTP errors instead of retrying at a fixed interval.
+writes database data through a single lightweight `httpx` client rather than dedicated InfluxDB
+clients, buffers and flushes measurements on shutdown, and backs off exponentially on HTTP errors
+instead of retrying at a fixed interval.
 
 See the [full comparison](https://gill-bates.github.io/fritzfluxdb/development/fork-comparison/)
 in the documentation, including what the original still does that this fork intentionally
@@ -62,13 +63,15 @@ dropped.
 ## 🚀 Quick Start
 
 ```bash
-cp .env.example .env
-# edit .env with your FRITZ!Box and database settings
+test -e .env || cat .env.example .env.influxdb.example > .env
+# edit .env with your FRITZ!Box settings and an existing InfluxDB endpoint
+# use INFLUXDB_TLS_ENABLED=true for HTTPS, or explicitly allow HTTP credentials on a trusted network
 docker compose -f docker/docker-compose.influx2.yml up -d
 ```
 
-That's it — metrics start flowing into InfluxDB v2. For QuestDB, InfluxDB v1, an existing external
-database, or a local Python run instead, see
+The Compose file starts fritzfluxdb only. An InfluxDB v2 instance must already be running and
+reachable from its container; credential transmission over plaintext is disabled by default.
+For QuestDB, InfluxDB v1, or a local Python run instead, see
 **[Installation](https://gill-bates.github.io/fritzfluxdb/getting-started/installation/)** and
 **[Docker Compose](https://gill-bates.github.io/fritzfluxdb/getting-started/docker/)**.
 
@@ -90,7 +93,7 @@ architecture all live in the docs site — this README stays short on purpose.
 
 ---
 
-> **Disclaimer:** This project is an independent open-source tool and is not affiliated with, endorsed by, or in any way associated with AVM GmbH or the FRITZ!Box product line. FRITZ!Box is a registered trademark of AVM GmbH.
+> **Disclaimer:** This project is an independent open-source tool and is not affiliated with, endorsed by, or in any way associated with FRITZ.com GmbH, Alt-Moabit 95, 10559 Berlin, or the FRITZ!Box product line. FRITZ!Box is a registered trademark of FRITZ.com GmbH.
 
 <p align="center">
   <a href="https://www.buymeacoffee.com/tnsteinerx">

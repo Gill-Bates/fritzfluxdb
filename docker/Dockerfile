@@ -15,17 +15,18 @@ WORKDIR ${APP_HOME}
 # base image's packages (e.g. perl-base, libsqlite3, gzip, libpcre2) that
 # python:3.13-slim-trixie has not yet rebuilt with, so the Trivy release gate
 # does not fail on CVEs Debian already fixed upstream.
+#
+# procps provides pgrep, which the Compose healthchecks use to probe the daemon.
 RUN apt-get update \
     && apt-get upgrade -y \
-    && apt-get install -y --no-install-recommends tini tzdata \
+    && apt-get install -y --no-install-recommends tini tzdata procps \
     && rm -rf /var/lib/apt/lists/*
 
 # --- Python package (cached layer) ------------------------------------------
 # pyproject.toml + app/ are installed as the "fritzfluxdb" distribution into
 # site-packages - not also copied to /app/app - so the app exists exactly
-# once in the image and app/version.py can read its own version back from
-# the installed metadata (importlib.metadata) instead of parsing
-# pyproject.toml again at runtime. README.md is required by pyproject.toml's
+# once in the image and app/version.py reads the release version from the
+# pyproject.toml copied into APP_HOME. README.md is required by pyproject.toml's
 # readme= field. pip is removed once installed: the daemon never installs
 # anything at runtime, and pip's bundled third-party copies (pip/_vendor) are
 # the only source of CVE findings in this image. Dropping it also keeps the

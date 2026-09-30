@@ -99,6 +99,14 @@ def target(query, ref="A", fmt="time_series"):
     }
 
 
+def unmapped_target_error(dashboard, panel_id, ref):
+    """A panel target without a QuestDB query would silently render an empty panel."""
+    return SystemExit(
+        f"{dashboard}: no QuestDB query mapped for panel {panel_id} target '{ref}'. "
+        "Add it to the query table or list it in SKIP_REFS."
+    )
+
+
 def target_table(query, ref="A"):
     return target(query, ref, "table")
 
@@ -663,7 +671,17 @@ SYSTEM_QUERIES = {
     (49, "B"): (ts_agg("ram_usage_dynamic"), "time_series"),
     (49, "C"): (ts_agg("ram_usage_free"), "time_series"),
     (51, "A"): (ts_agg("cpu_temp"), "time_series"),
-    (53, "A"): (ts_last("energy_consumption", "Energy (W)"), "table"),
+    (53, "A"): (
+        (f"SELECT name AS \"Component\", energy_consumption AS \"Current (%)\"\n"
+            f"FROM {MEASUREMENT}\n"
+            f"WHERE {TF}\n"
+            f"  AND {BOX_FILTER}\n"
+            f"  AND name IS NOT NULL\n"
+            f"  AND energy_consumption IS NOT NULL\n"
+            f"LATEST ON timestamp PARTITION BY box, name\n"
+            f"ORDER BY name"),
+        "table",
+    ),
     (20, "B"): (
         (f"SELECT {last_not_null('external_ip', 'IPv4')}, {last_not_null('external_ipv6', 'IPv6')},\n"
             f"  {last_not_null('ipv6_prefix', 'IPv6 Prefix')}, {last_not_null('ipv6_prefix_length', 'IPv6 Prefix Length')},\n"
@@ -676,7 +694,7 @@ SYSTEM_QUERIES = {
         "table",
     ),
     (74, "B"): (
-        (f"SELECT {last_not_null('physicallinktype', 'Link Type')}, {last_not_null('dsl_line_length', 'DSL Line Length')},\n"
+        (f"SELECT {last_not_null('physicallinktype', 'Link Type')}, {last_not_null('dsl_line_length', 'Approx. DSL Length (m)')},\n"
             f"  {last_not_null('dsl_dslam_vendor', 'DSL DSLAM Vendor')}, {last_not_null('dsl_dslam_sw_version', 'DSL Model Version')},\n"
             f"  {last_not_null('dsl_line_mode', 'DSL Line Mode')}, {last_not_null('cable_cmts_vendor', 'Cable Vendor')},\n"
             f"  {last_not_null('cable_line_mode', 'Cable Line Mode')}, {last_not_null('cable_modem_version', 'Cable Modem Version')},\n"
@@ -826,8 +844,7 @@ def build_system(src):
                     sql, fmt = SYSTEM_QUERIES[key]
                     new_targets.append(target(sql, ref, fmt))
                 else:
-                    # fallback: keep structure, replace query
-                    new_targets.append(target_table("SELECT 1 LIMIT 0", ref))
+                    raise unmapped_target_error("system dashboard", pid, ref)
             p["targets"] = new_targets
             if pid in {20, 60, 62, 66, 68, 74}:
                 p.setdefault("options", {})["showHeader"] = True
@@ -1158,7 +1175,7 @@ def build_homeauto(src):
                     sql, fmt = HA_QUERIES[key]
                     new_targets.append(target(sql, ref, fmt))
                 else:
-                    new_targets.append(target_table("SELECT 1 LIMIT 0", ref))
+                    raise unmapped_target_error("home automation dashboard", p.get("id"), ref)
             p["targets"] = new_targets
             if p.get("id") in {20, 28, 34, 8}:
                 p.setdefault("options", {})["showHeader"] = True

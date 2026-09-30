@@ -6,7 +6,7 @@ The writer speaks HTTP and supports three backend modes:
 | --- | --- | --- |
 | InfluxDB v1 | InfluxDB HTTP API, normally `8086` | Optional username/password and database |
 | InfluxDB v2 | InfluxDB HTTP API, normally `8086` | Organization, bucket, token |
-| QuestDB | Influx Line Protocol over HTTP, normally `9000` | Optional basic auth or bearer token |
+| QuestDB | Influx Line Protocol over HTTP, normally `9000` | Optional HTTP basic authentication (Open Source) |
 
 Choose one backend through `DB_TYPE`. The backend hostname is mandatory; the mode-specific
 configuration is validated at startup. A full `https://` hostname derives TLS and a port when no

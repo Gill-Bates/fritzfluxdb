@@ -155,12 +155,7 @@ class FritzBoxTR069Service(FritzBoxService):
             log.error(f"Missing action for FritzBoxTR069Service '{self.name}'")
             return
 
-        action_instance = FritzBoxAction(action)
-
-        if action_instance.name is None:
-            log.error(f"Failed to add action to FritzBoxTR069Service '{self.name}': {action}")
-        else:
-            self.actions.append(action_instance)
+        self.actions.append(FritzBoxAction(action))
 
 
 class FritzBoxLuaURLPath:

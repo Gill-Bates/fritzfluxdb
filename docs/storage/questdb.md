@@ -13,9 +13,58 @@ QUESTDB_TLS_ENABLED=true
 
 ## Authentication
 
-Use `QUESTDB_USERNAME` and `QUESTDB_PASSWORD` for basic authentication, or `QUESTDB_TOKEN` for
-bearer authentication. Do not configure both credential styles unless your QuestDB deployment
-requires it. TLS certificate verification remains enabled by default.
+QuestDB Open Source supports HTTP basic authentication with `http.user` and `http.password`
+(or `QDB_HTTP_USER` and `QDB_HTTP_PASSWORD`) on the QuestDB server. Set `QUESTDB_USERNAME`
+and `QUESTDB_PASSWORD` to the same values in fritzfluxdb. The Compose example passes these
+variables only to fritzfluxdb; it does not enable authentication on the QuestDB service.
+Configure the server separately before relying on them.
+QuestDB REST API tokens require QuestDB Enterprise and are not supported by this OSS setup.
+TLS certificate verification remains enabled by default.
+
+## Admin CLI
+
+Images built from this version include a QuestDB admin CLI. Run it in the running fritzfluxdb
+container; it uses the same QuestDB endpoint and HTTP basic credentials as the daemon. Keep the
+default interactive terminal for commands with `--apply` so you can answer the confirmation prompt.
+
+Commands are positional words: write `doctor`, not `--doctor`. Use `--help` for the command list
+and examples. Options such as `--apply`, `--from`, and `--to` follow the command they belong to.
+
+```bash
+docker compose -f docker/docker-compose.questdb.yml exec fritzfluxdb fritzflux-cli --help
+docker compose -f docker/docker-compose.questdb.yml exec fritzfluxdb fritzflux-cli doctor
+docker compose -f docker/docker-compose.questdb.yml exec fritzfluxdb fritzflux-cli list
+```
+
+`doctor` checks connectivity and reports QuestDB state. `list` shows FRITZ!Box tables and their
+rollup views. Use a table name from `list` for the following commands:
+
+```bash
+docker compose -f docker/docker-compose.questdb.yml exec fritzfluxdb sh
+fritzflux-cli --help
+fritzflux-cli partitions fritzbox_AA1234567890
+fritzflux-cli drop-box fritzbox_AA1234567890
+fritzflux-cli drop-all
+fritzflux-cli drop-partitions fritzbox_AA1234567890 --from 2026-09-01 --to 2026-09-08
+fritzflux-cli refresh fritzbox_AA1234567890 --full
+fritzflux-cli drop-box fritzbox_AA1234567890 --apply
+```
+
+Replace `fritzbox_AA1234567890` with a table name returned by `list`. Run these commands after
+opening the interactive shell shown above. Mutating commands show a preview by default. Add
+`--apply` to continue, then type `y` or `yes` at the confirmation prompt; any other
+input cancels the operation. For `drop-partitions`, `--to` is exclusive; both dates must align with
+whole UTC daily partitions. The active newest partition cannot be dropped. The operation rebuilds
+dependent rollups so deleted raw metrics do not remain in their aggregates. A full refresh can take
+time and is scheduled asynchronously by QuestDB.
+
+`drop-all` removes discovered tables whose names match the fritzfluxdb box naming pattern,
+their rollup views, and the fritzfluxdb downsampling status table. Review the preview before
+`--apply`; any unrelated table using that same naming pattern would also be selected.
+
+QuestDB Open Source cannot delete individual rows such as one attached network device. Its HTTP
+password is configured on the QuestDB server, and REST API token management requires Enterprise;
+neither operation is provided by this CLI. Take a backup before applying deletions.
 
 ## TTL
 

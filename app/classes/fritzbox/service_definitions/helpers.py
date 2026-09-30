@@ -4,6 +4,8 @@
 # Copyright (C) 2026 Gill-Bates http://github.com/Gill-Bates
 #
 
+from app.common import parse_bool
+
 
 def parse_optional_json_response(response):
     """Parse an optional FritzBox JSON endpoint; 404 means no data."""
@@ -35,14 +37,13 @@ def parse_required_json_response(response):
 
 def parse_fritzbox_bool(value) -> bool:
     """Convert the boolean encodings returned by FritzBox JSON endpoints."""
-    if isinstance(value, bool):
-        return value
-    if isinstance(value, int):
-        return value != 0
-    if isinstance(value, str):
-        normalized = value.strip().lower()
-        if normalized in {"true", "t", "1", "yes", "on"}:
-            return True
-        if normalized in {"false", "f", "0", "no", "off"}:
-            return False
-    raise ValueError(f"invalid boolean value: {value!r}")
+    return parse_bool(value)
+
+
+def parse_required_text_response(response) -> str:
+    """Return the body of a FritzBox endpoint that must answer with 200."""
+    if response.status_code != 200:
+        url = getattr(response, "url", "<unknown>")
+        raise ValueError(f"unexpected HTTP status {response.status_code} for {url}")
+
+    return response.text

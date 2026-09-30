@@ -8,7 +8,7 @@ Use Python 3.13 or newer. The runtime dependencies are pinned in `pyproject.toml
 python3.13 -m venv .venv
 . .venv/bin/activate
 python -m pip install --upgrade pip
-python -m pip install .
+python -m pip install '.[dev]'
 ```
 
 Create a local `.env` with placeholders replaced by your own values, or pass an INI file with
@@ -29,7 +29,8 @@ deliberately disabled to avoid exposing credentials.
 ## Run the documentation site
 
 ```bash
-python -m pip install -r docs/requirements-docs.txt
+python tools/pyproject-deps.py docs > requirements-docs.txt
+python -m pip install -r requirements-docs.txt
 mkdocs serve -f docs/mkdocs.yml
 ```
 

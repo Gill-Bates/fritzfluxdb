@@ -96,8 +96,28 @@ def grab(structure=None, path: str | None = None, separator=".", fallback=None):
 def in_test_mode():
     """read TESTMODE once per process; the result is cached"""
 
-    test_mode = bool(os.environ.get("TESTMODE"))
+    # bool() would make "0" and "false" truthy, so parse the value explicitly
+    test_mode = os.environ.get("TESTMODE", "").strip().lower() in {"1", "true", "t", "yes", "on"}
     if test_mode:
         print("Running in TESTMODE")
 
     return test_mode
+
+
+def parse_bool(value) -> bool:
+    """Convert the boolean encodings used by FritzBox endpoints and config values.
+
+    bool() must never be used for these: it turns "0" and "false" into True.
+    """
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, int):
+        return value != 0
+    if isinstance(value, str):
+        normalized = value.strip().lower()
+        if normalized in {"true", "t", "1", "yes", "on"}:
+            return True
+        if normalized in {"false", "f", "0", "no", "off"}:
+            return False
+
+    raise ValueError(f"invalid boolean value: {value!r}")

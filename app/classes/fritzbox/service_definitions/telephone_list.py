@@ -11,6 +11,9 @@ from io import StringIO
 from typing import ClassVar
 
 from app.classes.fritzbox.service_definitions import lua_services
+from app.classes.fritzbox.service_definitions.helpers import (
+    parse_required_text_response,
+)
 from app.classes.fritzbox.service_handler import FritzBoxLuaURLPath
 
 read_interval = 60
@@ -188,7 +191,7 @@ lua_services.append(
             "switchcmd": "getdevicelistinfos",
             "csv": "",
         },
-        "response_parser": lambda response: CallLog(response.text).entries,
+        "response_parser": lambda response: CallLog(parse_required_text_response(response)).entries,
         "interval": read_interval,
         "track": True,
         "value_instances": {

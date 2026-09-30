@@ -6,17 +6,16 @@
 
 """Project metadata and build information for fritzfluxdb.
 
-Static project metadata lives here; the release version is read from the
-installed package's own distribution metadata (pyproject.toml is the single
-source of truth that metadata is built from - same as docker/build.sh and the
-CI workflow), while the git sha and build date are read from the BUILD_INFO
-file generated at build time. Reading never raises - missing metadata/files
-fall back to sensible defaults.
+Static project metadata lives here; the release version is read from
+pyproject.toml, with installed distribution metadata as a fallback. The git
+sha and build date come from the BUILD_INFO file generated at build time.
+Reading never raises - missing metadata/files fall back to sensible defaults.
 """
 
 from __future__ import annotations
 
 import os
+import tomllib
 from importlib.metadata import PackageNotFoundError
 from importlib.metadata import version as _pkg_version
 from pathlib import Path
@@ -33,19 +32,33 @@ _PROJECT_ROOT = Path(__file__).resolve().parent.parent
 
 
 def _build_info_candidates() -> tuple[Path, ...]:
-    candidates = [_PROJECT_ROOT / "BUILD_INFO"]
-    app_home = os.environ.get("APP_HOME")
-    if app_home:
-        candidates.append(Path(app_home) / "BUILD_INFO")
-    return tuple(candidates)
+    return tuple(root / "BUILD_INFO" for root in _project_roots())
 
 
 def read_project_version() -> str:
-    """Read the installed 'fritzfluxdb' distribution version. Returns "dev" if not installed."""
+    """Read the project version from pyproject.toml or installed metadata."""
+    for root in _project_roots():
+        try:
+            with (root / "pyproject.toml").open("rb") as project_file:
+                version = tomllib.load(project_file).get("project", {}).get("version")
+        except (OSError, tomllib.TOMLDecodeError):
+            continue
+        if isinstance(version, str) and version.strip():
+            return version.strip()
+
     try:
         return _pkg_version("fritzfluxdb")
     except PackageNotFoundError:
         return "dev"
+
+
+def _project_roots() -> tuple[Path, ...]:
+    """Return project metadata roots for source and container installations."""
+    roots = [_PROJECT_ROOT]
+    app_home = os.environ.get("APP_HOME")
+    if app_home:
+        roots.append(Path(app_home))
+    return tuple(roots)
 
 
 _MAX_BUILD_INFO_BYTES = 16_384

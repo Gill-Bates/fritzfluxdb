@@ -74,6 +74,14 @@ def test_invalid_downsampling_profile_is_a_parser_error(monkeypatch):
     assert config.parser_error is True
 
 
+def test_questdb_oss_rejects_api_token(monkeypatch):
+    monkeypatch.setenv("QUESTDB_TOKEN", "old-token")
+
+    config = make_config(monkeypatch, "questdb", None)
+
+    assert config.parser_error is True
+
+
 @pytest.mark.parametrize("version", ["influxdb_v1", "influxdb_v2"])
 def test_influxdb_ignores_questdb_downsampling(monkeypatch, version):
     config = make_config(monkeypatch, version, "invalid")
