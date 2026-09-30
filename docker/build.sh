@@ -19,13 +19,16 @@
 # By default the freshly built image is PUSHED to the registry (requires
 # `docker login`). Skip the push with PUSH=0.
 #
+# Requirements: bash, Python 3.11+ (tomllib), docker, git and flock (util-linux).
+# Linux-only: flock is not available on stock macOS.
+#
 # Usage (from anywhere):
 #   docker/build.sh [extra docker build args...]   # build + push (default)
 #   PUSH=0 docker/build.sh                          # build only, no push
 #   IMAGE=my.reg/repo docker/build.sh              # build+push to another repo
 # =============================================================================
 
-set -eu
+set -euo pipefail
 
 # Verify required commands before performing any side effects
 for command in docker git date python3 flock; do
@@ -35,12 +38,48 @@ for command in docker git date python3 flock; do
     fi
 done
 
+if ! python3 -c 'import tomllib' >/dev/null 2>&1; then
+    echo "ERROR: Python 3.11+ with tomllib is required" >&2
+    exit 1
+fi
+
+# Normalize a boolean option to 1/0; exits on invalid values.
+parse_bool() {
+    case "$2" in
+        1|true|yes) echo 1 ;;
+        0|false|no) echo 0 ;;
+        *)
+            echo "ERROR: $1 must be one of 1,true,yes,0,false,no (got: $2)" >&2
+            exit 1
+            ;;
+    esac
+}
+
+# Validate options before any side effect (lock, BUILD_INFO, docker).
+PUSH="$(parse_bool PUSH "${PUSH:-1}")"
+PRUNE="$(parse_bool PRUNE "${PRUNE:-0}")"
+
 # Resolve repo root relative to this script (docker/ lives under the root).
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 BUILD_INFO="${REPO_ROOT}/BUILD_INFO"
 
-# File locking to serialize local builds
+# Dirty state must be captured before the BUILD_INFO backup below is created,
+# since that temp file is untracked and not gitignored. BUILD_INFO and the lock
+# file are gitignored and do not count.
+GIT_DIRTY=0
+if git -C "${REPO_ROOT}" rev-parse --git-dir >/dev/null 2>&1; then
+    if ! git -C "${REPO_ROOT}" diff --quiet --ignore-submodules HEAD -- \
+        || [ -n "$(git -C "${REPO_ROOT}" ls-files --others --exclude-standard)" ]; then
+        GIT_DIRTY=1
+    fi
+else
+    GIT_DIRTY=unknown
+fi
+
+# File locking to serialize local builds. The lock file is intentionally never
+# deleted: flock locks the inode, so removing it would let two builds lock
+# different inodes under the same name.
 LOCK_FILE="${REPO_ROOT}/.docker-build.lock"
 exec 9>"${LOCK_FILE}"
 
@@ -62,9 +101,6 @@ cleanup_build_info() {
     else
         rm -f -- "${BUILD_INFO}" || true
     fi
-    # Release the file descriptor and remove the lock file
-    exec 9>&- || true
-    rm -f "${LOCK_FILE}" || true
 }
 
 trap cleanup_build_info EXIT
@@ -78,9 +114,16 @@ if [ ! -f "${PYPROJECT_FILE}" ]; then
     exit 1
 fi
 
-APP_VERSION="$(python3 -c "import tomllib; print(tomllib.load(open('${PYPROJECT_FILE}', 'rb'))['project']['version'])")"
-if [ -z "${APP_VERSION}" ]; then
-    echo "ERROR: could not read [project].version from pyproject.toml" >&2
+if ! APP_VERSION="$(python3 -c '
+import sys, tomllib
+with open(sys.argv[1], "rb") as f:
+    data = tomllib.load(f)
+version = data.get("project", {}).get("version")
+if not isinstance(version, str) or not version:
+    raise SystemExit(1)
+print(version)
+' "${PYPROJECT_FILE}")"; then
+    echo "ERROR: could not read [project].version from ${PYPROJECT_FILE}" >&2
     exit 1
 fi
 
@@ -95,65 +138,53 @@ BUILD_DATE="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
     printf 'BUILD_DATE=%s\n' "${BUILD_DATE}"
 } > "${BUILD_INFO}"
 
-export APP_VERSION GIT_SHA BUILD_DATE
+export APP_VERSION GIT_SHA GIT_DIRTY BUILD_DATE
 
 # Fully-qualified image name (registry/repo). Override with IMAGE=... to build
 # for a different registry. Defaults to the private registry used for deploys.
 IMAGE="${IMAGE:-giiibates/fritzfluxdb}"
 
 # Record the existing image ID for this tag (if any) using inspect to clean it up after the build.
-OLD_IMAGE_ID="$(docker image inspect --format '{{.Id}}' "${IMAGE}:testing" 2>/dev/null || true)"
+OLD_IMAGE_ID="$(docker image inspect --format '{{.Id}}' "${IMAGE}:dev" 2>/dev/null || true)"
 
-echo "Building ${IMAGE}:testing" >&2
-echo "  APP_VERSION=${APP_VERSION} GIT_SHA=${GIT_SHA} BUILD_DATE=${BUILD_DATE}" >&2
+echo "Building ${IMAGE}:dev" >&2
+echo "  APP_VERSION=${APP_VERSION} GIT_SHA=${GIT_SHA} GIT_DIRTY=${GIT_DIRTY} BUILD_DATE=${BUILD_DATE}" >&2
 
 # "--build-arg NAME" (without =value) forwards NAME from the environment.
 docker build \
     --pull \
     --build-arg APP_VERSION \
     --build-arg GIT_SHA \
+    --build-arg GIT_DIRTY \
     --build-arg BUILD_DATE \
     -f "${SCRIPT_DIR}/Dockerfile" \
-    -t "${IMAGE}:testing" \
+    -t "${IMAGE}:dev" \
     "$@" \
     "${REPO_ROOT}"
 
-# Remove the old/dangling image if a new image was built successfully and its ID changed.
+# Push first, so a failed push keeps the previous local :dev image.
+# Opt out with PUSH=0 (false/no).
+if [ "${PUSH}" = 1 ]; then
+    echo "Pushing ${IMAGE}:dev ..." >&2
+    docker push "${IMAGE}:dev"
+else
+    echo "Skipping registry push (PUSH=0)." >&2
+fi
+
+# Remove the previous image once the new one is built (and pushed).
 if [ -n "${OLD_IMAGE_ID}" ]; then
-    NEW_IMAGE_ID="$(docker image inspect --format '{{.Id}}' "${IMAGE}:testing" 2>/dev/null || true)"
+    NEW_IMAGE_ID="$(docker image inspect --format '{{.Id}}' "${IMAGE}:dev" 2>/dev/null || true)"
     if [ -n "${NEW_IMAGE_ID}" ] && [ "${OLD_IMAGE_ID}" != "${NEW_IMAGE_ID}" ]; then
         echo "Removing old image ${OLD_IMAGE_ID} to avoid leaving dangling images..." >&2
         docker rmi "${OLD_IMAGE_ID}" || true
     fi
 fi
 
-# Optional and explicit/safe image pruning of dangling fritzFluxDB builder/images
-case "${PRUNE:-0}" in
-    1|true|yes)
-        echo "Pruning dangling images with title label fritzFluxDB..." >&2
-        docker image prune -f \
-            --filter "dangling=true" \
-            --filter "label=org.opencontainers.image.title=fritzFluxDB"
-        ;;
-    0|false|no)
-        ;;
-    *)
-        echo "ERROR: PRUNE must be one of 1,true,yes,0,false,no" >&2
-        exit 1
-        ;;
-esac
-
-# Push to the registry by default (preserving direct push behavior); opt out with PUSH=0 (false/no).
-case "${PUSH:-1}" in
-    1|true|yes)
-        echo "Pushing ${IMAGE}:testing ..." >&2
-        docker push "${IMAGE}:testing"
-        ;;
-    0|false|no)
-        echo "Skipping registry push (PUSH=${PUSH})." >&2
-        ;;
-    *)
-        echo "ERROR: invalid PUSH value: ${PUSH}" >&2
-        exit 1
-        ;;
-esac
+# Optional pruning. This only removes dangling images carrying the fritzFluxDB
+# title label; it does not clean the BuildKit builder cache (docker builder prune).
+if [ "${PRUNE}" = 1 ]; then
+    echo "Pruning dangling images with title label fritzFluxDB..." >&2
+    docker image prune -f \
+        --filter "dangling=true" \
+        --filter "label=org.opencontainers.image.title=fritzFluxDB"
+fi

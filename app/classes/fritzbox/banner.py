@@ -8,7 +8,10 @@
 
 from __future__ import annotations
 
+import os
 import sys
+
+from app.classes.fritzbox.version_check import version_notice
 
 
 def print_banner() -> None:
@@ -60,6 +63,12 @@ def print_banner() -> None:
             sys.stdout.write(cyan + banner + reset + "\n")
         else:
             sys.stdout.write(banner + "\n")
+
+        # Printed like the banner itself, so it is independent of the log level.
+        use_color = sys.stdout.isatty() and not os.environ.get("NO_COLOR")
+        notice = version_notice(VERSION, use_color)
+        if notice:
+            sys.stdout.write(notice + "\n\n")
 
         sys.stdout.flush()
     except Exception:  # noqa: BLE001, S110 - a cosmetic banner must never take the daemon down

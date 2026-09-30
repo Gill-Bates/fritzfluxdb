@@ -70,6 +70,7 @@ ENV WATCHDOG_RESTART_DELAY=10 \
 # invalidate the apt and pip layers on every build.
 ARG APP_VERSION="unknown"
 ARG GIT_SHA="unknown"
+ARG GIT_DIRTY="unknown"
 ARG BUILD_DATE="unknown"
 
 LABEL org.opencontainers.image.title="fritzFluxDB" \
@@ -78,6 +79,7 @@ LABEL org.opencontainers.image.title="fritzFluxDB" \
       org.opencontainers.image.version="${APP_VERSION}" \
       org.opencontainers.image.revision="${GIT_SHA}" \
       org.opencontainers.image.created="${BUILD_DATE}" \
+      de.fritzfluxdb.git-dirty="${GIT_DIRTY}" \
       org.opencontainers.image.licenses="MIT"
 
 # tini as PID 1 -> entrypoint watchdog -> CMD.

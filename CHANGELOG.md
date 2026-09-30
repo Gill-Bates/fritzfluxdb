@@ -1,6 +1,7 @@
 ## [v1.6.2] - 2026-xx-xx
 
 - ``New`` QuestDB is now the documented, recommended storage backend; the READMEs and the Quick Start use the bundled QuestDB Compose setup. InfluxDB v1 and v2 remain supported, and `DB_TYPE` still defaults to `influxdb_v1`.
+- ``New`` The startup banner now shows whether a newer fritzfluxdb release is available on GitHub (yellow), your version is up to date (green), or you run a pre-release. The check uses a short timeout and is skipped silently when GitHub is unreachable.
 - ``Fix`` The Compose files no longer override settings from `.env` with empty values. Values such as `FRITZBOX_USERNAME`, `FRITZBOX_PASSWORD` and `QUESTDB_DOWNSAMPLING` were resolved from `docker/.env` instead of the root `.env`; all user settings now come from `.env` only. Settings that previously fell back to a Compose default, such as `INFLUXDB_DATABASE`, must be set in `.env`, and `TZ` from `.env` (`Etc/UTC` in `.env.example`) now takes effect instead of the former `Europe/Berlin` default.
 
 

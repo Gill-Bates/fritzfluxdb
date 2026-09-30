@@ -71,7 +71,8 @@ def test_project_version_uses_app_home_for_container_layout(tmp_path, monkeypatc
     assert version.read_project_version() == "4.3.2"
 
 
-def test_startup_banner_uses_project_version(capsys):
+def test_startup_banner_uses_project_version(capsys, monkeypatch):
+    monkeypatch.setattr("app.classes.fritzbox.banner.version_notice", lambda *_: None)
     print_banner()
 
     assert f"v{version.read_project_version()}" in capsys.readouterr().out
