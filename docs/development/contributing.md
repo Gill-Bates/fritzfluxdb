@@ -7,7 +7,7 @@ complete test suite from the repository root:
 
 ```bash
 python -m pip install '.[dev]'
-pytest
+pytest -q -p no:xdist
 ruff check .
 ```
 

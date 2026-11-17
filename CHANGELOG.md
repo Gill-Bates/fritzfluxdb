@@ -1,9 +1,137 @@
-## [2.0] - 2026-11-17
+## [v2.0.1] - 2026-xx-xx
 
-- ``New`` Initial Release
 
 
 <details markdown="1">
 <summary>Previous versions...</summary>
+
+## [v2.0.0] - 2026-11-17
+
+- ``New`` WAN interruptions are classified while they happen (router restart, DSL sync loss, probable planned disconnect, other PPP interruption, unknown) and logged with a confidence level. A finished interruption is stored as `wan_interruption_cause`, `wan_interruption_confidence` and `wan_interruption_duration`.
+- ``New`` `FRITZBOX_WAN_WATCH_INTERVAL` sets the WAN and DSL status check (default `5` seconds, `0` turns it off, otherwise `2` to `60`).
+- ``New`` Rejected FRITZ!Box or database credentials, disabled TR-064 access, a missing InfluxDB database, organization or bucket, and a QuestDB older than version 10 are detected at startup and while running and exit with status `78`; unreachable services stay retryable.
+- ``New`` `FRITZBOX_CA_FILE` verifies the FRITZ!Box Lua certificate, the Lua login supports PBKDF2 challenges, and the startup banner reports newer releases.
+- ``New`` Shells in the container (`docker exec -it <container> bash`) show a hint to run `fritzflux-cli --help`.
+- ``Changed`` **Breaking:** Fresh database schemas; existing data is not migrated or touched, so use a new QuestDB instance or a new InfluxDB database or bucket. QuestDB tables are now named `fritzbox_<serial>_metrics` and `fritzbox_<serial>_events` (drop old ones manually), and the Grafana dashboards in `utils/grafana/` must be re-imported.
+- ``Changed`` **Breaking:** Home-automation devices (and VPN connections the router identifies) carry the AVM identifier in the new `id` tag; `name` stays a display tag. Devices with equal or empty names no longer share a series.
+- ``Changed`` **Breaking:** QuestDB 10 or newer is required; an older server stops startup with status `78`.
+- ``Changed`` **Breaking:** The settings `QUESTDB_HOST`, `QUESTDB_SSL` and `QUESTDB_VERIFY_SSL` and the INI keys `host`, `ssl` and `verify_ssl` (`[influxdb]`) and `host`, `timeout` and `interval` (`[fritzbox]`) are no longer read.
+- ``Changed`` **Breaking:** `run.py` is removed; start source installs with `python -m app.main`, which no longer loads a local `.env`, so export the variables first. Custom commands or healthchecks that call `run.py` or `pgrep` must change; the bundled Compose files are unaffected.
+- ``Changed`` **Breaking:** Permanent configuration errors (unreadable configuration file, invalid `LOG_LEVEL` or `--log-level`, rejected database credentials) now stop startup with status `78`. The container then stays running and reports unhealthy instead of restarting in a loop; restart it after fixing the configuration.
+- ``Changed`` **Breaking:** Compose no longer overrides `.env` settings with empty values; set `INFLUXDB_DATABASE`, `INFLUXDB_ORGANIZATION` and `INFLUXDB_BUCKET` in `.env` explicitly, as their Compose defaults are gone.
+- ``Changed`` The default `WATCHDOG_SHUTDOWN_TIMEOUT` is now `35` seconds and the Compose `stop_grace_period` is `40s`, so the daemon can finish all shutdown steps and flush buffered data before it is killed.
+- ``Changed`` `fritzflux-cli --apply` executes the previewed change without a further confirmation prompt, and the tool manages only box tables that fritzfluxdb recorded itself.
+- ``Fix`` An empty environment variable no longer overrides a configuration file value, and INI values containing `%` (for example passwords) no longer abort startup.
+- ``Fix`` QuestDB rollups are split into smaller views, so provisioning works behind proxies with URL-size limits.
+- ``Fix`` Changing `QUESTDB_DATA_RETENTION_DAYS` also updates the TTL of the rollup views, and the retention is set on a raw table without TTL even when downsampling is off.
+- ``Fix`` Log and call-list events are deduplicated across restarts without unbounded InfluxDB series, and log lines within the same second no longer overwrite each other.
+- ``Fix`` Event batches stay whole. After failed logins the FRITZ!Box connection waits before retrying and respects the box's login block, and shutdown drains pending measurements promptly.
+- ``Fix`` `fritzflux-cli drop-all --apply` and `drop-box --apply` pause the daemon while dropping and stop it afterwards. A table re-created after the preview is left alone.
+- ``Fix`` Unrecognised call-list headers are reported as an error instead of yielding no calls, and one malformed call-list row is skipped and logged instead of dropping the whole call list.
+- ``Fix`` The VPN "number active" metric counts active connections, and heating values the FRITZ!Box does not report are skipped instead of written as "off".
+- ``Fix`` FRITZ!Box addresses given as IPv6 literals work for TR-064 and the Lua-based metrics.
+- ``Fix`` Malformed `INFLUXDB_HOSTNAME` and `QUESTDB_HOSTNAME` values fail validation instead of producing an invalid endpoint.
+- ``Fix`` QuestDB dashboards: traffic and DSL error counter deltas stay correct when counter values are null at different times.
+- ``Security`` **Breaking:** The bundled QuestDB Compose file no longer publishes ports `9000` and `9003`. For local console access add `127.0.0.1:9000:9000` to its `ports`.
+- ``Security`` **Breaking:** The bundled QuestDB Compose file fixes `QUESTDB_ALLOW_PLAINTEXT_CREDENTIALS` to `true` and ignores the value in `.env`. To change it, edit `environment:` in that file.
+- ``Security`` The bundled Compose files run fritzfluxdb with a read-only root filesystem and all Linux capabilities dropped; `/tmp` stays writable through tmpfs.
+- ``Security`` Logs no longer contain phone numbers, names, VPN addresses or FRITZ!Box session IDs from conversion, call-list or HTTP errors, and database hostnames with embedded credentials are rejected.
+
+## [v1.6.1] - 2026-09-30
+
+- ``New`` Added `fritzflux-cli` for QuestDB checks, table and partition listing, rollup refreshes, and managed-table cleanup; mutating commands need `--apply` and a confirmation.
+- ``New`` **Breaking:** An unusable configuration value now aborts startup with exit code 78 instead of falling back to a default.
+- ``New`` **Breaking:** The InfluxDB Compose files start only fritzfluxdb; set `INFLUXDB_HOSTNAME` to an existing endpoint reachable from the container.
+- ``New`` The environment template is split into `.env.example` plus `.env.influxdb.example` or `.env.questdb.example`. `FRITZBOX_HOSTNAME` now also accepts an IPv6 address.
+- ``Fix`` Boolean metrics such as `upgrade_available` and `ddns_enabled` were always stored as true, even when the FRITZ!Box reported `0` or `false`.
+- ``Fix`` Log and call-list timestamps no longer shift by an hour across a daylight-saving boundary.
+- ``Fix`` FRITZ!OS versions with a build or lab suffix such as `113.07.90-123456` are recognised again, so Lua-based metrics stay enabled.
+- ``Fix`` An explicit `DB_TYPE` is no longer overridden by a leftover `QUESTDB_HOSTNAME`, and `TESTMODE=false` no longer starts the daemon in test mode.
+- ``Fix`` More robust connection handling: the write backoff now also gates reconnects, TR-064 falls back to HTTP, shutdown waits for running requests, and the container healthcheck works again.
+- ``Fix`` Dashboards: the QuestDB energy panel shows the latest percentage per component, and uptime panels switch to days after 24 hours.
+- ``Security`` InfluxDB Compose no longer ships a placeholder `INFLUXDB_TOKEN` and refuses plaintext credentials by default; enable `INFLUXDB_ALLOW_PLAINTEXT_CREDENTIALS` only on a trusted network.
+- ``Security`` **Breaking:** QuestDB Open Source rejects `QUESTDB_TOKEN`; use `QUESTDB_USERNAME` and `QUESTDB_PASSWORD` instead.
+- ``Security`` **Breaking:** `FRITZBOX_TLS_ENABLED` and `FRITZBOX_VERIFY_TLS` no longer control the connection; HTTPS is tried first and the Lua client accepts the FRITZ!Box's private certificate.
+
+## [v1.6.0] - 2026-09-28
+
+- ``New`` The default QuestDB data retention is now 365 days (previously 90). It applies only to a table without a TTL, so existing tables keep their current retention; change it in QuestDB with `ALTER TABLE "fritzbox_<serial>" SET TTL 365 DAYS;`.
+- ``New`` Optional QuestDB OSS downsampling with `QUESTDB_DOWNSAMPLING=low|medium|high` (30d/1m, 7d/1m, 1d/5m). fritzfluxdb provisions the materialized view and publishes the active profile; QuestDB aggregates and expires data server-side, raw polling is unchanged and no cron job is required.
+- ``New`` QuestDB Grafana dashboards use raw data for recent ranges and re-aggregatable rollups for longer ones. Logs, call logs, current snapshots and state histories remain raw-only.
+- ``New`` A raw TTL that fritzfluxdb set itself is adjusted when you switch profiles, so raw storage actually shrinks. A TTL of unknown origin is never overwritten; the profile's shorter window is then skipped and the dashboards report the retention that is really in effect.
+- ``New`` Disabling downsampling does not restore the previous raw window: rollups and the shortened raw TTL are kept and dashboards fall back to raw only. Widen it with `ALTER TABLE "fritzbox_<serial>" SET TTL 365 DAYS;`.
+- ``New`` Source installs now use `python -m pip install .`; `requirements.txt` and the `VERSION` file are gone, with dependencies and the version living in `pyproject.toml`.
+- ``Fix`` The startup banner no longer reports version `dev` without build details; it reads the version from the installed package metadata.
+
+## [v1.5.1] - 2026-09-14
+
+- ``New`` The default QuestDB data retention is now 90 days (previously 30). It only applies to tables that do not have a TTL yet, so tables created by an earlier version keep their 30 days. `QUESTDB_DATA_RETENTION_DAYS` does not change an existing TTL either — adjust it in QuestDB instead, e.g. `ALTER TABLE "fritzbox_<serial>" SET TTL 90 DAYS;`.
+- ``New`` Added `utils/questdb/server.conf.example`, a sample QuestDB server configuration tuned for small, self-hosted deployments.
+- ``Fix`` Grafana dashboards moved from `grafana/` to `utils/grafana/`; the QuestDB dashboards are now numbered (`01_`–`04_`) so Grafana imports them in the correct order.
+- ``Fix`` QuestDB dashboards no longer show "False" for boolean fields (Upgrade Available, DDNS Enabled, VPN Active/Connected) that were never reported by the FritzBox — QuestDB booleans are never `NULL`, so presence is now detected via a companion column instead.
+
+## [v1.5.0] - 2026-09-14
+
+- ``New`` QuestDB tables now get a data retention (TTL) of 30 days, configurable with `QUESTDB_DATA_RETENTION_DAYS` (`0` disables it). It is only applied to tables without an existing TTL and requires QuestDB 8.2.2+.
+- ``Fix`` QuestDB storage no longer grows by gigabytes per day: all values of one FritzBox query are now written as a single row instead of one row per value. InfluxDB stores the data exactly as before.
+- ``Fix`` Less aggressive polling: TR-064 data and smart home devices are now read every 60 seconds (previously 10), active network hosts every 10 minutes (previously 2).
+- ``Security`` Published Docker images are now blocked when Trivy finds fixable HIGH or CRITICAL vulnerabilities; registry credentials are used only after the image passes its checks.
+
+## [v1.4] - 2026-09-04
+
+- ``New`` FritzBox services are now queried concurrently (up to 4 at a time) instead of strictly one after another, making polling cycles faster overall.
+- ``Fix`` A FritzBox service that keeps failing is now automatically backed off with an increasing delay instead of being retried every cycle, and repeated connection errors are logged only once every 5 minutes instead of flooding the log on every failed request.
+- ``Fix`` A retryable InfluxDB/QuestDB write failure no longer leaves a broken connection open — this previously caused the retry delay to be doubled twice and the "connection restored" log message to report an incorrect number of flushed measurements.
+- ``Security`` The Docker release workflow no longer exposes DockerHub registry credentials as job-wide environment variables; they are now scoped only to the steps that need them.
+
+## [v1.3] - 2026-06-15
+
+- ``Fix`` Database connection errors now name the underlying cause (e.g. `ConnectError`, `ReadTimeout`) instead of logging an empty message — several httpx transport errors have a blank text, which previously produced uninformative lines like `unreachable: `.
+- ``Fix`` The QuestDB schema is now ensured only once per process instead of on every reconnect. During a flaky connection this avoids replaying dozens of `ALTER TABLE` statements on each connection flap; columns are auto-created by QuestDB's line-protocol writes anyway.
+
+## [v1.2] - 2026-06-11
+
+- ``New`` **QuestDB support.** QuestDB can now be used as storage backend alongside InfluxDB v1/v2 — configured via `QUESTDB_*` variables and a ready-to-use `docker-compose.questdb.yml`.
+- ``New`` The database backend is now selected with a single `DB_TYPE` variable (`influxdb_v1`, `influxdb_v2` or `questdb`). Invalid values are rejected with a clear error instead of silently falling back to InfluxDB v1. `INFLUXDB_VERSION` keeps working but is deprecated.
+- ``New`` The database hostname may now be a full URL (e.g. `https://influx.example.com` behind a reverse proxy) — protocol and port are detected automatically. Port `443` always enables TLS.
+- ``New`` Credentials and tokens are no longer sent over unencrypted HTTP to remote hosts by default. For trusted home networks this can be allowed explicitly with `INFLUXDB_ALLOW_PLAINTEXT_CREDENTIALS=true` (or `QUESTDB_…`); the bundled compose files set this for their internal network.
+- ``New`` Unraid app template with separate, clearly grouped settings for InfluxDB v1/v2 and QuestDB.
+- ``New`` Per-database Docker Compose bundles (`docker-compose.influx1.yml`, `docker-compose.influx2.yml`, `docker-compose.questdb.yml`) including database service, healthcheck and log rotation.
+- ``New`` `LOG_LEVEL` environment variable controls log verbosity (`INFO` by default, `DEBUG`, `WARNING` or `ERROR`). Can also be set with the `-l` CLI flag.
+- ``New`` FritzBox serial number is now used as the InfluxDB measurement / QuestDB table name with a `fritzbox_` prefix (e.g. `fritzbox_AA1234567890`).
+- ``Fix`` QuestDB dashboards now show the same user metrics as the InfluxDB dashboards, including home automation heating, call log details, VPN address fields, MyFritz hostname and current DSL download/upload values.
+- ``Fix`` Missing FritzBox fields are pre-created in QuestDB so dashboards no longer abort with `Invalid column` just because an optional value has never been written.
+- ``Fix`` The duplicate FritzBox quick-filter has been removed from the QuestDB dashboards; call log tables are fully restored.
+- ``Fix`` Configuration errors now stop the container immediately with a clear message instead of triggering pointless restart loops — a broken configuration cannot be fixed by retrying.
+- ``Fix`` A configured but empty `QUESTDB_HOSTNAME` no longer forces the daemon into QuestDB mode and no longer breaks InfluxDB setups (affected the Unraid template).
+- ``Fix`` FritzOS lab/beta versions with build suffixes (e.g. `7.62-123456`) are now recognised correctly instead of disabling services.
+- ``Fix`` The FritzBox Lua client now uses `httpx` like the rest of the application — the implicit dependency on `requests` is gone.
+- ``Fix`` Improved error messages: hostname, port and credential problems are reported individually and precisely at startup.
+- ``Fix`` Timezone suffix in Fritz!Box time responses (e.g. `+02:00`) no longer causes a log warning during timezone auto-detection.
+- ``Fix`` QuestDB column names containing dots (e.g. WLAN `802.11` metrics) are now sanitised automatically — dots are replaced with underscores before writing.
+- ``Fix`` Cable-specific services (e.g. cable channel info) are no longer logged as warnings on DSL devices — the message is suppressed after the first discovery pass.
+
+## [v1.1] - 2026-06-09
+
+- ``New`` Updated base image to Python 3.13 on Debian Trixie.
+- ``New`` All data is now written to a single InfluxDB measurement named after the FritzBox serial number. Replacing a FritzBox automatically creates a new measurement, keeping historical data cleanly separated. The `box` tag remains as a human-readable label.
+- ``New`` HTTPS is now used by default without requiring configuration. fritzfluxdb tries HTTPS first (accepting the FritzBox self-signed certificate) and only falls back to plain HTTP if the port is unreachable. A warning is shown when falling back. Set `ssl = true` to enforce HTTPS, or `ssl = false` to always use HTTP without a warning.
+- ``New`` The startup banner is now suppressed on watchdog-triggered restarts and only shown once per container start.
+- ``Fix`` Metrics with dynamic tags (VPN users, network hosts, smart home devices) now correctly carry their identifying tags in InfluxDB — previously these tags were silently dropped.
+- ``Fix`` Boolean metric values are now written as `true`/`false` as required by InfluxDB — previously they were written as Python's `True`/`False` and rejected or misinterpreted.
+- ``Fix`` Millisecond timestamp precision was incorrectly truncated; timestamps are now stored with the correct precision.
+- ``Fix`` FritzBox log entries now include timezone information, preventing timestamp mismatches in Grafana for non-UTC setups.
+- ``Fix`` Metrics with integer values outside the signed 64-bit range (e.g. after an AVM byte counter glitch) are now silently dropped instead of causing a write error.
+- ``Fix`` Background task failures now result in a non-zero exit code, allowing the watchdog or container orchestrator to detect and restart the process. Previously a failed background worker would be silently ignored.
+- ``Fix`` On graceful shutdown, producer tasks are stopped first, the measurement queue is drained, and the InfluxDB writer is stopped last — reducing the risk of data loss on container stop.
+- ``Fix`` Connections to FritzBox and InfluxDB are now properly closed on shutdown in all error scenarios.
+- ``Fix`` Configuration secrets (passwords, tokens) are now masked in log output even when part of a longer key name (e.g. `influxdb_password`, `api_token`).
+- ``Fix`` Invalid port numbers and missing credentials in the configuration now produce a clear error on startup instead of a confusing runtime failure.
+- ``Fix`` Parsing of malformed or unexpected responses from FritzBox (JSON, XML, call logs) now produces descriptive error messages instead of silent failures.
+- ``Fix`` When InfluxDB is unavailable, only a single error is logged at the moment of the outage. Subsequent retries are silent. Once the connection is restored, one info message confirms recovery and reports how many buffered measurements are being flushed.
+- ``Fix`` InfluxDB connection errors no longer produce Python stack traces in the log output.
+
+## [v1.0] - 2026-06-08
+``New`` Initial commit
 
 </details>
