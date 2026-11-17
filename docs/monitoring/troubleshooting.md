@@ -25,6 +25,15 @@ Check the following in order:
 4. TLS settings match the endpoint and certificate trust.
 5. The measurement/table name includes the sanitized FRITZ!Box serial when available.
 
+## Single failed FRITZ!Box requests
+
+A timeout, dropped connection, or exceeded request deadline on one service request is logged at
+`DEBUG` only. The daemon retries that service with backoff in a later cycle. After 3 consecutive
+failures of the same service, one `WARNING` names the service and the last error and repeats at most
+every 5 minutes while the failure persists. When the service answers again, a single `INFO` line
+reports the recovery. HTTP status errors, rejected credentials, oversized responses, and parser
+errors are not transient and keep being logged as errors.
+
 ## Repeated backend warnings
 
 The writer retries transient HTTP failures with backoff. Repeated warnings usually indicate

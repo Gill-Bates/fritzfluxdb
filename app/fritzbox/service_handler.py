@@ -61,6 +61,9 @@ class FritzBoxService:
         self.available = True
         self._next_request_monotonic: float | None = None
         self.failure_count = 0
+        # Set by the handler while a query fails transiently; outage_reported marks an escalation.
+        self.transient_failure: str | None = None
+        self.outage_reported = False
         self.name = service_data.get("name")
         self.description = service_data.get("description")
 

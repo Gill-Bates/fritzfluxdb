@@ -200,8 +200,8 @@ def _request_failing_with_closed_socket(handler):
     return service
 
 
-@pytest.mark.parametrize(("shutting_down", "level"), [(True, "DEBUG"), (False, "ERROR")])
-def test_failed_request_is_an_error_only_outside_shutdown(caplog, shutting_down, level):
+@pytest.mark.parametrize("shutting_down", [True, False])
+def test_transport_failure_of_a_request_is_debug_only(caplog, shutting_down):
     caplog.set_level("DEBUG", logger="fritzFlux")
     handler = make_handler()
     handler.shutting_down = shutting_down
@@ -210,7 +210,107 @@ def test_failed_request_is_an_error_only_outside_shutdown(caplog, shutting_down,
     assert handler.request(service, additional_params={}) is None
 
     records = [r for r in caplog.records if "Unable to perform request" in r.getMessage()]
-    assert [r.levelname for r in records] == [level]
+    assert [r.levelname for r in records] == ["DEBUG"]
+    assert service.transient_failure is not None
+
+
+def _lua_service(name="System logs"):
+    from app.fritzbox.service_handler import FritzBoxLuaService
+
+    return FritzBoxLuaService({"name": name, "interval": 60, "os_min_versions": "7.39", "value_instances": {}})
+
+
+def _failing_handler(monkeypatch, outcome):
+    """Handler whose Lua requests fail transiently while outcome['ok'] is False."""
+    handler = make_handler()
+    handler.discovery_done = True
+
+    def request(service, additional_params, **_kwargs):
+        if outcome["ok"]:
+            return {}
+        service.transient_failure = "ReadError: boom"
+        return None
+
+    monkeypatch.setattr(handler, "request", request)
+    monkeypatch.setattr(handler, "extract_service_values", lambda *a, **k: None)
+    return handler
+
+
+def _run(handler, service):
+    service._next_request_monotonic = None
+    return handler._query_service_with_backoff(service)
+
+
+def test_transient_failures_report_only_after_threshold_then_recovery(caplog, monkeypatch):
+    from app.fritzbox import handler as handler_module
+    from app.fritzbox.service_definitions import helpers
+
+    helpers._last_warning.clear()
+    caplog.set_level("DEBUG", logger="fritzFlux")
+    outcome = {"ok": False}
+    handler = _failing_handler(monkeypatch, outcome)
+    service = _lua_service()
+    threshold = handler_module.SERVICE_FAILURES_BEFORE_REPORT
+
+    for _ in range(threshold - 1):
+        assert _run(handler, service) is False
+    assert not [r for r in caplog.records if r.levelno >= logging.INFO]
+    assert any("no data returned" in r.getMessage() and r.levelname == "DEBUG" for r in caplog.records)
+
+    for _ in range(3):
+        assert _run(handler, service) is False
+    warnings = [r for r in caplog.records if r.levelno >= logging.WARNING]
+    assert len(warnings) == 1
+    assert "failed 3 consecutive" in warnings[0].getMessage()
+    assert "sid" not in warnings[0].getMessage()
+
+    outcome["ok"] = True
+    caplog.clear()
+    assert _run(handler, service) is True
+    assert _run(handler, service) is True
+    infos = [r for r in caplog.records if r.levelno >= logging.INFO]
+    assert [r.levelname for r in infos] == ["INFO"]
+    assert "recovered after" in infos[0].getMessage()
+
+
+def test_recovery_before_threshold_logs_nothing(caplog, monkeypatch):
+    caplog.set_level("DEBUG", logger="fritzFlux")
+    outcome = {"ok": False}
+    handler = _failing_handler(monkeypatch, outcome)
+    service = _lua_service()
+
+    _run(handler, service)
+    outcome["ok"] = True
+    _run(handler, service)
+
+    assert not [r for r in caplog.records if r.levelno >= logging.INFO]
+
+
+def test_failure_during_shutdown_is_never_reported(caplog, monkeypatch):
+    caplog.set_level("DEBUG", logger="fritzFlux")
+    handler = _failing_handler(monkeypatch, {"ok": False})
+    handler.shutting_down = True
+    service = _lua_service()
+
+    for _ in range(5):
+        _run(handler, service)
+
+    assert not [r for r in caplog.records if r.levelno >= logging.INFO]
+
+
+def test_non_transient_failure_still_logs_error(caplog):
+    caplog.set_level("DEBUG", logger="fritzFlux")
+    handler = make_handler()
+    handler.discovery_done = True
+    handler.session = mock_client(lambda request: httpx.Response(500))
+    service = _lua_service()
+    service.method, service.url_path, service.params = "POST", "/data.lua", {}
+
+    assert handler.query_service_data(service) is False
+
+    errors = [r.getMessage() for r in caplog.records if r.levelname == "ERROR"]
+    assert any("returned HTTP 500" in m for m in errors)
+    assert any("no data returned" in m for m in errors)
 
 
 def test_repeated_parser_failure_is_logged_once_per_interval(caplog):

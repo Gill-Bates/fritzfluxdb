@@ -940,7 +940,7 @@ def test_tr064_closed_session_during_the_shutdown_is_logged_at_debug_level(monke
         assert handler.query_service_data(service) is False
 
     assert not [r for r in caplog.records if r.levelno >= logging.WARNING]
-    assert any("session was closed" in r.getMessage() for r in caplog.records)
+    assert any("TR064ClientClosed" in r.getMessage() for r in caplog.records)
 
 
 def test_tr064_debug_log_names_the_action_parameters_but_not_their_values(monkeypatch, caplog):

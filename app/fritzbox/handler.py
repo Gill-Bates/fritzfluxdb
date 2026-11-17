@@ -18,6 +18,7 @@ import httpx
 from app.fritzbox import service_definitions
 from app.fritzbox.config import FritzBoxConfig
 from app.fritzbox.model import FritzBoxLinkTypes
+from app.fritzbox.service_definitions.helpers import warn_rate_limited
 from app.fritzbox.service_handler import (
     FritzBoxLuaService,
     FritzBoxTR064Service,
@@ -34,6 +35,7 @@ from app.fritzbox.tr064.exceptions import (
     TR064HttpUnauthorized,
     TR064ProtocolError,
     TR064ServiceNotFound,
+    TR064TransportError,
     sanitize_text,
 )
 from app.fritzbox.tr064.xmlsafe import parse_xml
@@ -92,6 +94,11 @@ _BODY_FRAMING_HEADERS = frozenset({"content-encoding", "content-length", "transf
 # Upper bound for the WAN watch back-off while the box does not answer its status calls.
 WAN_WATCH_MAX_BACKOFF = 60.0
 WAN_WATCH_LOG_INTERVAL = 300.0
+# Consecutive transient failures of one service before they are reported above DEBUG. One failure
+# is usually a slow or busy box; three cover at least three polling cycles (about three minutes
+# at the default interval), so a short hiccup stays silent but a real outage is reported.
+SERVICE_FAILURES_BEFORE_REPORT = 3
+SERVICE_FAILURE_REPORT_INTERVAL = 300.0
 
 class FritzBoxHandlerBase:
     """
@@ -220,7 +227,31 @@ class FritzBoxHandlerBase:
 
         log.debug(message, *args)
 
+    def _report_service_health(self, service, failures_before, result):
+        """Escalate a persistent transient failure once, then rate limited; log the recovery once."""
+        if result is True:
+            if service.outage_reported:
+                service.outage_reported = False
+                log.info("%s service '%s' recovered after %d failed attempt(s)",
+                         self.name, service.name, failures_before)
+            return
+        if (
+            service.transient_failure is None
+            or self.shutting_down
+            or service.failure_count < SERVICE_FAILURES_BEFORE_REPORT
+        ):
+            return
+        service.outage_reported = True
+        warn_rate_limited(
+            (self.name, service.name, "service_failing"),
+            "%s service '%s' failed %d consecutive time(s), still retrying: %s",
+            self.name, service.name, service.failure_count, service.transient_failure,
+            interval=SERVICE_FAILURE_REPORT_INTERVAL,
+        )
+
     def _query_service_with_backoff(self, service):
+        failures_before = service.failure_count
+        service.transient_failure = None
         try:
             result = self.query_service_data(service)
         except Exception:  # noqa: BLE001 - one broken service must not take down the polling loop
@@ -234,6 +265,7 @@ class FritzBoxHandlerBase:
                 self.name, service.name, delay, service.failure_count,
             )
 
+        self._report_service_health(service, failures_before, result)
         return result
 
     @staticmethod
@@ -803,13 +835,12 @@ class FritzBoxHandler(FritzBoxHandlerBase):
                     self.name, self.config.hostname, action.name, service.name,
                 )
                 continue
-            except TR064ClientClosed as e:
-                # The session was replaced or the daemon is stopping; _log_transport_error logs debug then.
+            except (TR064TransportError, TR064ClientClosed) as e:
+                # Transient: debug only here; a persistent failure is reported by the service health check.
                 transient_failure = True
-                self._log_transport_error(
-                    (self.name, service.name, action.name, type(e).__name__),
-                    "%s session was closed during the request for service '%s'", self.name, service.name,
-                )
+                service.transient_failure = f"{type(e).__name__}: {e}"
+                log.debug("%s request for service '%s' action '%s' failed: %s",
+                          self.name, service.name, action.name, service.transient_failure)
                 continue
             except TR064Error as e:
                 # HTTP 403 stays transient (no relogin): it cannot tell an expired session from a missing right.
@@ -1151,11 +1182,9 @@ class FritzBoxLuaHandler(FritzBoxHandlerBase):
             )
             return None
         except (httpx.HTTPError, OSError) as exc:
-            self._log_transport_error(
-                (self.name, service_to_request.name, type(exc).__name__),
-                "Unable to perform request to '%s': %s",
-                data_url, exc,
-            )
+            # Transient: debug only here; a persistent failure is reported by the service health check.
+            service_to_request.transient_failure = f"{type(exc).__name__}: {exc}"
+            log.debug("Unable to perform request to '%s': %s", data_url, exc)
             return None
 
         # invalidate session on auth-related status codes before parsing
@@ -1392,7 +1421,10 @@ class FritzBoxLuaHandler(FritzBoxHandlerBase):
             if self.shutting_down:
                 log.debug("%s service '%s' returned no data during shutdown", self.name, service.name)
                 return False
-            log.error(f"Unable to request {self.name} service '{service.name}', no data returned")
+            if service.transient_failure is not None:
+                log.debug("Unable to request %s service '%s', no data returned", self.name, service.name)
+            else:
+                log.error(f"Unable to request {self.name} service '{service.name}', no data returned")
             return False
 
         log.debug(f"Request {self.name} service '{service_and_version_name}' returned successfully")
