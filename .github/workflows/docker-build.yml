@@ -1,0 +1,622 @@
+#
+# .github/workflows/docker-build.yml
+# Purpose: tag release - validate, gate on ci.yml, build and scan both architectures,
+#   publish the multi-arch index as a candidate, attest and promote it, then
+#   publish the GitHub Release.
+# Related: ci.yml (release gate), docs-build.yml (rebuilds after a release),
+#   security.yml (rescans the published image).
+#
+
+name: Build & Push Docker Image
+run-name: docker-build-${{ github.run_number }}
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+    inputs:
+      push:
+        description: 'Push to registry'
+        required: false
+        default: 'true'
+        type: choice
+        options:
+          - 'true'
+          - 'false'
+      platforms:
+        description: 'Platforms to build (release tags and the GitHub Release need all of them)'
+        required: false
+        default: 'linux/amd64,linux/arm64'
+        type: choice
+        options:
+          - 'linux/amd64'
+          - 'linux/arm64'
+          - 'linux/amd64,linux/arm64'
+      enforce_trivy_gate:
+        description: 'Fail an unpublished (push=false) run on HIGH/CRITICAL Trivy findings; publishing runs always enforce it'
+        required: false
+        default: 'false'
+        type: choice
+        options:
+          - 'true'
+          - 'false'
+
+env:
+  REGISTRY: docker.io
+  IMAGE_NAME: giiibates/fritzfluxdb
+
+# One lock for everything that writes release tags. queue: max keeps every
+# waiting run instead of letting a newer one replace an already pending one.
+concurrency:
+  group: docker-release
+  cancel-in-progress: false
+  queue: max
+
+permissions:
+  contents: read
+
+jobs:
+  meta:
+    name: Validate build metadata
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    outputs:
+      build_date: ${{ steps.meta.outputs.build_date }}
+      version: ${{ steps.meta.outputs.version }}
+      matrix: ${{ steps.plan.outputs.matrix }}
+      publish: ${{ steps.plan.outputs.publish }}
+      release: ${{ steps.plan.outputs.release }}
+      enforce_trivy_gate: ${{ steps.plan.outputs.enforce_trivy_gate }}
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
+          # Full commit history (no blobs) for the main-ancestry check below.
+          fetch-depth: 0
+          filter: blob:none
+      # The helper lives in the repository, so the checkout has to come first. It prints
+      # the agent banner and points TMPDIR, TMP and TEMP at the job temp directory.
+      - name: Agent banner and job temp directory
+        run: python3 .github/scripts/ci_job_setup.py
+
+      # Every publish/release decision is made here, once; later jobs only read
+      # these outputs. The logic lives in tools/release_meta.py.
+      #   publish            - push the per-architecture image tags
+      #   release            - publish + full platform matrix: promote the shared
+      #                        ${VERSION}/latest tags and the GitHub Release.
+      #                        A single-arch run must not replace a multi-arch
+      #                        index with a single-arch one.
+      #   enforce_trivy_gate - always on when publishing
+      #   matrix             - the requested platforms (a single-platform
+      #                        dispatch filters it; job-level "if:" cannot see
+      #                        the matrix context)
+      - name: Resolve build plan
+        id: plan
+        env:
+          PUSH_INPUT: ${{ inputs.push }}
+          PLATFORMS_INPUT: ${{ inputs.platforms }}
+          GATE_INPUT: ${{ inputs.enforce_trivy_gate }}
+        run: python3 tools/release_meta.py plan
+
+      # Version, tag match, existing release tag and, for every run that
+      # publishes, ancestry to main: checked before CI so a wrong ref costs no test run.
+      # The registry secrets are checked in the jobs that hold them.
+      - name: Validate and set build metadata
+        id: meta
+        env:
+          RELEASE: ${{ steps.plan.outputs.release }}
+          PUBLISH: ${{ steps.plan.outputs.publish }}
+        run: python3 tools/release_meta.py metadata
+
+  lint-test:
+    name: Lint & Test
+    needs: meta
+    uses: ./.github/workflows/ci.yml
+    permissions:
+      contents: read
+
+  build:
+    name: Build ${{ matrix.arch }} image
+    # No image is built from code that failed lint or tests.
+    needs: [meta, lint-test]
+    env:
+      VERSION: ${{ needs.meta.outputs.version }}
+      PUBLISH: ${{ needs.meta.outputs.publish }}
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJson(needs.meta.outputs.matrix) }}
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 30
+    # Holds the registry credentials of the push step. A run with push=false also
+    # references it, so a tag-only deployment rule on the environment blocks branch dry runs.
+    environment: release
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          fetch-depth: 1
+          persist-credentials: false
+      # The helper lives in the repository, so the checkout has to come first. It prints
+      # the agent banner and points TMPDIR, TMP and TEMP at the job temp directory.
+      - name: Agent banner and job temp directory
+        run: python3 .github/scripts/ci_job_setup.py
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@4d04d5d9486b7bd6fa91e7baf45bbb4f8b9deedd # v4.0.0
+
+      # build-push-action provides the runtime token the type=gha cache needs;
+      # a plain `docker buildx build` in a run step silently gets no cache.
+      # BUILD_INFO is written inside the image from the build args below.
+      #
+      # Cache trust boundary: the cache is an input of the published image. A tag run
+      # restores only its own and the default branch's caches. Every workflow was checked:
+      # the only writers of the default-branch scope are push and workflow_dispatch runs
+      # (ci.yml, this file); no job declares a write-capable cache-mode on a low-trust
+      # trigger (docs-build.yml's workflow_run job only reads). Keep it that way.
+      #
+      # No BuildKit SBOM or provenance here: the image is built with load: true and
+      # pushed with `docker push`, and attestation manifests exist only when BuildKit
+      # pushes the image itself. The attest job attaches provenance to the index instead.
+      - name: Build image
+        uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
+        with:
+          context: .
+          file: docker/Dockerfile
+          platforms: ${{ matrix.platform }}
+          pull: true
+          load: true
+          push: false
+          cache-from: type=gha,scope=fritzfluxdb-${{ matrix.arch }}
+          cache-to: type=gha,mode=max,scope=fritzfluxdb-${{ matrix.arch }}
+          build-args: |
+            APP_VERSION=${{ env.VERSION }}
+            VCS_REF=${{ github.sha }}
+            BUILD_DATE=${{ needs.meta.outputs.build_date }}
+          tags: ${{ env.IMAGE_NAME }}:${{ env.VERSION }}-${{ matrix.arch }}
+
+      - name: Smoke test image
+        env:
+          EXPECTED_SHA: ${{ github.sha }}
+          EXPECTED_BUILD_DATE: ${{ needs.meta.outputs.build_date }}
+          ARCH: ${{ matrix.arch }}
+        run: |
+          set -euo pipefail
+          IMAGE="${IMAGE_NAME}:${VERSION}-${ARCH}"
+
+          echo "=== CLI help via the normal start path (tini -> watchdog) ==="
+          docker run --rm "${IMAGE}" python -m app.main --help
+          echo "✓ CLI responds"
+
+          echo "=== Runtime user via the normal start path ==="
+          uid="$(docker run --rm "${IMAGE}" python -c 'import os; print(f"UID={os.getuid()}")' \
+            | sed -n 's/^UID=//p')"
+          if [[ "$uid" != "10001" ]]; then
+            echo "✗ daemon command runs as uid '${uid}', expected 10001 (fritzfluxdb)"
+            exit 1
+          fi
+          echo "✓ daemon command runs as uid ${uid}"
+
+          echo "=== Build metadata ==="
+          docker run --rm --entrypoint python \
+            -e EXPECTED_VERSION="${VERSION}" \
+            -e EXPECTED_SHA \
+            -e EXPECTED_BUILD_DATE \
+            "${IMAGE}" -c '
+          import os
+          import sys
+
+          import app.main  # noqa: F401 - import must succeed
+          import app.utils.version as v
+
+          expected = {
+              "VERSION": os.environ["EXPECTED_VERSION"],
+              "GIT_SHA": os.environ["EXPECTED_SHA"],
+              "BUILD_DATE": os.environ["EXPECTED_BUILD_DATE"],
+          }
+          failures = [
+              f"{name} is {getattr(v, name)!r}, expected {value!r}"
+              for name, value in expected.items()
+              if getattr(v, name) != value
+          ]
+          if failures:
+              for failure in failures:
+                  print(f"✗ {failure}", file=sys.stderr)
+              sys.exit(1)
+          print(f"✓ Version {v.VERSION} ({v.GIT_SHA[:12]}), built {v.BUILD_DATE}")
+          '
+
+          echo "=== Filesystem validation ==="
+          docker run --rm --entrypoint /bin/sh "${IMAGE}" -c '
+            test -x /usr/local/bin/entrypoint.sh && echo "/usr/local/bin/entrypoint.sh: OK" || exit 1
+            test -x /usr/bin/tini && echo "/usr/bin/tini: OK" || exit 1
+            for tool in pip pip3; do
+              if command -v "$tool" >/dev/null; then echo "$tool present in runtime image"; exit 1; fi
+            done
+            python -c "import importlib.util, sys; sys.exit(importlib.util.find_spec(\"pip\") is not None)" \
+              || { echo "pip module importable in runtime image"; exit 1; }
+            echo "pip absent from runtime image (executables and module): OK"
+          '
+          echo "✓ All smoke tests passed for ${IMAGE}"
+
+      - name: Trivy vulnerability scan
+        id: trivy_scan
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          cache: 'true'
+          image-ref: '${{ env.IMAGE_NAME }}:${{ env.VERSION }}-${{ matrix.arch }}'
+          format: 'json'
+          output: 'trivy-${{ matrix.arch }}.json'
+          exit-code: ${{ needs.meta.outputs.enforce_trivy_gate == 'true' && '1' || '0' }}
+          ignore-unfixed: true
+          # Lists every package, so a clean scan still proves which targets it covered.
+          list-all-pkgs: true
+          # Source secrets and misconfiguration are gated in ci.yml.
+          scanners: 'vuln'
+          vuln-type: 'os,library'
+          severity: 'CRITICAL,HIGH'
+          timeout: '10m'
+          trivyignores: '.trivyignore'
+
+      # The single evaluation of the report: writes the step summary and a
+      # one-line verdict that the release notes reuse verbatim. A report that is
+      # unreadable or lacks the OS and Python package results fails the step
+      # (exit 2) instead of passing as "0 findings"; findings never fail it here.
+      # Skipped when the scan itself never ran (e.g. an earlier step failed):
+      # reporting "report missing" then buries the real failure under a second one.
+      - name: Evaluate Trivy report
+        if: always() && steps.trivy_scan.conclusion != 'skipped'
+        env:
+          ARCH: ${{ matrix.arch }}
+        run: |
+          set -euo pipefail
+          python3 tools/trivy_report.py status "trivy-${ARCH}.json" \
+            --expect-class os-pkgs --expect-class lang-pkgs \
+            --verdict-file "trivy-${ARCH}.status" \
+            --summary-title "Trivy (${ARCH})" --list 20 >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload Trivy findings
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: trivy-findings-${{ matrix.arch }}
+          path: |
+            trivy-${{ matrix.arch }}.json
+            trivy-${{ matrix.arch }}.status
+          retention-days: 30
+          if-no-files-found: warn
+
+      # Credentials enter the job only after the image passed smoke test and scan.
+      - name: Check registry secrets
+        if: env.PUBLISH == 'true'
+        env:
+          REGISTRY_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
+          REGISTRY_PASSWORD: ${{ secrets.DOCKERHUB_TOKEN }}
+        run: |
+          : "${REGISTRY_USERNAME:?Missing DOCKERHUB_USERNAME secret}"
+          : "${REGISTRY_PASSWORD:?Missing DOCKERHUB_TOKEN secret}"
+
+      # Credential window: login directly before the push, logout directly after
+      # the digest is recorded, and only shell steps of this repository in between.
+      - name: Log in to registry
+        if: env.PUBLISH == 'true'
+        uses: docker/login-action@4907a6ddec9925e35a0a9e82d7399ccc52663121 # v4.1.0
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Push image
+        if: env.PUBLISH == 'true'
+        env:
+          ARCH: ${{ matrix.arch }}
+        run: docker push "${IMAGE_NAME}:${VERSION}-${ARCH}"
+
+      # The arch tag is mutable in the registry - any later push can move it.
+      # The digest resolved right after this push names exactly the image
+      # that passed the checks above, so the manifest job builds the index
+      # from digests, never from tags.
+      - name: Record image digest
+        if: env.PUBLISH == 'true'
+        env:
+          ARCH: ${{ matrix.arch }}
+        run: python3 tools/release_publish.py digest --ref "${IMAGE_NAME}:${VERSION}-${ARCH}" --out "digests/${ARCH}"
+
+      - name: Log out of registry
+        if: always() && env.PUBLISH == 'true'
+        run: docker logout "$REGISTRY"
+
+      - name: Upload image digest
+        if: env.PUBLISH == 'true'
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: image-digest-${{ matrix.arch }}
+          path: digests/${{ matrix.arch }}
+          # A rerun of the manifest or promote job needs the digests for up to 30 days.
+          retention-days: 30
+          if-no-files-found: error
+
+  create-manifest:
+    name: Create multi-arch candidate
+    needs: [meta, build]
+    # needs.build.result is only 'success' if every matrix leg succeeded, and
+    # release is only true for the full platform matrix - a failed leg or a
+    # single-arch dispatch never publishes an index.
+    if: needs.build.result == 'success' && needs.meta.outputs.release == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    # Holds the registry credentials of the candidate push.
+    environment: release
+    permissions:
+      contents: read
+    env:
+      VERSION: ${{ needs.meta.outputs.version }}
+      MATRIX: ${{ needs.meta.outputs.matrix }}
+      # Unique per run attempt; nothing consumer-facing follows a candidate tag.
+      CANDIDATE: candidate-${{ needs.meta.outputs.version }}-${{ github.run_id }}-${{ github.run_attempt }}
+    outputs:
+      candidate: ${{ steps.candidate.outputs.candidate }}
+      index_digest: ${{ steps.candidate.outputs.index_digest }}
+
+    steps:
+      # Only the shared job helper and the release tools are needed in this job.
+      - name: Checkout job helper
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
+          sparse-checkout: |
+            .github/scripts
+            tools
+      # The helper lives in the repository, so the checkout has to come first. It prints
+      # the agent banner and points TMPDIR, TMP and TEMP at the job temp directory.
+      - name: Agent banner and job temp directory
+        run: python3 .github/scripts/ci_job_setup.py
+
+      - name: Check registry secrets
+        env:
+          REGISTRY_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
+          REGISTRY_PASSWORD: ${{ secrets.DOCKERHUB_TOKEN }}
+        run: |
+          : "${REGISTRY_USERNAME:?Missing DOCKERHUB_USERNAME secret}"
+          : "${REGISTRY_PASSWORD:?Missing DOCKERHUB_TOKEN secret}"
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@4d04d5d9486b7bd6fa91e7baf45bbb4f8b9deedd # v4.0.0
+
+      - name: Download image digests
+        uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7.0.0
+        with:
+          pattern: image-digest-*
+          path: digests/
+          merge-multiple: true
+
+      # The index is assembled with --dry-run and its platforms are checked before
+      # any tag changes. The expected platforms come from the build matrix, not
+      # from the downloaded files, so a missing architecture cannot shrink
+      # the expectation along with the index.
+      - name: Assemble and verify index
+        run: python3 tools/release_publish.py assemble --image "$IMAGE_NAME" --digests-dir digests --work-dir "$RUNNER_TEMP/index"
+
+      # Credential window: login directly before the push, logout directly after it.
+      - name: Log in to registry
+        uses: docker/login-action@4907a6ddec9925e35a0a9e82d7399ccc52663121 # v4.1.0
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      # Publishes the index under the candidate tag only, reads it back from the
+      # registry and compares it with the verified index and the build matrix.
+      # No version tag and no latest are touched here; the promote job does that.
+      - name: Publish and verify candidate
+        id: candidate
+        run: python3 tools/release_publish.py candidate --image "$IMAGE_NAME" --candidate "$CANDIDATE" --work-dir "$RUNNER_TEMP/index"
+
+      - name: Log out of registry
+        if: always()
+        run: docker logout "$REGISTRY"
+
+  attest:
+    name: Attest image index
+    needs: [meta, create-manifest]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    # Holds the registry credentials the attestation push needs.
+    environment: release
+    # Only this job gets the attestation scopes. No storage record: those exist only
+    # for organization-owned repositories, and this repository is user-owned.
+    permissions:
+      contents: read
+      id-token: write
+      attestations: write
+    env:
+      INDEX_DIGEST: ${{ needs.create-manifest.outputs.index_digest }}
+
+    steps:
+      - name: Checkout job helper
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
+          sparse-checkout: .github/scripts
+      # The helper lives in the repository, so the checkout has to come first. It prints
+      # the agent banner and points TMPDIR, TMP and TEMP at the job temp directory.
+      - name: Agent banner and job temp directory
+        run: python3 .github/scripts/ci_job_setup.py
+
+      - name: Check registry secrets
+        env:
+          REGISTRY_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
+          REGISTRY_PASSWORD: ${{ secrets.DOCKERHUB_TOKEN }}
+        run: |
+          : "${REGISTRY_USERNAME:?Missing DOCKERHUB_USERNAME secret}"
+          : "${REGISTRY_PASSWORD:?Missing DOCKERHUB_TOKEN secret}"
+
+      # push-to-registry needs the credential for the attest action, so this job
+      # holds nothing else: login, attest, logout.
+      - name: Log in to registry
+        uses: docker/login-action@4907a6ddec9925e35a0a9e82d7399ccc52663121 # v4.1.0
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      # Build provenance of the index digest. subject-name is the image name without
+      # a tag; inputs checked against action.yml of the pinned version.
+      - name: Attest index digest
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
+        with:
+          subject-name: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          subject-digest: ${{ env.INDEX_DIGEST }}
+          push-to-registry: true
+          create-storage-record: false
+
+      - name: Log out of registry
+        if: always()
+        run: docker logout "$REGISTRY"
+
+  promote:
+    name: Promote release tags
+    needs: [meta, create-manifest, attest]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    # Holds the registry credentials of the tag moves.
+    environment: release
+    permissions:
+      contents: read
+    env:
+      VERSION: ${{ needs.meta.outputs.version }}
+      MATRIX: ${{ needs.meta.outputs.matrix }}
+      CANDIDATE: ${{ needs.create-manifest.outputs.candidate }}
+      INDEX_DIGEST: ${{ needs.create-manifest.outputs.index_digest }}
+    outputs:
+      latest_moved: ${{ steps.promote.outputs.latest_moved }}
+
+    steps:
+      - name: Checkout job helper
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
+          sparse-checkout: |
+            .github/scripts
+            tools
+      # The helper lives in the repository, so the checkout has to come first. It prints
+      # the agent banner and points TMPDIR, TMP and TEMP at the job temp directory.
+      - name: Agent banner and job temp directory
+        run: python3 .github/scripts/ci_job_setup.py
+
+      - name: Check registry secrets
+        env:
+          REGISTRY_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
+          REGISTRY_PASSWORD: ${{ secrets.DOCKERHUB_TOKEN }}
+        run: |
+          : "${REGISTRY_USERNAME:?Missing DOCKERHUB_USERNAME secret}"
+          : "${REGISTRY_PASSWORD:?Missing DOCKERHUB_TOKEN secret}"
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@4d04d5d9486b7bd6fa91e7baf45bbb4f8b9deedd # v4.0.0
+
+      - name: Log in to registry
+        uses: docker/login-action@4907a6ddec9925e35a0a9e82d7399ccc52663121 # v4.1.0
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      # Re-reads the registry in this job: the candidate must still carry the verified
+      # digest and platforms, the version tag is immutable (an existing one must already
+      # carry the same digest), and latest moves only for a stable release that is the
+      # newest stable one in the full tag listing. The meta job decides none of this.
+      - name: Promote candidate
+        id: promote
+        run: python3 tools/release_publish.py promote --image "$IMAGE_NAME" --version "$VERSION" --candidate "$CANDIDATE" --digest "$INDEX_DIGEST"
+
+      - name: Log out of registry
+        if: always()
+        run: docker logout "$REGISTRY"
+
+  cleanup:
+    name: Remove build tags
+    needs: [meta, create-manifest, promote]
+    # Only after a successful promotion: a failed one keeps the candidate for a rerun.
+    # The promotion works from digests, so it does not need the fragment tags.
+    if: ${{ !cancelled() && needs.promote.result == 'success' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    # Holds the delete-capable registry credentials.
+    environment: release
+    permissions:
+      contents: read
+    env:
+      VERSION: ${{ needs.meta.outputs.version }}
+      ARCHES: ${{ join(fromJson(needs.meta.outputs.matrix).include.*.arch, ',') }}
+      CANDIDATE: ${{ needs.create-manifest.outputs.candidate }}
+
+    steps:
+      - name: Checkout job helper
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
+          sparse-checkout: |
+            .github/scripts
+            tools
+      # The helper lives in the repository, so the checkout has to come first. It prints
+      # the agent banner and points TMPDIR, TMP and TEMP at the job temp directory.
+      - name: Agent banner and job temp directory
+        run: python3 .github/scripts/ci_job_setup.py
+
+      # Deletes per-architecture fragment tags and the candidate tag only; the tool refuses
+      # every other tag. A failure is a warning, never a failed release.
+      - name: Delete fragment and candidate tags
+        env:
+          DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
+          DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
+        run: python3 tools/release_newest.py delete --version "$VERSION" --arches "$ARCHES" --tag "$CANDIDATE" --warn
+
+  create-release:
+    name: Create GitHub Release
+    needs: [meta, promote, cleanup]
+    # No release is announced for a version that was not promoted.
+    if: ${{ !cancelled() && needs.promote.result == 'success' && needs.cleanup.result != 'cancelled' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    # Creates the release, so it references the protected environment.
+    environment: release
+    env:
+      VERSION: ${{ needs.meta.outputs.version }}
+      ARCHES: ${{ join(fromJson(needs.meta.outputs.matrix).include.*.arch, ' ') }}
+      LATEST_MOVED: ${{ needs.promote.outputs.latest_moved }}
+    permissions:
+      contents: write
+      actions: read
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          fetch-depth: 1
+          persist-credentials: false
+      # The helper lives in the repository, so the checkout has to come first. It prints
+      # the agent banner and points TMPDIR, TMP and TEMP at the job temp directory.
+      - name: Agent banner and job temp directory
+        run: python3 .github/scripts/ci_job_setup.py
+
+      - name: Download Trivy findings
+        uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7.0.0
+        with:
+          pattern: trivy-findings-*
+          path: trivy-reports/
+          merge-multiple: false
+
+      # Draft, attach, check the asset list, publish; a rerun on a published release
+      # only verifies its assets (.github/scripts/create-release.js).
+      - name: Create or update GitHub Release
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
+        with:
+          script: |
+            const createRelease = require('./.github/scripts/create-release.js');
+            await createRelease({ github, context });

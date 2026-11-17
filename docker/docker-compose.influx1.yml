@@ -1,0 +1,34 @@
+services:
+  fritzfluxdb:
+    image: giiibates/fritzfluxdb:latest
+    container_name: fritzfluxdb_influx1
+    restart: unless-stopped
+    stop_grace_period: 40s
+    env_file:
+      - ../.env
+    environment:
+      # User settings come from ../.env only; keep ${...} interpolation out of here,
+      # because Compose resolves it from docker/.env and would override env_file with empty values.
+      DB_TYPE: "influxdb_v1"
+
+    logging:
+      driver: json-file
+      options:
+        max-size: "50m"
+        max-file: "5"
+
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    # The daemon only writes its PID file to /tmp.
+    read_only: true
+    tmpfs:
+      - /tmp
+
+    healthcheck:
+      test: ["CMD-SHELL", "kill -0 \"$$(cat /tmp/fritzfluxdb.pid 2>/dev/null)\" 2>/dev/null || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 15s

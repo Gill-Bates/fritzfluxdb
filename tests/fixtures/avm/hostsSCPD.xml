@@ -1,0 +1,32 @@
+<?xml version="1.0"?>
+<!-- Hand-written approximation of the AVM format, not a recording from a real FRITZ!Box. -->
+<scpd xmlns="urn:dslforum-org:service-1-0">
+  <specVersion><major>1</major><minor>0</minor></specVersion>
+  <actionList>
+    <action>
+      <name>GetHostNumberOfEntries</name>
+      <argumentList>
+        <argument><name>NewHostNumberOfEntries</name><direction>out</direction><relatedStateVariable>HostNumberOfEntries</relatedStateVariable></argument>
+      </argumentList>
+    </action>
+    <action>
+      <name>GetGenericHostEntry</name>
+      <argumentList>
+        <argument><name>NewIndex</name><direction>in</direction><relatedStateVariable>HostNumberOfEntries</relatedStateVariable></argument>
+        <argument><name>NewIPAddress</name><direction>out</direction><relatedStateVariable>IPAddress</relatedStateVariable></argument>
+        <argument><name>NewMACAddress</name><direction>out</direction><relatedStateVariable>MACAddress</relatedStateVariable></argument>
+        <argument><name>NewLeaseTimeRemaining</name><direction>out</direction><relatedStateVariable>LeaseTimeRemaining</relatedStateVariable></argument>
+        <argument><name>NewActive</name><direction>out</direction><relatedStateVariable>Active</relatedStateVariable></argument>
+        <argument><name>NewHostName</name><direction>out</direction><relatedStateVariable>HostName</relatedStateVariable></argument>
+      </argumentList>
+    </action>
+  </actionList>
+  <serviceStateTable>
+    <stateVariable sendEvents="no"><name>HostNumberOfEntries</name><dataType>ui2</dataType></stateVariable>
+    <stateVariable sendEvents="no"><name>IPAddress</name><dataType>string</dataType></stateVariable>
+    <stateVariable sendEvents="no"><name>MACAddress</name><dataType>string</dataType></stateVariable>
+    <stateVariable sendEvents="no"><name>LeaseTimeRemaining</name><dataType>i4</dataType></stateVariable>
+    <stateVariable sendEvents="no"><name>Active</name><dataType>boolean</dataType></stateVariable>
+    <stateVariable sendEvents="no"><name>HostName</name><dataType>string</dataType></stateVariable>
+  </serviceStateTable>
+</scpd>

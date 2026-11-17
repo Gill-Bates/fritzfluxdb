@@ -1,0 +1,53 @@
+# Python bytecode and build artifacts
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+*.egg-info/
+build/
+dist/
+.agents/
+
+# Virtual environments
+.venv/
+venv/
+ENV/
+env/
+
+# Secrets / local runtime config (only the *.example templates are tracked)
+.env
+.env.*
+!.env*.example
+
+# Generated / local-only project files
+BUILD_INFO
+.docker-build.lock
+site/
+full_codebase*
+my-fritzfluxdb.xml
+
+# IDEs, editors, OS and local agent tooling
+.idea/
+.vscode/
+.claude/
+.kiro/
+.omc/
+.omx/
+*.swp
+*.swo
+.DS_Store
+
+# Test and lint caches
+.pytest_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# User backups and temp files
+*.backup
+*.log
+*.tmp
+
+# Build-time copies of CHANGELOG.md and LICENSE made by docs-build.yml
+docs/changelog.md
+docs/license.md

@@ -1,0 +1,4190 @@
+{
+  "__inputs": [
+    {
+      "name": "DS_QUESTDB",
+      "label": "QuestDB",
+      "description": "",
+      "type": "datasource",
+      "pluginId": "questdb-questdb-datasource",
+      "pluginName": "QuestDB"
+    }
+  ],
+  "__elements": {},
+  "__requires": [
+    {
+      "type": "panel",
+      "id": "bargauge",
+      "name": "Bar gauge",
+      "version": ""
+    },
+    {
+      "type": "panel",
+      "id": "gauge",
+      "name": "Gauge",
+      "version": ""
+    },
+    {
+      "type": "grafana",
+      "id": "grafana",
+      "name": "Grafana",
+      "version": "9.2.2"
+    },
+    {
+      "type": "panel",
+      "id": "logs",
+      "name": "Logs",
+      "version": ""
+    },
+    {
+      "type": "panel",
+      "id": "stat",
+      "name": "Stat",
+      "version": ""
+    },
+    {
+      "type": "panel",
+      "id": "table",
+      "name": "Table",
+      "version": ""
+    },
+    {
+      "type": "panel",
+      "id": "timeseries",
+      "name": "Time series",
+      "version": ""
+    },
+    {
+      "type": "datasource",
+      "id": "questdb-questdb-datasource",
+      "name": "QuestDB",
+      "version": "1.0.0"
+    }
+  ],
+  "annotations": {
+    "list": [
+      {
+        "builtIn": 1,
+        "datasource": {
+          "type": "questdb-questdb-datasource",
+          "uid": "${DS_QUESTDB}"
+        },
+        "enable": true,
+        "hide": false,
+        "iconColor": "rgba(0, 211, 255, 1)",
+        "mappings": {},
+        "name": "Log annotations",
+        "target": {
+          "format": 1,
+          "queryType": "sql",
+          "rawSql": "SELECT timestamp AS time, log_entry AS text, log_type AS tags\nFROM ${measurement}_events\nWHERE $__timeFilter(timestamp)\n  AND box ~ '^${boxtag:regex}$'\n  AND log_entry IS NOT NULL\n  AND log_type = 'Internet connection'\nORDER BY timestamp DESC",
+          "selectedFormat": 1
+        },
+        "type": "dashboard"
+      }
+    ]
+  },
+  "description": "Monitor FRITZ!Box routers",
+  "editable": true,
+  "fiscalYearStartMonth": 0,
+  "gnetId": 713,
+  "graphTooltip": 2,
+  "id": null,
+  "links": [],
+  "liveNow": false,
+  "panels": [
+    {
+      "collapsed": false,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 0
+      },
+      "id": 41,
+      "panels": [],
+      "title": "Overview",
+      "type": "row"
+    },
+    {
+      "datasource": {
+        "type": "questdb-questdb-datasource",
+        "uid": "${DS_QUESTDB}"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "axisCenteredZero": false,
+            "axisColorMode": "text",
+            "axisLabel": "DSL Speed",
+            "axisPlacement": "left",
+            "barAlignment": 0,
+            "drawStyle": "line",
+            "fillOpacity": 10,
+            "gradientMode": "none",
+            "hideFrom": {
+              "legend": false,
+              "tooltip": false,
+              "viz": false
+            },
+            "lineInterpolation": "linear",
+            "lineWidth": 1,
+            "pointSize": 5,
+            "scaleDistribution": {
+              "type": "linear"
+            },
+            "showPoints": "never",
+            "spanNulls": true,
+            "stacking": {
+              "group": "A",
+              "mode": "none"
+            },
+            "thresholdsStyle": {
+              "mode": "off"
+            }
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          },
+          "unit": "bps"
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": "/UP.*/"
+            },
+            "properties": [
+              {
+                "id": "custom.transform",
+                "value": "negative-Y"
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": "/.*Error.*/"
+            },
+            "properties": [
+              {
+                "id": "custom.axisPlacement",
+                "value": "right"
+              },
+              {
+                "id": "custom.drawStyle",
+                "value": "bars"
+              },
+              {
+                "id": "custom.fillOpacity",
+                "value": 100
+              },
+              {
+                "id": "unit",
+                "value": "short"
+              },
+              {
+                "id": "decimals",
+                "value": 0
+              },
+              {
+                "id": "custom.axisLabel",
+                "value": "Errors"
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": "/.*Physical Max/"
+            },
+            "properties": [
+              {
+                "id": "custom.fillOpacity",
+                "value": 0
+              },
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "#64b0c8",
+                  "mode": "fixed"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": "/.*DSL Sync/"
+            },
+            "properties": [
+              {
+                "id": "custom.fillOpacity",
+                "value": 0
+              },
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "dark-green",
+                  "mode": "fixed"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": "/.*netto Max/"
+            },
+            "properties": [
+              {
+                "id": "custom.fillOpacity",
+                "value": 0
+              },
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "dark-red",
+                  "mode": "fixed"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "UP"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "green",
+                  "mode": "fixed"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "DOWN"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "yellow",
+                  "mode": "fixed"
+                }
+              }
+            ]
+          }
+        ]
+      },
+      "gridPos": {
+        "h": 11,
+        "w": 24,
+        "x": 0,
+        "y": 10
+      },
+      "id": 47,
+      "options": {
+        "legend": {
+          "calcs": [],
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "none"
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "questdb-questdb-datasource",
+            "uid": "${DS_QUESTDB}"
+          },
+          "format": 0,
+          "queryType": "sql",
+          "rawSql": "SELECT time, max(\"UP\") AS \"UP\", max(\"DOWN\") AS \"DOWN\", max(\"DOWN Max\") AS \"DOWN Max\", max(\"DOWN DSL Sync\") AS \"DOWN DSL Sync\", max(\"DOWN Physical Max\") AS \"DOWN Physical Max\", max(\"UP netto Max\") AS \"UP netto Max\", max(\"UP DSL Sync\") AS \"UP DSL Sync\", max(\"UP Physical Max\") AS \"UP Physical Max\"\nFROM (\nSELECT time, CAST(\"UP\" AS DOUBLE) AS \"UP\", CAST(NULL AS DOUBLE) AS \"DOWN\", CAST(NULL AS DOUBLE) AS \"DOWN Max\", CAST(\"DOWN DSL Sync\" AS DOUBLE) AS \"DOWN DSL Sync\", CAST(NULL AS DOUBLE) AS \"DOWN Physical Max\", CAST(NULL AS DOUBLE) AS \"UP netto Max\", CAST(NULL AS DOUBLE) AS \"UP DSL Sync\", CAST(NULL AS DOUBLE) AS \"UP Physical Max\" FROM (\nSELECT timestamp AS time,\n  sum(sendrate${metric_source_gauge_sum_suffix:raw}) / ${metric_source_gauge_count_aggregate:raw}(sendrate${metric_source_gauge_count_suffix:raw})*8 AS \"UP\",\n  sum(downstream_dsl_sync_max${metric_source_gauge_sum_suffix:raw}) / ${metric_source_gauge_count_aggregate:raw}(downstream_dsl_sync_max${metric_source_gauge_count_suffix:raw})*1000 AS \"DOWN DSL Sync\"\nFROM ${metric_source:raw}${metric_source_group_open:raw}10${metric_source_group_close:raw}\nWHERE $__timeFilter(timestamp)\n  AND box ~ '^${boxtag:regex}$'\n  AND (sendrate${metric_source_gauge_sum_suffix:raw} IS NOT NULL OR downstream_dsl_sync_max${metric_source_gauge_sum_suffix:raw} IS NOT NULL)\nSAMPLE BY $__sampleByInterval ALIGN TO CALENDAR\n)\nUNION ALL\nSELECT time, CAST(NULL AS DOUBLE) AS \"UP\", CAST(\"DOWN\" AS DOUBLE) AS \"DOWN\", CAST(NULL AS DOUBLE) AS \"DOWN Max\", CAST(NULL AS DOUBLE) AS \"DOWN DSL Sync\", CAST(NULL AS DOUBLE) AS \"DOWN Physical Max\", CAST(NULL AS DOUBLE) AS \"UP netto Max\", CAST(NULL AS DOUBLE) AS \"UP DSL Sync\", CAST(NULL AS DOUBLE) AS \"UP Physical Max\" FROM (\nSELECT timestamp AS time,\n  sum(receiverate${metric_source_gauge_sum_suffix:raw}) / ${metric_source_gauge_count_aggregate:raw}(receiverate${metric_source_gauge_count_suffix:raw})*8 AS \"DOWN\"\nFROM ${metric_source:raw}${metric_source_group_open:raw}06${metric_source_group_close:raw}\nWHERE $__timeFilter(timestamp)\n  AND box ~ '^${boxtag:regex}$'\n  AND (receiverate${metric_source_gauge_sum_suffix:raw} IS NOT NULL)\nSAMPLE BY $__sampleByInterval ALIGN TO CALENDAR\n)\nUNION ALL\nSELECT time, CAST(NULL AS DOUBLE) AS \"UP\", CAST(NULL AS DOUBLE) AS \"DOWN\", CAST(\"DOWN Max\" AS DOUBLE) AS \"DOWN Max\", CAST(NULL AS DOUBLE) AS \"DOWN DSL Sync\", CAST(\"DOWN Physical Max\" AS DOUBLE) AS \"DOWN Physical Max\", CAST(NULL AS DOUBLE) AS \"UP netto Max\", CAST(NULL AS DOUBLE) AS \"UP DSL Sync\", CAST(NULL AS DOUBLE) AS \"UP Physical Max\" FROM (\nSELECT timestamp AS time,\n  sum(downstreammax${metric_source_gauge_sum_suffix:raw}) / ${metric_source_gauge_count_aggregate:raw}(downstreammax${metric_source_gauge_count_suffix:raw}) AS \"DOWN Max\",\n  sum(downstreamphysicalmax${metric_source_gauge_sum_suffix:raw}) / ${metric_source_gauge_count_aggregate:raw}(downstreamphysicalmax${metric_source_gauge_count_suffix:raw}) AS \"DOWN Physical Max\"\nFROM ${metric_source:raw}${metric_source_group_open:raw}09${metric_source_group_close:raw}\nWHERE $__timeFilter(timestamp)\n  AND box ~ '^${boxtag:regex}$'\n  AND (downstreammax${metric_source_gauge_sum_suffix:raw} IS NOT NULL OR downstreamphysicalmax${metric_source_gauge_sum_suffix:raw} IS NOT NULL)\nSAMPLE BY $__sampleByInterval ALIGN TO CALENDAR\n)\nUNION ALL\nSELECT time, CAST(NULL AS DOUBLE) AS \"UP\", CAST(NULL AS DOUBLE) AS \"DOWN\", CAST(NULL AS DOUBLE) AS \"DOWN Max\", CAST(NULL AS DOUBLE) AS \"DOWN DSL Sync\", CAST(NULL AS DOUBLE) AS \"DOWN Physical Max\", CAST(\"UP netto Max\" AS DOUBLE) AS \"UP netto Max\", CAST(NULL AS DOUBLE) AS \"UP DSL Sync\", CAST(NULL AS DOUBLE) AS \"UP Physical Max\" FROM (\nSELECT timestamp AS time,\n  sum(upstreammax${metric_source_gauge_sum_suffix:raw}) / ${metric_source_gauge_count_aggregate:raw}(upstreammax${metric_source_gauge_count_suffix:raw}) AS \"UP netto Max\"\nFROM ${metric_source:raw}${metric_source_group_open:raw}12${metric_source_group_close:raw}\nWHERE $__timeFilter(timestamp)\n  AND box ~ '^${boxtag:regex}$'\n  AND (upstreammax${metric_source_gauge_sum_suffix:raw} IS NOT NULL)\nSAMPLE BY $__sampleByInterval ALIGN TO CALENDAR\n)\nUNION ALL\nSELECT time, CAST(NULL AS DOUBLE) AS \"UP\", CAST(NULL AS DOUBLE) AS \"DOWN\", CAST(NULL AS DOUBLE) AS \"DOWN Max\", CAST(NULL AS DOUBLE) AS \"DOWN DSL Sync\", CAST(NULL AS DOUBLE) AS \"DOWN Physical Max\", CAST(NULL AS DOUBLE) AS \"UP netto Max\", CAST(\"UP DSL Sync\" AS DOUBLE) AS \"UP DSL Sync\", CAST(NULL AS DOUBLE) AS \"UP Physical Max\" FROM (\nSELECT timestamp AS time,\n  sum(upstream_dsl_sync_max${metric_source_gauge_sum_suffix:raw}) / ${metric_source_gauge_count_aggregate:raw}(upstream_dsl_sync_max${metric_source_gauge_count_suffix:raw})*1000 AS \"UP DSL Sync\"\nFROM ${metric_source:raw}${metric_source_group_open:raw}05${metric_source_group_close:raw}\nWHERE $__timeFilter(timestamp)\n  AND box ~ '^${boxtag:regex}$'\n  AND (upstream_dsl_sync_max${metric_source_gauge_sum_suffix:raw} IS NOT NULL)\nSAMPLE BY $__sampleByInterval ALIGN TO CALENDAR\n)\nUNION ALL\nSELECT time, CAST(NULL AS DOUBLE) AS \"UP\", CAST(NULL AS DOUBLE) AS \"DOWN\", CAST(NULL AS DOUBLE) AS \"DOWN Max\", CAST(NULL AS DOUBLE) AS \"DOWN DSL Sync\", CAST(NULL AS DOUBLE) AS \"DOWN Physical Max\", CAST(NULL AS DOUBLE) AS \"UP netto Max\", CAST(NULL AS DOUBLE) AS \"UP DSL Sync\", CAST(\"UP Physical Max\" AS DOUBLE) AS \"UP Physical Max\" FROM (\nSELECT timestamp AS time,\n  sum(upstreamphysicalmax${metric_source_gauge_sum_suffix:raw}) / ${metric_source_gauge_count_aggregate:raw}(upstreamphysicalmax${metric_source_gauge_count_suffix:raw}) AS \"UP Physical Max\"\nFROM ${metric_source:raw}${metric_source_group_open:raw}03${metric_source_group_close:raw}\nWHERE $__timeFilter(timestamp)\n  AND box ~ '^${boxtag:regex}$'\n  AND (upstreamphysicalmax${metric_source_gauge_sum_suffix:raw} IS NOT NULL)\nSAMPLE BY $__sampleByInterval ALIGN TO CALENDAR\n)\n)\nGROUP BY time\nORDER BY time",
+          "refId": "A",
+          "selectedFormat": 0
+        },
+        {
+          "datasource": {
+            "type": "questdb-questdb-datasource",
+            "uid": "${DS_QUESTDB}"
+          },
+          "format": 0,
+          "queryType": "sql",
+          "rawSql": "SELECT time, max(\"CRC Errors\") AS \"CRC Errors\", max(\"Errored Seconds\") AS \"Errored Seconds\", max(\"Severely Errored Seconds\") AS \"Severely Errored Seconds\"\nFROM (\nSELECT time, CAST(\"CRC Errors\" AS DOUBLE) AS \"CRC Errors\", CAST(NULL AS DOUBLE) AS \"Errored Seconds\", CAST(\"Severely Errored Seconds\" AS DOUBLE) AS \"Severely Errored Seconds\" FROM (\nSELECT timestamp AS time,\n  sum(crc_errors_delta) AS \"CRC Errors\",\n  sum(severely_errored_seconds_delta) AS \"Severely Errored Seconds\"\nFROM (\n  SELECT timestamp,\n    CASE WHEN previous_crc_errors IS NULL THEN 0\n      WHEN crc_errors${metric_source_counter_suffix:raw} >= previous_crc_errors THEN crc_errors${metric_source_counter_suffix:raw} - previous_crc_errors\n      ELSE 0 END AS crc_errors_delta,\n    CASE WHEN previous_severely_errored_seconds IS NULL THEN 0\n      WHEN severely_errored_seconds${metric_source_counter_suffix:raw} >= previous_severely_errored_seconds THEN severely_errored_seconds${metric_source_counter_suffix:raw} - previous_severely_errored_seconds\n      ELSE 0 END AS severely_errored_seconds_delta\n  FROM (\n    SELECT timestamp, box, crc_errors${metric_source_counter_suffix:raw}, severely_errored_seconds${metric_source_counter_suffix:raw}, lag(crc_errors${metric_source_counter_suffix:raw}) IGNORE NULLS OVER (PARTITION BY box ORDER BY timestamp) AS previous_crc_errors, lag(severely_errored_seconds${metric_source_counter_suffix:raw}) IGNORE NULLS OVER (PARTITION BY box ORDER BY timestamp) AS previous_severely_errored_seconds\n    FROM ${metric_source:raw}${metric_source_group_open:raw}14${metric_source_group_close:raw}\n    WHERE $__timeFilter(timestamp)\n      AND box ~ '^${boxtag:regex}$'\n      AND (crc_errors${metric_source_counter_suffix:raw} IS NOT NULL OR severely_errored_seconds${metric_source_counter_suffix:raw} IS NOT NULL)\n  )\n)\nSAMPLE BY $__sampleByInterval ALIGN TO CALENDAR\n)\nUNION ALL\nSELECT time, CAST(NULL AS DOUBLE) AS \"CRC Errors\", CAST(\"Errored Seconds\" AS DOUBLE) AS \"Errored Seconds\", CAST(NULL AS DOUBLE) AS \"Severely Errored Seconds\" FROM (\nSELECT timestamp AS time,\n  sum(errored_seconds_delta) AS \"Errored Seconds\"\nFROM (\n  SELECT timestamp,\n    CASE WHEN previous_errored_seconds IS NULL THEN 0\n      WHEN errored_seconds${metric_source_counter_suffix:raw} >= previous_errored_seconds THEN errored_seconds${metric_source_counter_suffix:raw} - previous_errored_seconds\n      ELSE 0 END AS errored_seconds_delta\n  FROM (\n    SELECT timestamp, box, errored_seconds${metric_source_counter_suffix:raw}, lag(errored_seconds${metric_source_counter_suffix:raw}) IGNORE NULLS OVER (PARTITION BY box ORDER BY timestamp) AS previous_errored_seconds\n    FROM ${metric_source:raw}${metric_source_group_open:raw}13${metric_source_group_close:raw}\n    WHERE $__timeFilter(timestamp)\n      AND box ~ '^${boxtag:regex}$'\n      AND (errored_seconds${metric_source_counter_suffix:raw} IS NOT NULL)\n  )\n)\nSAMPLE BY $__sampleByInterval ALIGN TO CALENDAR\n)\n)\nGROUP BY time\nORDER BY time",
+          "refId": "B",
+          "selectedFormat": 0
+        }
+      ],
+      "title": "Current UP/DOWN",
+      "transformations": [
+        {
+          "id": "renameByRegex",
+          "options": {
+            "regex": "^[A-Z] (.*)$",
+            "renamePattern": "$1"
+          }
+        }
+      ],
+      "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "type": "questdb-questdb-datasource",
+        "uid": "${DS_QUESTDB}"
+      },
+      "gridPos": {
+        "h": 5,
+        "w": 24,
+        "x": 0,
+        "y": 21
+      },
+      "hideTimeOverride": true,
+      "id": 26,
+      "options": {
+        "dedupStrategy": "none",
+        "enableLogDetails": true,
+        "prettifyLogMessage": false,
+        "showCommonLabels": false,
+        "showLabels": false,
+        "showTime": true,
+        "sortOrder": "Descending",
+        "wrapLogMessage": true
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "questdb-questdb-datasource",
+            "uid": "${DS_QUESTDB}"
+          },
+          "format": 0,
+          "queryType": "sql",
+          "rawSql": "SELECT timestamp AS time, log_entry AS line, log_type\nFROM ${measurement}_events\nWHERE $__timeFilter(timestamp)\n  AND box ~ '^${boxtag:regex}$'\n  AND log_entry IS NOT NULL\nORDER BY timestamp DESC LIMIT 5",
+          "refId": "A",
+          "selectedFormat": 0
+        }
+      ],
+      "timeFrom": "7d",
+      "title": "Last 5 Log Entries",
+      "transformations": [],
+      "type": "logs"
+    },
+    {
+      "datasource": {
+        "type": "questdb-questdb-datasource",
+        "uid": "${DS_QUESTDB}"
+      },
+      "description": "Is there a Fritz!OS update available",
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "fixed"
+          },
+          "mappings": [
+            {
+              "options": {
+                "false": {
+                  "color": "dark-blue",
+                  "index": 2,
+                  "text": "No"
+                },
+                "true": {
+                  "color": "dark-green",
+                  "index": 1,
+                  "text": "Yes"
+                }
+              },
+              "type": "value"
+            },
+            {
+              "options": {
+                "match": "null",
+                "result": {
+                  "color": "semi-dark-yellow",
+                  "index": 0,
+                  "text": "N/A"
+                }
+              },
+              "type": "special"
+            }
+          ],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "#6ed0e0",
+                "value": null
+              }
+            ]
+          },
+          "unit": "none"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 4,
+        "x": 0,
+        "y": 1
+      },
+      "id": 10,
+      "links": [],
+      "maxDataPoints": 100,
+      "options": {
+        "colorMode": "background",
+        "graphMode": "none",
+        "justifyMode": "center",
+        "orientation": "horizontal",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "/^_value$/",
+          "values": false
+        },
+        "textMode": "value"
+      },
+      "pluginVersion": "9.2.2",
+      "targets": [
+        {
+          "datasource": {
+            "type": "questdb-questdb-datasource",
+            "uid": "${DS_QUESTDB}"
+          },
+          "format": 1,
+          "queryType": "sql",
+          "rawSql": "SELECT timestamp AS time, upgrade_available AS \"Upgrade Available\"\nFROM ${measurement}_metrics\nWHERE $__timeFilter(timestamp)\n  AND box ~ '^${boxtag:regex}$'\n  AND update_state IS NOT NULL\nORDER BY timestamp DESC\nLIMIT 1",
+          "refId": "A",
+          "selectedFormat": 1
+        }
+      ],
+      "title": "Update",
+      "transformations": [],
+      "type": "stat"
+    },
+    {
+      "datasource": {
+        "type": "questdb-questdb-datasource",
+        "uid": "${DS_QUESTDB}"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "decimals": 0,
+          "mappings": [
+            {
+              "options": {
+                "match": "null",
+                "result": {
+                  "text": "N/A"
+                }
+              },
+              "type": "special"
+            }
+          ],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "rgba(245, 54, 54, 0.9)",
+                "value": null
+              },
+              {
+                "color": "rgba(237, 129, 40, 0.89)",
+                "value": 1
+              },
+              {
+                "color": "#1f78c1",
+                "value": 1
+              }
+            ]
+          },
+          "unit": "dtdhms"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 4,
+        "x": 8,
+        "y": 1
+      },
+      "hideTimeOverride": true,
+      "id": 9,
+      "links": [],
+      "maxDataPoints": 100,
+      "options": {
+        "colorMode": "none",
+        "graphMode": "none",
+        "justifyMode": "center",
+        "orientation": "vertical",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "value"
+      },
+      "pluginVersion": "9.2.2",
+      "targets": [
+        {
+          "datasource": {
+            "type": "questdb-questdb-datasource",
+            "uid": "${DS_QUESTDB}"
+          },
+          "format": 1,
+          "queryType": "sql",
+          "rawSql": "SELECT timestamp AS time, linkuptime AS \"Link Uptime (s)\"\nFROM ${measurement}_metrics\nWHERE $__timeFilter(timestamp)\n  AND box ~ '^${boxtag:regex}$'\n  AND linkuptime IS NOT NULL\nORDER BY timestamp DESC\nLIMIT 1",
+          "refId": "A",
+          "selectedFormat": 1
+        }
+      ],
+      "timeFrom": "5m",
+      "title": "Link Uptime",
+      "type": "stat"
+    },
+    {
+      "datasource": {
+        "type": "questdb-questdb-datasource",
+        "uid": "${DS_QUESTDB}"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "rgb(31, 120, 193)"
+          },
+          "decimals": 1,
+          "mappings": [
+            {
+              "options": {
+                "match": "null",
+                "result": {
+                  "text": "N/A"
+                }
+              },
+              "type": "special"
+            }
+          ],
+          "min": 0,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "rgb(31, 120, 193)",
+                "value": null
+              }
+            ]
+          },
+          "unit": "bps"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 5,
+        "w": 4,
+        "x": 0,
+        "y": 5
+      },
+      "id": 11,
+      "links": [],
+      "maxDataPoints": 100,
+      "options": {
+        "orientation": "horizontal",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "/^receiverate$/",
+          "values": false
+        },
+        "showThresholdLabels": false,
+        "showThresholdMarkers": false
+      },
+      "pluginVersion": "9.2.2",
+      "targets": [
+        {
+          "datasource": {
+            "type": "questdb-questdb-datasource",
+            "uid": "${DS_QUESTDB}"
+          },
+          "format": 1,
+          "queryType": "sql",
+          "rawSql": "SELECT sum(receiverate) * 8 AS \"receiverate\"\nFROM (\n  SELECT box, receiverate\n  FROM ${measurement}_metrics\n  WHERE timestamp >= dateadd('m', -5, now())\n    AND box ~ '^${boxtag:regex}$'\n    AND receiverate IS NOT NULL\n  LATEST ON timestamp PARTITION BY box\n)",
+          "refId": "A",
+          "selectedFormat": 1
+        }
+      ],
+      "title": "Download",
+      "type": "gauge"
+    },
+    {
+      "datasource": {
+        "type": "questdb-questdb-datasource",
+        "uid": "${DS_QUESTDB}"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "green"
+          },
+          "decimals": 1,
+          "mappings": [
+            {
+              "options": {
+                "match": "null",
+                "result": {
+                  "text": "N/A"
+                }
+              },
+              "type": "special"
+            }
+          ],
+          "min": 0,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          },
+          "unit": "bps"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 5,
+        "w": 4,
+        "x": 4,
+        "y": 5
+      },
+      "id": 12,
+      "links": [],
+      "maxDataPoints": 100,
+      "options": {
+        "orientation": "horizontal",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "/^sendrate$/",
+          "values": false
+        },
+        "showThresholdLabels": false,
+        "showThresholdMarkers": false
+      },
+      "pluginVersion": "9.2.2",
+      "targets": [
+        {
+          "datasource": {
+            "type": "questdb-questdb-datasource",
+            "uid": "${DS_QUESTDB}"
+          },
+          "format": 1,
+          "queryType": "sql",
+          "rawSql": "SELECT sum(sendrate) * 8 AS \"sendrate\"\nFROM (\n  SELECT box, sendrate\n  FROM ${measurement}_metrics\n  WHERE timestamp >= dateadd('m', -5, now())\n    AND box ~ '^${boxtag:regex}$'\n    AND sendrate IS NOT NULL\n  LATEST ON timestamp PARTITION BY box\n)",
+          "refId": "A",
+          "selectedFormat": 1
+        }
+      ],
+      "title": "Upload",
+      "transformations": [],
+      "type": "gauge"
+    },
+    {
+      "datasource": {
+        "type": "questdb-questdb-datasource",
+        "uid": "${DS_QUESTDB}"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 90
+              },
+              {
+                "color": "orange",
+                "value": 105
+              },
+              {
+                "color": "red",
+                "value": 120
+              }
+            ]
+          },
+          "unit": "celsius"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 4,
+        "x": 16,
+        "y": 1
+      },
+      "id": 30,
+      "options": {
+        "colorMode": "background",
+        "graphMode": "area",
+        "justifyMode": "auto",
+        "orientation": "auto",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "auto"
+      },
+      "pluginVersion": "9.2.2",
+      "targets": [
+        {
+          "datasource": {
+            "type": "questdb-questdb-datasource",
+            "uid": "${DS_QUESTDB}"
+          },
+          "format": 1,
+          "queryType": "sql",
+          "rawSql": "SELECT timestamp AS time, cpu_temp AS \"CPU Temp (°C)\"\nFROM ${measurement}_metrics\nWHERE $__timeFilter(timestamp)\n  AND box ~ '^${boxtag:regex}$'\n  AND cpu_temp IS NOT NULL\nORDER BY timestamp DESC\nLIMIT 1",
+          "refId": "A",
+          "selectedFormat": 1
+        }
+      ],
+      "title": "CPU Temp",
+      "type": "stat"
+    },
+    {
+      "datasource": {
+        "type": "questdb-questdb-datasource",
+        "uid": "${DS_QUESTDB}"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "mappings": [],
+          "max": 100,
+          "min": 0,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "#EAB839",
+                "value": 75
+              },
+              {
+                "color": "red",
+                "value": 85
+              }
+            ]
+          },
+          "unit": "percent"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 4,
+        "x": 20,
+        "y": 1
+      },
+      "id": 33,
+      "options": {
+        "orientation": "auto",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "showThresholdLabels": false,
+        "showThresholdMarkers": true
+      },
+      "pluginVersion": "9.2.2",
+      "targets": [
+        {
+          "datasource": {
+            "type": "questdb-questdb-datasource",
+            "uid": "${DS_QUESTDB}"
+          },
+          "format": 1,
+          "queryType": "sql",
+          "rawSql": "SELECT timestamp AS time, cpu_utilization AS \"CPU %\"\nFROM ${measurement}_metrics\nWHERE $__timeFilter(timestamp)\n  AND box ~ '^${boxtag:regex}$'\n  AND cpu_utilization IS NOT NULL\nORDER BY timestamp DESC\nLIMIT 1",
+          "refId": "A",
+          "selectedFormat": 1
+        }
+      ],
+      "title": "CPU Load",
+      "type": "gauge"
+    },
+    {
+      "datasource": {
+        "type": "questdb-questdb-datasource",
+        "uid": "${DS_QUESTDB}"
+      },
+      "description": "",
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "decimals": 0,
+          "mappings": [],
+          "max": 100,
+          "min": 0,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "#EAB839",
+                "value": 75
+              },
+              {
+                "color": "red",
+                "value": 85
+              }
+            ]
+          },
+          "unit": "percent"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 5,
+        "w": 8,
+        "x": 8,
+        "y": 5
+      },
+      "id": 34,
+      "options": {
+        "orientation": "vertical",
+        "reduceOptions": {
+          "calcs": [
+            "sum"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "showThresholdLabels": false,
+        "showThresholdMarkers": true
+      },
+      "pluginVersion": "9.2.2",
+      "targets": [
+        {
+          "datasource": {
+            "type": "questdb-questdb-datasource",
+            "uid": "${DS_QUESTDB}"
+          },
+          "format": 1,
+          "queryType": "sql",
+          "rawSql": "SELECT timestamp AS time,\n  ram_usage_fixed AS \"RAM Fixed\", ram_usage_dynamic AS \"RAM Dynamic\"\nFROM ${measurement}_metrics\nWHERE $__timeFilter(timestamp)\n  AND box ~ '^${boxtag:regex}$'\n  AND (ram_usage_fixed IS NOT NULL OR ram_usage_dynamic IS NOT NULL)\nORDER BY timestamp DESC LIMIT 1",
+          "refId": "A",
+          "selectedFormat": 1
+        }
+      ],
+      "title": "RAM Usage",
+      "type": "gauge"
+    },
+    {
+      "datasource": {
+        "type": "questdb-questdb-datasource",
+        "uid": "${DS_QUESTDB}"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "fixedColor": "#e24d42",
+            "mode": "fixed"
+          },
+          "decimals": 1,
+          "mappings": [
+            {
+              "options": {
+                "match": "null",
+                "result": {
+                  "text": "N/A"
+                }
+              },
+              "type": "special"
+            }
+          ],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "semi-dark-red",
+                "value": null
+              }
+            ]
+          },
+          "unit": "decbytes"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 5,
+        "w": 4,
+        "x": 16,
+        "y": 5
+      },
+      "hideTimeOverride": true,
+      "id": 16,
+      "links": [],
+      "maxDataPoints": 100,
+      "options": {
+        "colorMode": "none",
+        "graphMode": "area",
+        "justifyMode": "auto",
+        "orientation": "horizontal",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "auto"
+      },
+      "pluginVersion": "9.2.2",
+      "targets": [
+        {
+          "datasource": {
+            "type": "questdb-questdb-datasource",
+            "uid": "${DS_QUESTDB}"
+          },
+          "format": 0,
+          "queryType": "sql",
+          "rawSql": "SELECT timestamp AS time, sum(delta) OVER (ORDER BY timestamp) AS \"Upload Last 24h\"\nFROM (\n  SELECT timestamp,\n    CASE WHEN previous_value IS NULL THEN 0\n      WHEN totalbytessent${metric_source_1d_counter_suffix:raw} >= previous_value THEN totalbytessent${metric_source_1d_counter_suffix:raw} - previous_value\n      ELSE 0\n    END AS delta\n  FROM (\n    SELECT timestamp, totalbytessent${metric_source_1d_counter_suffix:raw}, lag(totalbytessent${metric_source_1d_counter_suffix:raw}) OVER (PARTITION BY box ORDER BY timestamp) AS previous_value\n    FROM ${metric_source_1d:raw}${metric_source_1d_group_open:raw}13${metric_source_1d_group_close:raw}\n    WHERE timestamp >= dateadd('d', -1, now())\n      AND box ~ '^${boxtag:regex}$'\n      AND totalbytessent${metric_source_1d_counter_suffix:raw} IS NOT NULL\n  )\n)",
+          "refId": "A",
+          "selectedFormat": 0
+        }
+      ],
+      "timeFrom": "1d",
+      "title": "Up (24h)",
+      "type": "stat"
+    },
+    {
+      "datasource": {
+        "type": "questdb-questdb-datasource",
+        "uid": "${DS_QUESTDB}"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "fixedColor": "rgb(31, 120, 193)",
+            "mode": "fixed"
+          },
+          "decimals": 1,
+          "mappings": [
+            {
+              "options": {
+                "match": "null",
+                "result": {
+                  "text": "N/A"
+                }
+              },
+              "type": "special"
+            }
+          ],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "red",
+                "value": 80
+              }
+            ]
+          },
+          "unit": "decbytes"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 5,
+        "w": 4,
+        "x": 20,
+        "y": 5
+      },
+      "hideTimeOverride": true,
+      "id": 15,
+      "links": [],
+      "maxDataPoints": 100,
+      "options": {
+        "colorMode": "none",
+        "graphMode": "area",
+        "justifyMode": "auto",
+        "orientation": "horizontal",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "auto"
+      },
+      "pluginVersion": "9.2.2",
+      "targets": [
+        {
+          "datasource": {
+            "type": "questdb-questdb-datasource",
+            "uid": "${DS_QUESTDB}"
+          },
+          "format": 0,
+          "queryType": "sql",
+          "rawSql": "SELECT timestamp AS time, sum(delta) OVER (ORDER BY timestamp) AS \"Download Last 24h\"\nFROM (\n  SELECT timestamp,\n    CASE WHEN previous_value IS NULL THEN 0\n      WHEN totalbytesreceived${metric_source_1d_counter_suffix:raw} >= previous_value THEN totalbytesreceived${metric_source_1d_counter_suffix:raw} - previous_value\n      ELSE 0\n    END AS delta\n  FROM (\n    SELECT timestamp, totalbytesreceived${metric_source_1d_counter_suffix:raw}, lag(totalbytesreceived${metric_source_1d_counter_suffix:raw}) OVER (PARTITION BY box ORDER BY timestamp) AS previous_value\n    FROM ${metric_source_1d:raw}${metric_source_1d_group_open:raw}02${metric_source_1d_group_close:raw}\n    WHERE timestamp >= dateadd('d', -1, now())\n      AND box ~ '^${boxtag:regex}$'\n      AND totalbytesreceived${metric_source_1d_counter_suffix:raw} IS NOT NULL\n  )\n)",
+          "refId": "A",
+          "selectedFormat": 0
+        }
+      ],
+      "timeFrom": "1d",
+      "title": "Down (24h)",
+      "type": "stat"
+    },
+    {
+      "datasource": {
+        "type": "questdb-questdb-datasource",
+        "uid": "${DS_QUESTDB}"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "semi-dark-blue",
+                "value": null
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 4,
+        "x": 4,
+        "y": 1
+      },
+      "id": 37,
+      "interval": "2m",
+      "options": {
+        "colorMode": "background",
+        "graphMode": "area",
+        "justifyMode": "auto",
+        "orientation": "auto",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "auto"
+      },
+      "pluginVersion": "9.2.2",
+      "targets": [
+        {
+          "datasource": {
+            "type": "questdb-questdb-datasource",
+            "uid": "${DS_QUESTDB}"
+          },
+          "format": 1,
+          "queryType": "sql",
+          "rawSql": "SELECT timestamp AS time, num_active_host AS \"Active Hosts\"\nFROM ${measurement}_metrics\nWHERE $__timeFilter(timestamp)\n  AND box ~ '^${boxtag:regex}$'\n  AND num_active_host IS NOT NULL\nORDER BY timestamp DESC\nLIMIT 1",
+          "refId": "A",
+          "selectedFormat": 1
+        }
+      ],
+      "title": "Active hosts",
+      "type": "stat"
+    },
+    {
+      "datasource": {
+        "type": "questdb-questdb-datasource",
+        "uid": "${DS_QUESTDB}"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "decimals": 0,
+          "mappings": [
+            {
+              "options": {
+                "match": "null",
+                "result": {
+                  "text": "N/A"
+                }
+              },
+              "type": "special"
+            }
+          ],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "rgba(245, 54, 54, 0.9)",
+                "value": null
+              },
+              {
+                "color": "rgba(237, 129, 40, 0.89)",
+                "value": 1
+              },
+              {
+                "color": "rgba(50, 172, 45, 0.97)",
+                "value": 1
+              }
+            ]
+          },
+          "unit": "dtdhms"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 4,
+        "x": 12,
+        "y": 1
+      },
+      "hideTimeOverride": true,
+      "id": 13,
+      "links": [],
+      "maxDataPoints": 100,
+      "options": {
+        "colorMode": "none",
+        "graphMode": "none",
+        "justifyMode": "center",
+        "orientation": "vertical",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "value"
+      },
+      "pluginVersion": "9.2.2",
+      "targets": [
+        {
+          "datasource": {
+            "type": "questdb-questdb-datasource",
+            "uid": "${DS_QUESTDB}"
+          },
+          "format": 1,
+          "queryType": "sql",
+          "rawSql": "SELECT timestamp AS time, systemuptime AS \"System Uptime (s)\"\nFROM ${measurement}_metrics\nWHERE $__timeFilter(timestamp)\n  AND box ~ '^${boxtag:regex}$'\n  AND systemuptime IS NOT NULL\nORDER BY timestamp DESC\nLIMIT 1",
+          "refId": "A",
+          "selectedFormat": 1
+        }
+      ],
+      "timeFrom": "5m",
+      "title": "Box Uptime",
+      "type": "stat"
+    },
+    {
+      "collapsed": true,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 26
+      },
+      "id": 39,
+      "panels": [
+        {
+          "datasource": {
+            "type": "questdb-questdb-datasource",
+            "uid": "${DS_QUESTDB}"
+          },
+          "fieldConfig": {
+            "defaults": {
+              "color": {
+                "mode": "palette-classic"
+              },
+              "custom": {
+                "axisCenteredZero": false,
+                "axisColorMode": "text",
+                "axisLabel": "",
+                "axisPlacement": "auto",
+                "barAlignment": 0,
+                "drawStyle": "bars",
+                "fillOpacity": 100,
+                "gradientMode": "hue",
+                "hideFrom": {
+                  "legend": false,
+                  "tooltip": false,
+                  "viz": false
+                },
+                "lineInterpolation": "linear",
+                "lineWidth": 1,
+                "pointSize": 5,
+                "scaleDistribution": {
+                  "type": "linear"
+                },
+                "showPoints": "never",
+                "spanNulls": true,
+                "stacking": {
+                  "group": "A",
+                  "mode": "none"
+                },
+                "thresholdsStyle": {
+                  "mode": "off"
+                }
+              },
+              "decimals": 1,
+              "links": [],
+              "mappings": [],
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "green"
+                  }
+                ]
+              },
+              "unit": "decbytes"
+            },
+            "overrides": [
+              {
+                "matcher": {
+                  "id": "byName",
+                  "options": "totalbytesreceived"
+                },
+                "properties": [
+                  {
+                    "id": "color",
+                    "value": {
+                      "fixedColor": "#1f78c1",
+                      "mode": "fixed"
+                    }
+                  },
+                  {
+                    "id": "displayName",
+                    "value": "Download"
+                  }
+                ]
+              },
+              {
+                "matcher": {
+                  "id": "byName",
+                  "options": "totalbytessent"
+                },
+                "properties": [
+                  {
+                    "id": "color",
+                    "value": {
+                      "fixedColor": "#e24d42",
+                      "mode": "fixed"
+                    }
+                  },
+                  {
+                    "id": "displayName",
+                    "value": "Upload"
+                  }
+                ]
+              }
+            ]
+          },
+          "gridPos": {
+            "h": 8,
+            "w": 12,
+            "x": 0,
+            "y": 27
+          },
+          "id": 2,
+          "interval": "10s",
+          "links": [],
+          "options": {
+            "legend": {
+              "calcs": [],
+              "displayMode": "list",
+              "placement": "bottom",
+              "showLegend": true
+            },
+            "tooltip": {
+              "mode": "multi",
+              "sort": "none"
+            }
+          },
+          "pluginVersion": "8.4.4",
+          "targets": [
+            {
+              "datasource": {
+                "type": "questdb-questdb-datasource",
+                "uid": "${DS_QUESTDB}"
+              },
+              "format": 0,
+              "queryType": "sql",
+              "rawSql": "SELECT time, max(\"Upload\") AS \"Upload\", max(\"Download\") AS \"Download\"\nFROM (\nSELECT time, CAST(\"Upload\" AS DOUBLE) AS \"Upload\", CAST(NULL AS DOUBLE) AS \"Download\" FROM (\nSELECT timestamp AS time,\n  sum(totalbytessent_delta) AS \"Upload\"\nFROM (\n  SELECT timestamp,\n    CASE WHEN previous_totalbytessent IS NULL THEN 0\n      WHEN totalbytessent${metric_source_7d_counter_suffix:raw} >= previous_totalbytessent THEN totalbytessent${metric_source_7d_counter_suffix:raw} - previous_totalbytessent\n      ELSE 0 END AS totalbytessent_delta\n  FROM (\n    SELECT timestamp, box, totalbytessent${metric_source_7d_counter_suffix:raw}, lag(totalbytessent${metric_source_7d_counter_suffix:raw}) IGNORE NULLS OVER (PARTITION BY box ORDER BY timestamp) AS previous_totalbytessent\n    FROM ${metric_source_7d:raw}${metric_source_7d_group_open:raw}13${metric_source_7d_group_close:raw}\n    WHERE timestamp >= dateadd('d', -7, now())\n      AND box ~ '^${boxtag:regex}$'\n      AND (totalbytessent${metric_source_7d_counter_suffix:raw} IS NOT NULL)\n  )\n)\nSAMPLE BY 1d ALIGN TO CALENDAR\n)\nUNION ALL\nSELECT time, CAST(NULL AS DOUBLE) AS \"Upload\", CAST(\"Download\" AS DOUBLE) AS \"Download\" FROM (\nSELECT timestamp AS time,\n  sum(totalbytesreceived_delta) AS \"Download\"\nFROM (\n  SELECT timestamp,\n    CASE WHEN previous_totalbytesreceived IS NULL THEN 0\n      WHEN totalbytesreceived${metric_source_7d_counter_suffix:raw} >= previous_totalbytesreceived THEN totalbytesreceived${metric_source_7d_counter_suffix:raw} - previous_totalbytesreceived\n      ELSE 0 END AS totalbytesreceived_delta\n  FROM (\n    SELECT timestamp, box, totalbytesreceived${metric_source_7d_counter_suffix:raw}, lag(totalbytesreceived${metric_source_7d_counter_suffix:raw}) IGNORE NULLS OVER (PARTITION BY box ORDER BY timestamp) AS previous_totalbytesreceived\n    FROM ${metric_source_7d:raw}${metric_source_7d_group_open:raw}02${metric_source_7d_group_close:raw}\n    WHERE timestamp >= dateadd('d', -7, now())\n      AND box ~ '^${boxtag:regex}$'\n      AND (totalbytesreceived${metric_source_7d_counter_suffix:raw} IS NOT NULL)\n  )\n)\nSAMPLE BY 1d ALIGN TO CALENDAR\n)\n)\nGROUP BY time\nORDER BY time",
+              "refId": "B",
+              "selectedFormat": 0
+            }
+          ],
+          "timeFrom": "7d",
+          "title": "Daily Traffic",
+          "type": "timeseries"
+        },
+        {
+          "datasource": {
+            "type": "questdb-questdb-datasource",
+            "uid": "${DS_QUESTDB}"
+          },
+          "fieldConfig": {
+            "defaults": {
+              "color": {
+                "mode": "palette-classic"
+              },
+              "custom": {
+                "axisCenteredZero": false,
+                "axisColorMode": "text",
+                "axisLabel": "",
+                "axisPlacement": "auto",
+                "barAlignment": 0,
+                "drawStyle": "bars",
+                "fillOpacity": 100,
+                "gradientMode": "hue",
+                "hideFrom": {
+                  "legend": false,
+                  "tooltip": false,
+                  "viz": false
+                },
+                "lineInterpolation": "stepAfter",
+                "lineWidth": 1,
+                "pointSize": 5,
+                "scaleDistribution": {
+                  "type": "linear"
+                },
+                "showPoints": "never",
+                "spanNulls": true,
+                "stacking": {
+                  "group": "A",
+                  "mode": "none"
+                },
+                "thresholdsStyle": {
+                  "mode": "off"
+                }
+              },
+              "links": [],
+              "mappings": [],
+              "min": 0,
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "green"
+                  },
+                  {
+                    "color": "red",
+                    "value": 80
+                  }
+                ]
+              },
+              "unit": "decbytes",
+              "decimals": 1
+            },
+            "overrides": [
+              {
+                "matcher": {
+                  "id": "byName",
+                  "options": "totalbytesreceived"
+                },
+                "properties": [
+                  {
+                    "id": "color",
+                    "value": {
+                      "fixedColor": "#1F78C1",
+                      "mode": "fixed"
+                    }
+                  },
+                  {
+                    "id": "displayName",
+                    "value": "Download"
+                  }
+                ]
+              },
+              {
+                "matcher": {
+                  "id": "byName",
+                  "options": "totalbytessent"
+                },
+                "properties": [
+                  {
+                    "id": "color",
+                    "value": {
+                      "fixedColor": "#EA6460",
+                      "mode": "fixed"
+                    }
+                  },
+                  {
+                    "id": "displayName",
+                    "value": "Upload"
+                  }
+                ]
+              }
+            ]
+          },
+          "gridPos": {
+            "h": 8,
+            "w": 12,
+            "x": 12,
+            "y": 27
+          },
+          "id": 17,
+          "interval": "1h",
+          "links": [],
+          "options": {
+            "legend": {
+              "calcs": [
+                "lastNotNull"
+              ],
+              "displayMode": "list",
+              "placement": "bottom",
+              "showLegend": true
+            },
+            "tooltip": {
+              "mode": "multi",
+              "sort": "none"
+            }
+          },
+          "pluginVersion": "8.4.4",
+          "targets": [
+            {
+              "datasource": {
+                "type": "questdb-questdb-datasource",
+                "uid": "${DS_QUESTDB}"
+              },
+              "format": 0,
+              "queryType": "sql",
+              "rawSql": "SELECT time, max(\"Upload\") AS \"Upload\", max(\"Download\") AS \"Download\"\nFROM (\nSELECT time, CAST(\"Upload\" AS DOUBLE) AS \"Upload\", CAST(NULL AS DOUBLE) AS \"Download\" FROM (\nSELECT timestamp AS time,\n  sum(totalbytessent_delta) AS \"Upload\"\nFROM (\n  SELECT timestamp,\n    CASE WHEN previous_totalbytessent IS NULL THEN 0\n      WHEN totalbytessent${metric_source_1d_counter_suffix:raw} >= previous_totalbytessent THEN totalbytessent${metric_source_1d_counter_suffix:raw} - previous_totalbytessent\n      ELSE 0 END AS totalbytessent_delta\n  FROM (\n    SELECT timestamp, box, totalbytessent${metric_source_1d_counter_suffix:raw}, lag(totalbytessent${metric_source_1d_counter_suffix:raw}) IGNORE NULLS OVER (PARTITION BY box ORDER BY timestamp) AS previous_totalbytessent\n    FROM ${metric_source_1d:raw}${metric_source_1d_group_open:raw}13${metric_source_1d_group_close:raw}\n    WHERE $__timeFilter(timestamp)\n      AND box ~ '^${boxtag:regex}$'\n      AND (totalbytessent${metric_source_1d_counter_suffix:raw} IS NOT NULL)\n  )\n)\nSAMPLE BY $__sampleByInterval ALIGN TO CALENDAR\n)\nUNION ALL\nSELECT time, CAST(NULL AS DOUBLE) AS \"Upload\", CAST(\"Download\" AS DOUBLE) AS \"Download\" FROM (\nSELECT timestamp AS time,\n  sum(totalbytesreceived_delta) AS \"Download\"\nFROM (\n  SELECT timestamp,\n    CASE WHEN previous_totalbytesreceived IS NULL THEN 0\n      WHEN totalbytesreceived${metric_source_1d_counter_suffix:raw} >= previous_totalbytesreceived THEN totalbytesreceived${metric_source_1d_counter_suffix:raw} - previous_totalbytesreceived\n      ELSE 0 END AS totalbytesreceived_delta\n  FROM (\n    SELECT timestamp, box, totalbytesreceived${metric_source_1d_counter_suffix:raw}, lag(totalbytesreceived${metric_source_1d_counter_suffix:raw}) IGNORE NULLS OVER (PARTITION BY box ORDER BY timestamp) AS previous_totalbytesreceived\n    FROM ${metric_source_1d:raw}${metric_source_1d_group_open:raw}02${metric_source_1d_group_close:raw}\n    WHERE $__timeFilter(timestamp)\n      AND box ~ '^${boxtag:regex}$'\n      AND (totalbytesreceived${metric_source_1d_counter_suffix:raw} IS NOT NULL)\n  )\n)\nSAMPLE BY $__sampleByInterval ALIGN TO CALENDAR\n)\n)\nGROUP BY time\nORDER BY time",
+              "refId": "A",
+              "selectedFormat": 0
+            }
+          ],
+          "timeFrom": "1d",
+          "title": "Current Traffic",
+          "type": "timeseries"
+        },
+        {
+          "datasource": {
+            "type": "questdb-questdb-datasource",
+            "uid": "${DS_QUESTDB}"
+          },
+          "fieldConfig": {
+            "defaults": {
+              "color": {
+                "mode": "thresholds"
+              },
+              "custom": {
+                "align": "auto",
+                "displayMode": "auto",
+                "inspect": false
+              },
+              "decimals": 1,
+              "displayName": "",
+              "mappings": [],
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "green"
+                  },
+                  {
+                    "color": "red",
+                    "value": 80
+                  }
+                ]
+              },
+              "unit": "decbytes"
+            },
+            "overrides": [
+              {
+                "matcher": {
+                  "id": "byName",
+                  "options": "Time"
+                },
+                "properties": [
+                  {
+                    "id": "displayName",
+                    "value": "Time"
+                  },
+                  {
+                    "id": "unit",
+                    "value": "time: MMMM D, YYYY LT"
+                  },
+                  {
+                    "id": "custom.align"
+                  }
+                ]
+              },
+              {
+                "matcher": {
+                  "id": "byName",
+                  "options": "totalbytesreceived"
+                },
+                "properties": [
+                  {
+                    "id": "displayName",
+                    "value": "Download"
+                  }
+                ]
+              },
+              {
+                "matcher": {
+                  "id": "byName",
+                  "options": "totalbytessent"
+                },
+                "properties": [
+                  {
+                    "id": "displayName",
+                    "value": "Upload"
+                  }
+                ]
+              }
+            ]
+          },
+          "gridPos": {
+            "h": 8,
+            "w": 12,
+            "x": 0,
+            "y": 35
+          },
+          "id": 14,
+          "links": [],
+          "options": {
+            "footer": {
+              "fields": "",
+              "reducer": [
+                "sum"
+              ],
+              "show": false
+            },
+            "showHeader": true
+          },
+          "pluginVersion": "9.2.2",
+          "targets": [
+            {
+              "datasource": {
+                "type": "questdb-questdb-datasource",
+                "uid": "${DS_QUESTDB}"
+              },
+              "format": 1,
+              "queryType": "sql",
+              "rawSql": "SELECT day, max(\"Upload\") AS \"Upload\", max(\"Download\") AS \"Download\"\nFROM (\nSELECT day, CAST(\"Upload\" AS DOUBLE) AS \"Upload\", CAST(NULL AS DOUBLE) AS \"Download\" FROM (\nSELECT timestamp AS day,\n  sum(totalbytessent_delta) AS \"Upload\"\nFROM (\n  SELECT timestamp,\n    CASE WHEN previous_totalbytessent IS NULL THEN 0\n      WHEN totalbytessent${metric_source_7d_counter_suffix:raw} >= previous_totalbytessent THEN totalbytessent${metric_source_7d_counter_suffix:raw} - previous_totalbytessent\n      ELSE 0 END AS totalbytessent_delta\n  FROM (\n    SELECT timestamp, box, totalbytessent${metric_source_7d_counter_suffix:raw}, lag(totalbytessent${metric_source_7d_counter_suffix:raw}) IGNORE NULLS OVER (PARTITION BY box ORDER BY timestamp) AS previous_totalbytessent\n    FROM ${metric_source_7d:raw}${metric_source_7d_group_open:raw}13${metric_source_7d_group_close:raw}\n    WHERE timestamp >= dateadd('d', -7, now())\n      AND box ~ '^${boxtag:regex}$'\n      AND (totalbytessent${metric_source_7d_counter_suffix:raw} IS NOT NULL)\n  )\n)\nSAMPLE BY 1d ALIGN TO CALENDAR\n)\nUNION ALL\nSELECT day, CAST(NULL AS DOUBLE) AS \"Upload\", CAST(\"Download\" AS DOUBLE) AS \"Download\" FROM (\nSELECT timestamp AS day,\n  sum(totalbytesreceived_delta) AS \"Download\"\nFROM (\n  SELECT timestamp,\n    CASE WHEN previous_totalbytesreceived IS NULL THEN 0\n      WHEN totalbytesreceived${metric_source_7d_counter_suffix:raw} >= previous_totalbytesreceived THEN totalbytesreceived${metric_source_7d_counter_suffix:raw} - previous_totalbytesreceived\n      ELSE 0 END AS totalbytesreceived_delta\n  FROM (\n    SELECT timestamp, box, totalbytesreceived${metric_source_7d_counter_suffix:raw}, lag(totalbytesreceived${metric_source_7d_counter_suffix:raw}) IGNORE NULLS OVER (PARTITION BY box ORDER BY timestamp) AS previous_totalbytesreceived\n    FROM ${metric_source_7d:raw}${metric_source_7d_group_open:raw}02${metric_source_7d_group_close:raw}\n    WHERE timestamp >= dateadd('d', -7, now())\n      AND box ~ '^${boxtag:regex}$'\n      AND (totalbytesreceived${metric_source_7d_counter_suffix:raw} IS NOT NULL)\n  )\n)\nSAMPLE BY 1d ALIGN TO CALENDAR\n)\n)\nGROUP BY day\nORDER BY day",
+              "refId": "A",
+              "selectedFormat": 1
+            }
+          ],
+          "timeFrom": "7d",
+          "title": "Daily Traffic",
+          "transformations": [
+            {
+              "id": "seriesToColumns",
+              "options": {
+                "byField": "Time",
+                "reducers": []
+              }
+            },
+            {
+              "id": "sortBy",
+              "options": {
+                "fields": {},
+                "sort": [
+                  {
+                    "desc": true,
+                    "field": "Time"
+                  }
+                ]
+              }
+            }
+          ],
+          "type": "table"
+        },
+        {
+          "datasource": {
+            "type": "questdb-questdb-datasource",
+            "uid": "${DS_QUESTDB}"
+          },
+          "fieldConfig": {
+            "defaults": {
+              "color": {
+                "fixedColor": "#e24d42",
+                "mode": "fixed"
+              },
+              "decimals": 1,
+              "mappings": [
+                {
+                  "options": {
+                    "match": "null",
+                    "result": {
+                      "text": "N/A"
+                    }
+                  },
+                  "type": "special"
+                }
+              ],
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "green"
+                  },
+                  {
+                    "color": "red",
+                    "value": 80
+                  }
+                ]
+              },
+              "unit": "decbytes"
+            },
+            "overrides": []
+          },
+          "gridPos": {
+            "h": 4,
+            "w": 12,
+            "x": 12,
+            "y": 35
+          },
+          "hideTimeOverride": true,
+          "id": 8,
+          "links": [],
+          "maxDataPoints": 100,
+          "options": {
+            "colorMode": "none",
+            "graphMode": "area",
+            "justifyMode": "auto",
+            "orientation": "horizontal",
+            "reduceOptions": {
+              "calcs": [
+                "lastNotNull"
+              ],
+              "fields": "",
+              "values": false
+            },
+            "textMode": "auto"
+          },
+          "pluginVersion": "9.2.2",
+          "targets": [
+            {
+              "datasource": {
+                "type": "questdb-questdb-datasource",
+                "uid": "${DS_QUESTDB}"
+              },
+              "format": 1,
+              "queryType": "sql",
+              "rawSql": "SELECT last(totalbytessent) AS \"Upload Since Connection\"\nFROM ${measurement}_metrics\nWHERE timestamp >= dateadd('d', -1, now())\n  AND box ~ '^${boxtag:regex}$'\n  AND totalbytessent IS NOT NULL",
+              "refId": "A",
+              "selectedFormat": 1
+            }
+          ],
+          "timeFrom": "24h",
+          "title": "Total Upload since connection",
+          "type": "stat"
+        },
+        {
+          "datasource": {
+            "type": "questdb-questdb-datasource",
+            "uid": "${DS_QUESTDB}"
+          },
+          "fieldConfig": {
+            "defaults": {
+              "color": {
+                "fixedColor": "rgb(31, 120, 193)",
+                "mode": "fixed"
+              },
+              "mappings": [
+                {
+                  "options": {
+                    "match": "null",
+                    "result": {
+                      "text": "N/A"
+                    }
+                  },
+                  "type": "special"
+                }
+              ],
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "green"
+                  },
+                  {
+                    "color": "red",
+                    "value": 80
+                  }
+                ]
+              },
+              "unit": "decbytes",
+              "decimals": 1
+            },
+            "overrides": []
+          },
+          "gridPos": {
+            "h": 4,
+            "w": 12,
+            "x": 12,
+            "y": 39
+          },
+          "hideTimeOverride": true,
+          "id": 3,
+          "links": [],
+          "maxDataPoints": 100,
+          "options": {
+            "colorMode": "none",
+            "graphMode": "area",
+            "justifyMode": "auto",
+            "orientation": "horizontal",
+            "reduceOptions": {
+              "calcs": [
+                "lastNotNull"
+              ],
+              "fields": "",
+              "values": false
+            },
+            "textMode": "auto"
+          },
+          "pluginVersion": "9.2.2",
+          "targets": [
+            {
+              "datasource": {
+                "type": "questdb-questdb-datasource",
+                "uid": "${DS_QUESTDB}"
+              },
+              "format": 1,
+              "queryType": "sql",
+              "rawSql": "SELECT last(totalbytesreceived) AS \"Download Since Connection\"\nFROM ${measurement}_metrics\nWHERE timestamp >= dateadd('d', -1, now())\n  AND box ~ '^${boxtag:regex}$'\n  AND totalbytesreceived IS NOT NULL",
+              "refId": "A",
+              "selectedFormat": 1
+            }
+          ],
+          "timeFrom": "24h",
+          "title": "Total Download since connection",
+          "transformations": [],
+          "type": "stat"
+        }
+      ],
+      "title": "Traffic Stats",
+      "type": "row"
+    },
+    {
+      "collapsed": true,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 27
+      },
+      "id": 58,
+      "panels": [
+        {
+          "datasource": {
+            "type": "questdb-questdb-datasource",
+            "uid": "${DS_QUESTDB}"
+          },
+          "fieldConfig": {
+            "defaults": {
+              "color": {
+                "mode": "palette-classic"
+              },
+              "custom": {
+                "axisCenteredZero": false,
+                "axisColorMode": "text",
+                "axisLabel": "Num clients",
+                "axisPlacement": "auto",
+                "barAlignment": 0,
+                "drawStyle": "line",
+                "fillOpacity": 0,
+                "gradientMode": "none",
+                "hideFrom": {
+                  "legend": false,
+                  "tooltip": false,
+                  "viz": false
+                },
+                "lineInterpolation": "linear",
+                "lineStyle": {
+                  "fill": "solid"
+                },
+                "lineWidth": 1,
+                "pointSize": 5,
+                "scaleDistribution": {
+                  "type": "linear"
+                },
+                "showPoints": "never",
+                "spanNulls": true,
+                "stacking": {
+                  "group": "A",
+                  "mode": "normal"
+                },
+                "thresholdsStyle": {
+                  "mode": "off"
+                }
+              },
+              "decimals": 0,
+              "mappings": [],
+              "min": 0,
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "green"
+                  },
+                  {
+                    "color": "red",
+                    "value": 80
+                  }
+                ]
+              }
+            },
+            "overrides": [
+              {
+                "matcher": {
+                  "id": "byName",
+                  "options": "Total"
+                },
+                "properties": [
+                  {
+                    "id": "custom.stacking",
+                    "value": {
+                      "group": "A",
+                      "mode": "none"
+                    }
+                  }
+                ]
+              }
+            ]
+          },
+          "gridPos": {
+            "h": 8,
+            "w": 12,
+            "x": 0,
+            "y": 28
+          },
+          "id": 55,
+          "options": {
+            "legend": {
+              "calcs": [
+                "lastNotNull"
+              ],
+              "displayMode": "list",
+              "placement": "bottom",
+              "showLegend": true
+            },
+            "tooltip": {
+              "mode": "multi",
+              "sort": "none"
+            }
+          },
+          "targets": [
+            {
+              "datasource": {
+                "type": "questdb-questdb-datasource",
+                "uid": "${DS_QUESTDB}"
+              },
+              "format": 0,
+              "queryType": "sql",
+              "rawSql": "SELECT time, max(\"wlan1_associations\") AS \"wlan1_associations\", max(\"wlan2_associations\") AS \"wlan2_associations\", max(\"wlan3_associations\") AS \"wlan3_associations\"\nFROM (\nSELECT time, CAST(\"wlan1_associations\" AS DOUBLE) AS \"wlan1_associations\", CAST(NULL AS DOUBLE) AS \"wlan2_associations\", CAST(NULL AS DOUBLE) AS \"wlan3_associations\" FROM (\nSELECT timestamp AS time,\n  sum(wlan1_associations${metric_source_gauge_sum_suffix:raw}) / ${metric_source_gauge_count_aggregate:raw}(wlan1_associations${metric_source_gauge_count_suffix:raw}) AS \"wlan1_associations\"\nFROM ${metric_source:raw}${metric_source_group_open:raw}06${metric_source_group_close:raw}\nWHERE $__timeFilter(timestamp)\n  AND box ~ '^${boxtag:regex}$'\n  AND (wlan1_associations${metric_source_gauge_sum_suffix:raw} IS NOT NULL)\nSAMPLE BY $__sampleByInterval ALIGN TO CALENDAR\n)\nUNION ALL\nSELECT time, CAST(NULL AS DOUBLE) AS \"wlan1_associations\", CAST(\"wlan2_associations\" AS DOUBLE) AS \"wlan2_associations\", CAST(NULL AS DOUBLE) AS \"wlan3_associations\" FROM (\nSELECT timestamp AS time,\n  sum(wlan2_associations${metric_source_gauge_sum_suffix:raw}) / ${metric_source_gauge_count_aggregate:raw}(wlan2_associations${metric_source_gauge_count_suffix:raw}) AS \"wlan2_associations\"\nFROM ${metric_source:raw}${metric_source_group_open:raw}13${metric_source_group_close:raw}\nWHERE $__timeFilter(timestamp)\n  AND box ~ '^${boxtag:regex}$'\n  AND (wlan2_associations${metric_source_gauge_sum_suffix:raw} IS NOT NULL)\nSAMPLE BY $__sampleByInterval ALIGN TO CALENDAR\n)\nUNION ALL\nSELECT time, CAST(NULL AS DOUBLE) AS \"wlan1_associations\", CAST(NULL AS DOUBLE) AS \"wlan2_associations\", CAST(\"wlan3_associations\" AS DOUBLE) AS \"wlan3_associations\" FROM (\nSELECT timestamp AS time,\n  sum(wlan3_associations${metric_source_gauge_sum_suffix:raw}) / ${metric_source_gauge_count_aggregate:raw}(wlan3_associations${metric_source_gauge_count_suffix:raw}) AS \"wlan3_associations\"\nFROM ${metric_source:raw}${metric_source_group_open:raw}11${metric_source_group_close:raw}\nWHERE $__timeFilter(timestamp)\n  AND box ~ '^${boxtag:regex}$'\n  AND (wlan3_associations${metric_source_gauge_sum_suffix:raw} IS NOT NULL)\nSAMPLE BY $__sampleByInterval ALIGN TO CALENDAR\n)\n)\nGROUP BY time\nORDER BY time",
+              "refId": "A",
+              "selectedFormat": 0
+            }
+          ],
+          "title": "WLAN Clients",
+          "transformations": [
+            {
+              "id": "calculateField",
+              "options": {
+                "mode": "reduceRow",
+                "reduce": {
+                  "include": [
+                    "wlan1_associations",
+                    "wlan2_associations",
+                    "wlan3_associations"
+                  ],
+                  "reducer": "sum"
+                },
+                "replaceFields": false
+              }
+            },
+            {
+              "id": "organize",
+              "options": {
+                "excludeByName": {
+                  "Total": false
+                },
+                "indexByName": {},
+                "renameByName": {
+                  "Total": "",
+                  "wlan1_associations": "2.4 GHz Clients",
+                  "wlan2_associations": "5 GHz Clients",
+                  "wlan3_associations": "Guest Clients"
+                }
+              }
+            }
+          ],
+          "type": "timeseries"
+        },
+        {
+          "datasource": {
+            "type": "questdb-questdb-datasource",
+            "uid": "${DS_QUESTDB}"
+          },
+          "description": "",
+          "fieldConfig": {
+            "defaults": {
+              "color": {
+                "mode": "palette-classic"
+              },
+              "custom": {
+                "axisCenteredZero": false,
+                "axisColorMode": "text",
+                "axisLabel": "WLAN channel",
+                "axisPlacement": "auto",
+                "barAlignment": 0,
+                "drawStyle": "line",
+                "fillOpacity": 0,
+                "gradientMode": "none",
+                "hideFrom": {
+                  "legend": false,
+                  "tooltip": false,
+                  "viz": false
+                },
+                "lineInterpolation": "linear",
+                "lineStyle": {
+                  "fill": "solid"
+                },
+                "lineWidth": 1,
+                "pointSize": 5,
+                "scaleDistribution": {
+                  "type": "linear"
+                },
+                "showPoints": "never",
+                "spanNulls": true,
+                "stacking": {
+                  "group": "A",
+                  "mode": "none"
+                },
+                "thresholdsStyle": {
+                  "mode": "off"
+                }
+              },
+              "decimals": 0,
+              "mappings": [],
+              "min": 0,
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "green"
+                  },
+                  {
+                    "color": "red",
+                    "value": 80
+                  }
+                ]
+              }
+            },
+            "overrides": [
+              {
+                "matcher": {
+                  "id": "byName",
+                  "options": "5 GHz"
+                },
+                "properties": [
+                  {
+                    "id": "custom.axisPlacement",
+                    "value": "right"
+                  }
+                ]
+              }
+            ]
+          },
+          "gridPos": {
+            "h": 8,
+            "w": 12,
+            "x": 12,
+            "y": 28
+          },
+          "id": 56,
+          "options": {
+            "legend": {
+              "calcs": [
+                "lastNotNull"
+              ],
+              "displayMode": "list",
+              "placement": "bottom",
+              "showLegend": true
+            },
+            "tooltip": {
+              "mode": "multi",
+              "sort": "none"
+            }
+          },
+          "targets": [
+            {
+              "datasource": {
+                "type": "questdb-questdb-datasource",
+                "uid": "${DS_QUESTDB}"
+              },
+              "format": 0,
+              "queryType": "sql",
+              "rawSql": "SELECT time, max(\"wlan1_channel\") AS \"wlan1_channel\", max(\"wlan2_channel\") AS \"wlan2_channel\", max(\"wlan3_channel\") AS \"wlan3_channel\"\nFROM (\nSELECT time, CAST(\"wlan1_channel\" AS DOUBLE) AS \"wlan1_channel\", CAST(NULL AS DOUBLE) AS \"wlan2_channel\", CAST(NULL AS DOUBLE) AS \"wlan3_channel\" FROM (\nSELECT timestamp AS time,\n  sum(wlan1_channel${metric_source_gauge_sum_suffix:raw}) / ${metric_source_gauge_count_aggregate:raw}(wlan1_channel${metric_source_gauge_count_suffix:raw}) AS \"wlan1_channel\"\nFROM ${metric_source:raw}${metric_source_group_open:raw}14${metric_source_group_close:raw}\nWHERE $__timeFilter(timestamp)\n  AND box ~ '^${boxtag:regex}$'\n  AND (wlan1_channel${metric_source_gauge_sum_suffix:raw} IS NOT NULL)\nSAMPLE BY $__sampleByInterval ALIGN TO CALENDAR\n)\nUNION ALL\nSELECT time, CAST(NULL AS DOUBLE) AS \"wlan1_channel\", CAST(\"wlan2_channel\" AS DOUBLE) AS \"wlan2_channel\", CAST(NULL AS DOUBLE) AS \"wlan3_channel\" FROM (\nSELECT timestamp AS time,\n  sum(wlan2_channel${metric_source_gauge_sum_suffix:raw}) / ${metric_source_gauge_count_aggregate:raw}(wlan2_channel${metric_source_gauge_count_suffix:raw}) AS \"wlan2_channel\"\nFROM ${metric_source:raw}${metric_source_group_open:raw}11${metric_source_group_close:raw}\nWHERE $__timeFilter(timestamp)\n  AND box ~ '^${boxtag:regex}$'\n  AND (wlan2_channel${metric_source_gauge_sum_suffix:raw} IS NOT NULL)\nSAMPLE BY $__sampleByInterval ALIGN TO CALENDAR\n)\nUNION ALL\nSELECT time, CAST(NULL AS DOUBLE) AS \"wlan1_channel\", CAST(NULL AS DOUBLE) AS \"wlan2_channel\", CAST(\"wlan3_channel\" AS DOUBLE) AS \"wlan3_channel\" FROM (\nSELECT timestamp AS time,\n  sum(wlan3_channel${metric_source_gauge_sum_suffix:raw}) / ${metric_source_gauge_count_aggregate:raw}(wlan3_channel${metric_source_gauge_count_suffix:raw}) AS \"wlan3_channel\"\nFROM ${metric_source:raw}${metric_source_group_open:raw}08${metric_source_group_close:raw}\nWHERE $__timeFilter(timestamp)\n  AND box ~ '^${boxtag:regex}$'\n  AND (wlan3_channel${metric_source_gauge_sum_suffix:raw} IS NOT NULL)\nSAMPLE BY $__sampleByInterval ALIGN TO CALENDAR\n)\n)\nGROUP BY time\nORDER BY time",
+              "refId": "A",
+              "selectedFormat": 0
+            }
+          ],
+          "title": "WLAN Channel",
+          "transformations": [
+            {
+              "id": "calculateField",
+              "options": {}
+            },
+            {
+              "id": "organize",
+              "options": {
+                "excludeByName": {
+                  "Total": true
+                },
+                "indexByName": {},
+                "renameByName": {
+                  "Total": "",
+                  "wlan1_channel": "2.4 GHz",
+                  "wlan2_channel": "5 GHz",
+                  "wlan3_channel": "Guest"
+                }
+              }
+            }
+          ],
+          "type": "timeseries"
+        },
+        {
+          "datasource": {
+            "type": "questdb-questdb-datasource",
+            "uid": "${DS_QUESTDB}"
+          },
+          "fieldConfig": {
+            "defaults": {
+              "color": {
+                "mode": "thresholds"
+              },
+              "custom": {
+                "align": "auto",
+                "displayMode": "auto",
+                "filterable": false,
+                "inspect": false
+              },
+              "mappings": [],
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "green"
+                  }
+                ]
+              }
+            },
+            "overrides": []
+          },
+          "gridPos": {
+            "h": 5,
+            "w": 24,
+            "x": 0,
+            "y": 36
+          },
+          "id": 60,
+          "options": {
+            "footer": {
+              "fields": "",
+              "reducer": [
+                "sum"
+              ],
+              "show": false
+            },
+            "showHeader": true
+          },
+          "pluginVersion": "9.2.2",
+          "targets": [
+            {
+              "datasource": {
+                "type": "questdb-questdb-datasource",
+                "uid": "${DS_QUESTDB}"
+              },
+              "format": 1,
+              "queryType": "sql",
+              "rawSql": "SELECT * FROM (\n  SELECT last_not_null(wlan1_ssid) AS \"Name\", last_not_null(wlan1_status) AS \"Status\",\n  last_not_null(wlan1_802_11_standard) AS \"Standard\", last_not_null(wlan1_channel) AS \"Channel\",\n  last_not_null(wlan1_associations) AS \"Clients\", '2.4 GHz' AS \"Band\"\n  FROM ${measurement}_metrics\n  WHERE $__timeFilter(timestamp)\n    AND box ~ '^${boxtag:regex}$'\n) WHERE \"Name\" IS NOT NULL OR \"Status\" IS NOT NULL OR \"Standard\" IS NOT NULL\n  OR \"Channel\" IS NOT NULL OR \"Clients\" IS NOT NULL\nUNION ALL\nSELECT * FROM (\n  SELECT last_not_null(wlan2_ssid) AS \"Name\", last_not_null(wlan2_status) AS \"Status\",\n  last_not_null(wlan2_802_11_standard) AS \"Standard\", last_not_null(wlan2_channel) AS \"Channel\",\n  last_not_null(wlan2_associations) AS \"Clients\", '5 GHz' AS \"Band\"\n  FROM ${measurement}_metrics\n  WHERE $__timeFilter(timestamp)\n    AND box ~ '^${boxtag:regex}$'\n) WHERE \"Name\" IS NOT NULL OR \"Status\" IS NOT NULL OR \"Standard\" IS NOT NULL\n  OR \"Channel\" IS NOT NULL OR \"Clients\" IS NOT NULL\nUNION ALL\nSELECT * FROM (\n  SELECT last_not_null(wlan3_ssid) AS \"Name\", last_not_null(wlan3_status) AS \"Status\",\n  last_not_null(wlan3_802_11_standard) AS \"Standard\", last_not_null(wlan3_channel) AS \"Channel\",\n  last_not_null(wlan3_associations) AS \"Clients\", 'Guest' AS \"Band\"\n  FROM ${measurement}_metrics\n  WHERE $__timeFilter(timestamp)\n    AND box ~ '^${boxtag:regex}$'\n) WHERE \"Name\" IS NOT NULL OR \"Status\" IS NOT NULL OR \"Standard\" IS NOT NULL\n  OR \"Channel\" IS NOT NULL OR \"Clients\" IS NOT NULL",
+              "refId": "A",
+              "selectedFormat": 1
+            }
+          ],
+          "title": "WLAN Info",
+          "transformations": [],
+          "type": "table"
+        }
+      ],
+      "title": "WLAN",
+      "type": "row"
+    },
+    {
+      "collapsed": true,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 28
+      },
+      "id": 43,
+      "panels": [
+        {
+          "datasource": {
+            "type": "questdb-questdb-datasource",
+            "uid": "${DS_QUESTDB}"
+          },
+          "description": "",
+          "fieldConfig": {
+            "defaults": {
+              "color": {
+                "mode": "continuous-GrYlRd",
+                "seriesBy": "last"
+              },
+              "custom": {
+                "axisCenteredZero": false,
+                "axisColorMode": "text",
+                "axisLabel": "",
+                "axisPlacement": "auto",
+                "axisSoftMin": 0,
+                "barAlignment": 0,
+                "drawStyle": "line",
+                "fillOpacity": 60,
+                "gradientMode": "scheme",
+                "hideFrom": {
+                  "legend": false,
+                  "tooltip": false,
+                  "viz": false
+                },
+                "lineInterpolation": "linear",
+                "lineWidth": 1,
+                "pointSize": 5,
+                "scaleDistribution": {
+                  "type": "linear"
+                },
+                "showPoints": "auto",
+                "spanNulls": false,
+                "stacking": {
+                  "group": "A",
+                  "mode": "none"
+                },
+                "thresholdsStyle": {
+                  "mode": "line"
+                }
+              },
+              "mappings": [],
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "green",
+                    "value": null
+                  },
+                  {
+                    "color": "red",
+                    "value": 80
+                  }
+                ]
+              },
+              "unit": "percent"
+            },
+            "overrides": [
+              {
+                "matcher": {
+                  "id": "byName",
+                  "options": "cpu_utilization"
+                },
+                "properties": [
+                  {
+                    "id": "displayName",
+                    "value": "CPU Utilization"
+                  }
+                ]
+              }
+            ]
+          },
+          "gridPos": {
+            "h": 8,
+            "w": 12,
+            "x": 0,
+            "y": 29
+          },
+          "id": 45,
+          "options": {
+            "legend": {
+              "calcs": [],
+              "displayMode": "list",
+              "placement": "bottom",
+              "showLegend": false
+            },
+            "tooltip": {
+              "mode": "multi",
+              "sort": "none"
+            }
+          },
+          "targets": [
+            {
+              "datasource": {
+                "type": "questdb-questdb-datasource",
+                "uid": "${DS_QUESTDB}"
+              },
+              "format": 0,
+              "queryType": "sql",
+              "rawSql": "SELECT timestamp AS time,\n  sum(cpu_utilization${metric_source_gauge_sum_suffix:raw}) / ${metric_source_gauge_count_aggregate:raw}(cpu_utilization${metric_source_gauge_count_suffix:raw}) AS \"cpu_utilization\"\nFROM ${metric_source:raw}${metric_source_group_open:raw}05${metric_source_group_close:raw}\nWHERE $__timeFilter(timestamp)\n  AND box ~ '^${boxtag:regex}$'\n  AND (cpu_utilization${metric_source_gauge_sum_suffix:raw} IS NOT NULL)\nSAMPLE BY $__sampleByInterval ALIGN TO CALENDAR",
+              "refId": "A",
+              "selectedFormat": 0
+            }
+          ],
+          "title": "CPU Utilization",
+          "type": "timeseries"
+        },
+        {
+          "datasource": {
+            "type": "questdb-questdb-datasource",
+            "uid": "${DS_QUESTDB}"
+          },
+          "description": "",
+          "fieldConfig": {
+            "defaults": {
+              "color": {
+                "mode": "palette-classic"
+              },
+              "custom": {
+                "axisCenteredZero": false,
+                "axisColorMode": "text",
+                "axisLabel": "",
+                "axisPlacement": "auto",
+                "barAlignment": 0,
+                "drawStyle": "line",
+                "fillOpacity": 27,
+                "gradientMode": "hue",
+                "hideFrom": {
+                  "legend": false,
+                  "tooltip": false,
+                  "viz": false
+                },
+                "lineInterpolation": "linear",
+                "lineWidth": 1,
+                "pointSize": 5,
+                "scaleDistribution": {
+                  "type": "linear"
+                },
+                "showPoints": "never",
+                "spanNulls": true,
+                "stacking": {
+                  "group": "A",
+                  "mode": "percent"
+                },
+                "thresholdsStyle": {
+                  "mode": "off"
+                }
+              },
+              "mappings": [],
+              "min": 0,
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "green",
+                    "value": null
+                  }
+                ]
+              },
+              "unit": "percent"
+            },
+            "overrides": [
+              {
+                "matcher": {
+                  "id": "byName",
+                  "options": "ram_usage_fixed"
+                },
+                "properties": [
+                  {
+                    "id": "color",
+                    "value": {
+                      "fixedColor": "#268edf",
+                      "mode": "fixed"
+                    }
+                  },
+                  {
+                    "id": "displayName",
+                    "value": "Fixed"
+                  }
+                ]
+              },
+              {
+                "matcher": {
+                  "id": "byName",
+                  "options": "ram_usage_dynamic"
+                },
+                "properties": [
+                  {
+                    "id": "color",
+                    "value": {
+                      "fixedColor": "#d9a542",
+                      "mode": "fixed"
+                    }
+                  },
+                  {
+                    "id": "displayName",
+                    "value": "Dynamic"
+                  }
+                ]
+              },
+              {
+                "matcher": {
+                  "id": "byName",
+                  "options": "ram_usage_free"
+                },
+                "properties": [
+                  {
+                    "id": "color",
+                    "value": {
+                      "fixedColor": "#71ab4b",
+                      "mode": "fixed"
+                    }
+                  },
+                  {
+                    "id": "displayName",
+                    "value": "Free"
+                  }
+                ]
+              }
+            ]
+          },
+          "gridPos": {
+            "h": 8,
+            "w": 12,
+            "x": 12,
+            "y": 29
+          },
+          "id": 49,
+          "options": {
+            "legend": {
+              "calcs": [],
+              "displayMode": "list",
+              "placement": "bottom",
+              "showLegend": true
+            },
+            "tooltip": {
+              "mode": "multi",
+              "sort": "none"
+            }
+          },
+          "targets": [
+            {
+              "datasource": {
+                "type": "questdb-questdb-datasource",
+                "uid": "${DS_QUESTDB}"
+              },
+              "format": 0,
+              "queryType": "sql",
+              "rawSql": "SELECT timestamp AS time,\n  sum(ram_usage_fixed${metric_source_gauge_sum_suffix:raw}) / ${metric_source_gauge_count_aggregate:raw}(ram_usage_fixed${metric_source_gauge_count_suffix:raw}) AS \"ram_usage_fixed\"\nFROM ${metric_source:raw}${metric_source_group_open:raw}08${metric_source_group_close:raw}\nWHERE $__timeFilter(timestamp)\n  AND box ~ '^${boxtag:regex}$'\n  AND (ram_usage_fixed${metric_source_gauge_sum_suffix:raw} IS NOT NULL)\nSAMPLE BY $__sampleByInterval ALIGN TO CALENDAR",
+              "refId": "A",
+              "selectedFormat": 0
+            },
+            {
+              "datasource": {
+                "type": "questdb-questdb-datasource",
+                "uid": "${DS_QUESTDB}"
+              },
+              "format": 0,
+              "queryType": "sql",
+              "rawSql": "SELECT timestamp AS time,\n  sum(ram_usage_dynamic${metric_source_gauge_sum_suffix:raw}) / ${metric_source_gauge_count_aggregate:raw}(ram_usage_dynamic${metric_source_gauge_count_suffix:raw}) AS \"ram_usage_dynamic\"\nFROM ${metric_source:raw}${metric_source_group_open:raw}02${metric_source_group_close:raw}\nWHERE $__timeFilter(timestamp)\n  AND box ~ '^${boxtag:regex}$'\n  AND (ram_usage_dynamic${metric_source_gauge_sum_suffix:raw} IS NOT NULL)\nSAMPLE BY $__sampleByInterval ALIGN TO CALENDAR",
+              "refId": "B",
+              "selectedFormat": 0
+            },
+            {
+              "datasource": {
+                "type": "questdb-questdb-datasource",
+                "uid": "${DS_QUESTDB}"
+              },
+              "format": 0,
+              "queryType": "sql",
+              "rawSql": "SELECT timestamp AS time,\n  sum(ram_usage_free${metric_source_gauge_sum_suffix:raw}) / ${metric_source_gauge_count_aggregate:raw}(ram_usage_free${metric_source_gauge_count_suffix:raw}) AS \"ram_usage_free\"\nFROM ${metric_source:raw}${metric_source_group_open:raw}05${metric_source_group_close:raw}\nWHERE $__timeFilter(timestamp)\n  AND box ~ '^${boxtag:regex}$'\n  AND (ram_usage_free${metric_source_gauge_sum_suffix:raw} IS NOT NULL)\nSAMPLE BY $__sampleByInterval ALIGN TO CALENDAR",
+              "refId": "C",
+              "selectedFormat": 0
+            }
+          ],
+          "title": "RAM usage",
+          "transformations": [
+            {
+              "id": "renameByRegex",
+              "options": {
+                "regex": "^[A-Z] (.*)$",
+                "renamePattern": "$1"
+              }
+            }
+          ],
+          "type": "timeseries"
+        },
+        {
+          "datasource": {
+            "type": "questdb-questdb-datasource",
+            "uid": "${DS_QUESTDB}"
+          },
+          "description": "",
+          "fieldConfig": {
+            "defaults": {
+              "color": {
+                "mode": "continuous-GrYlRd"
+              },
+              "custom": {
+                "axisCenteredZero": false,
+                "axisColorMode": "text",
+                "axisLabel": "",
+                "axisPlacement": "auto",
+                "barAlignment": 0,
+                "drawStyle": "line",
+                "fillOpacity": 25,
+                "gradientMode": "scheme",
+                "hideFrom": {
+                  "legend": false,
+                  "tooltip": false,
+                  "viz": false
+                },
+                "lineInterpolation": "linear",
+                "lineWidth": 1,
+                "pointSize": 5,
+                "scaleDistribution": {
+                  "type": "linear"
+                },
+                "showPoints": "auto",
+                "spanNulls": false,
+                "stacking": {
+                  "group": "A",
+                  "mode": "none"
+                },
+                "thresholdsStyle": {
+                  "mode": "off"
+                }
+              },
+              "mappings": [],
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "green",
+                    "value": null
+                  },
+                  {
+                    "color": "red",
+                    "value": 115
+                  }
+                ]
+              },
+              "unit": "celsius"
+            },
+            "overrides": []
+          },
+          "gridPos": {
+            "h": 9,
+            "w": 12,
+            "x": 0,
+            "y": 37
+          },
+          "id": 51,
+          "options": {
+            "legend": {
+              "calcs": [],
+              "displayMode": "list",
+              "placement": "bottom",
+              "showLegend": false
+            },
+            "tooltip": {
+              "mode": "multi",
+              "sort": "none"
+            }
+          },
+          "targets": [
+            {
+              "datasource": {
+                "type": "questdb-questdb-datasource",
+                "uid": "${DS_QUESTDB}"
+              },
+              "format": 0,
+              "queryType": "sql",
+              "rawSql": "SELECT timestamp AS time,\n  sum(cpu_temp${metric_source_gauge_sum_suffix:raw}) / ${metric_source_gauge_count_aggregate:raw}(cpu_temp${metric_source_gauge_count_suffix:raw}) AS \"cpu_temp\"\nFROM ${metric_source:raw}${metric_source_group_open:raw}04${metric_source_group_close:raw}\nWHERE $__timeFilter(timestamp)\n  AND box ~ '^${boxtag:regex}$'\n  AND (cpu_temp${metric_source_gauge_sum_suffix:raw} IS NOT NULL)\nSAMPLE BY $__sampleByInterval ALIGN TO CALENDAR",
+              "refId": "A",
+              "selectedFormat": 0
+            }
+          ],
+          "title": "CPU Temperature",
+          "type": "timeseries"
+        },
+        {
+          "datasource": {
+            "type": "questdb-questdb-datasource",
+            "uid": "${DS_QUESTDB}"
+          },
+          "description": "Current energy use as a percentage of each component’s maximum; this is not a watt reading.",
+          "fieldConfig": {
+            "defaults": {
+              "color": {
+                "mode": "thresholds"
+              },
+              "mappings": [],
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "green",
+                    "value": null
+                  },
+                  {
+                    "color": "#EAB839",
+                    "value": 100
+                  }
+                ]
+              },
+              "unit": "percent",
+              "min": 0,
+              "max": 100
+            },
+            "overrides": []
+          },
+          "gridPos": {
+            "h": 9,
+            "w": 12,
+            "x": 12,
+            "y": 37
+          },
+          "id": 53,
+          "options": {
+            "displayMode": "lcd",
+            "minVizHeight": 10,
+            "minVizWidth": 0,
+            "orientation": "horizontal",
+            "reduceOptions": {
+              "calcs": [
+                "lastNotNull"
+              ],
+              "fields": "",
+              "values": false
+            },
+            "showUnfilled": true,
+            "text": {
+              "titleSize": 12,
+              "valueSize": 12
+            }
+          },
+          "pluginVersion": "9.2.2",
+          "targets": [
+            {
+              "datasource": {
+                "type": "questdb-questdb-datasource",
+                "uid": "${DS_QUESTDB}"
+              },
+              "format": 1,
+              "queryType": "sql",
+              "rawSql": "SELECT name AS \"Component\", energy_consumption AS \"Current (%)\"\nFROM ${measurement}_metrics\nWHERE $__timeFilter(timestamp)\n  AND box ~ '^${boxtag:regex}$'\n  AND name IS NOT NULL\n  AND energy_consumption IS NOT NULL\nLATEST ON timestamp PARTITION BY box, name\nORDER BY name",
+              "refId": "A",
+              "selectedFormat": 1
+            }
+          ],
+          "title": "Energy Use by Component",
+          "transformations": [
+            {
+              "id": "renameByRegex",
+              "options": {
+                "regex": ".*name=\"(.*)\"}",
+                "renamePattern": "$1"
+              }
+            }
+          ],
+          "type": "bargauge"
+        },
+        {
+          "datasource": {
+            "type": "questdb-questdb-datasource",
+            "uid": "${DS_QUESTDB}"
+          },
+          "fieldConfig": {
+            "defaults": {
+              "color": {
+                "mode": "thresholds"
+              },
+              "custom": {
+                "align": "auto",
+                "displayMode": "color-background",
+                "filterable": false,
+                "inspect": false
+              },
+              "mappings": [],
+              "noValue": "None",
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "dark-yellow",
+                    "value": null
+                  }
+                ]
+              }
+            },
+            "overrides": [
+              {
+                "matcher": {
+                  "id": "byName",
+                  "options": "Metric"
+                },
+                "properties": [
+                  {
+                    "id": "custom.width",
+                    "value": 200
+                  },
+                  {
+                    "id": "custom.displayMode",
+                    "value": "color-background"
+                  },
+                  {
+                    "id": "color",
+                    "value": {
+                      "fixedColor": "#4991f2",
+                      "mode": "fixed"
+                    }
+                  }
+                ]
+              }
+            ]
+          },
+          "gridPos": {
+            "h": 9,
+            "w": 12,
+            "x": 0,
+            "y": 46
+          },
+          "hideTimeOverride": true,
+          "id": 20,
+          "interval": "",
+          "links": [],
+          "options": {
+            "footer": {
+              "fields": "",
+              "reducer": [
+                "sum"
+              ],
+              "show": false
+            },
+            "showHeader": true
+          },
+          "pluginVersion": "9.2.2",
+          "targets": [
+            {
+              "datasource": {
+                "type": "questdb-questdb-datasource",
+                "uid": "${DS_QUESTDB}"
+              },
+              "format": 1,
+              "queryType": "sql",
+              "rawSql": "SELECT last_not_null(external_ip) AS \"IPv4\", last_not_null(external_ipv6) AS \"IPv6\",\n  last_not_null(ipv6_prefix) AS \"IPv6 Prefix\", last_not_null(ipv6_prefix_length) AS \"IPv6 Prefix Length\",\n  last_not_null(model) AS \"Model\", last_not_null(serialnumber) AS \"Serial\",\n  last_not_null(softwareversion) AS \"SW Version\", last_not_null(last_auth_error) AS \"Last Auth Error\",\n  last_not_null(CASE WHEN myfritz_host_name = '' THEN NULL ELSE myfritz_host_name END) AS \"MyFritz Hostname\"\nFROM ${measurement}_metrics\nWHERE timestamp >= dateadd('d', -1, now())\n  AND box ~ '^${boxtag:regex}$'",
+              "refId": "B",
+              "selectedFormat": 1
+            }
+          ],
+          "title": "FritzBox Info",
+          "transformations": [],
+          "type": "table"
+        },
+        {
+          "datasource": {
+            "type": "questdb-questdb-datasource",
+            "uid": "${DS_QUESTDB}"
+          },
+          "fieldConfig": {
+            "defaults": {
+              "color": {
+                "mode": "thresholds"
+              },
+              "custom": {
+                "align": "auto",
+                "displayMode": "color-background",
+                "filterable": false,
+                "inspect": false
+              },
+              "mappings": [],
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "dark-yellow",
+                    "value": null
+                  }
+                ]
+              }
+            },
+            "overrides": [
+              {
+                "matcher": {
+                  "id": "byName",
+                  "options": "Metric"
+                },
+                "properties": [
+                  {
+                    "id": "custom.width",
+                    "value": 200
+                  },
+                  {
+                    "id": "custom.displayMode",
+                    "value": "color-background"
+                  },
+                  {
+                    "id": "color",
+                    "value": {
+                      "fixedColor": "#4991f2",
+                      "mode": "fixed"
+                    }
+                  }
+                ]
+              }
+            ]
+          },
+          "gridPos": {
+            "h": 9,
+            "w": 12,
+            "x": 12,
+            "y": 46
+          },
+          "hideTimeOverride": true,
+          "id": 74,
+          "interval": "",
+          "links": [],
+          "options": {
+            "footer": {
+              "fields": "",
+              "reducer": [
+                "sum"
+              ],
+              "show": false
+            },
+            "showHeader": true
+          },
+          "pluginVersion": "9.2.2",
+          "targets": [
+            {
+              "datasource": {
+                "type": "questdb-questdb-datasource",
+                "uid": "${DS_QUESTDB}"
+              },
+              "format": 1,
+              "queryType": "sql",
+              "rawSql": "SELECT last_not_null(physicallinktype) AS \"Link Type\", last_not_null(dsl_line_length) AS \"Approx. DSL Length (m)\",\n  last_not_null(dsl_dslam_vendor) AS \"DSL DSLAM Vendor\", last_not_null(dsl_dslam_sw_version) AS \"DSL Model Version\",\n  last_not_null(dsl_line_mode) AS \"DSL Line Mode\", last_not_null(cable_cmts_vendor) AS \"Cable Vendor\",\n  last_not_null(cable_line_mode) AS \"Cable Line Mode\", last_not_null(cable_modem_version) AS \"Cable Modem Version\",\n  last_not_null(cable_num_ds_channels) AS \"Cable Downstream Channels\", last_not_null(cable_num_us_channels) AS \"Cable Upstream Channels\",\n  last_not_null(connection_status) AS \"IP Connection Status\", last_not_null(last_connection_error) AS \"Last Connection Error\",\n  last_not_null(remote_pop) AS \"Remote Pop\", last_not_null(physical_connection_status) AS \"Link Connection Status\"\nFROM ${measurement}_metrics\nWHERE timestamp >= dateadd('d', -1, now())\n  AND box ~ '^${boxtag:regex}$'",
+              "refId": "B",
+              "selectedFormat": 1
+            }
+          ],
+          "title": "Connection Info",
+          "transformations": [],
+          "type": "table"
+        }
+      ],
+      "title": "System Infos",
+      "type": "row"
+    },
+    {
+      "collapsed": true,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 29
+      },
+      "id": 70,
+      "panels": [
+        {
+          "datasource": {
+            "type": "questdb-questdb-datasource",
+            "uid": "${DS_QUESTDB}"
+          },
+          "fieldConfig": {
+            "defaults": {
+              "color": {
+                "mode": "palette-classic"
+              },
+              "custom": {
+                "axisCenteredZero": false,
+                "axisColorMode": "text",
+                "axisLabel": "",
+                "axisPlacement": "auto",
+                "barAlignment": 0,
+                "drawStyle": "line",
+                "fillOpacity": 39,
+                "gradientMode": "opacity",
+                "hideFrom": {
+                  "legend": false,
+                  "tooltip": false,
+                  "viz": false
+                },
+                "lineInterpolation": "linear",
+                "lineWidth": 1,
+                "pointSize": 5,
+                "scaleDistribution": {
+                  "type": "linear"
+                },
+                "showPoints": "auto",
+                "spanNulls": true,
+                "stacking": {
+                  "group": "A",
+                  "mode": "none"
+                },
+                "thresholdsStyle": {
+                  "mode": "off"
+                }
+              },
+              "decimals": 0,
+              "mappings": [],
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "green",
+                    "value": null
+                  },
+                  {
+                    "color": "red",
+                    "value": 80
+                  }
+                ]
+              }
+            },
+            "overrides": []
+          },
+          "gridPos": {
+            "h": 8,
+            "w": 17,
+            "x": 0,
+            "y": 30
+          },
+          "id": 64,
+          "options": {
+            "legend": {
+              "calcs": [],
+              "displayMode": "list",
+              "placement": "bottom",
+              "showLegend": true
+            },
+            "tooltip": {
+              "mode": "multi",
+              "sort": "none"
+            }
+          },
+          "targets": [
+            {
+              "datasource": {
+                "type": "questdb-questdb-datasource",
+                "uid": "${DS_QUESTDB}"
+              },
+              "format": 0,
+              "queryType": "sql",
+              "rawSql": "SELECT timestamp AS time,\n  sum(vpn_user_num_active${metric_source_gauge_sum_suffix:raw}) / ${metric_source_gauge_count_aggregate:raw}(vpn_user_num_active${metric_source_gauge_count_suffix:raw}) AS \"vpn_user_num_active\"\nFROM ${metric_source:raw}${metric_source_group_open:raw}05${metric_source_group_close:raw}\nWHERE $__timeFilter(timestamp)\n  AND box ~ '^${boxtag:regex}$'\n  AND (vpn_user_num_active${metric_source_gauge_sum_suffix:raw} IS NOT NULL)\nSAMPLE BY $__sampleByInterval ALIGN TO CALENDAR",
+              "refId": "A",
+              "selectedFormat": 0
+            }
+          ],
+          "title": "Active VPN User",
+          "transformations": [
+            {
+              "id": "organize",
+              "options": {
+                "excludeByName": {},
+                "indexByName": {},
+                "renameByName": {
+                  "vpn_user_num_active": "Num Users"
+                }
+              }
+            }
+          ],
+          "type": "timeseries"
+        },
+        {
+          "datasource": {
+            "type": "questdb-questdb-datasource",
+            "uid": "${DS_QUESTDB}"
+          },
+          "fieldConfig": {
+            "defaults": {
+              "color": {
+                "mode": "thresholds"
+              },
+              "custom": {
+                "align": "auto",
+                "displayMode": "auto",
+                "inspect": false
+              },
+              "mappings": [],
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "green",
+                    "value": null
+                  },
+                  {
+                    "color": "red",
+                    "value": 80
+                  }
+                ]
+              }
+            },
+            "overrides": []
+          },
+          "gridPos": {
+            "h": 8,
+            "w": 7,
+            "x": 17,
+            "y": 30
+          },
+          "id": 68,
+          "options": {
+            "footer": {
+              "fields": "",
+              "reducer": [
+                "sum"
+              ],
+              "show": false
+            },
+            "showHeader": true
+          },
+          "pluginVersion": "9.2.2",
+          "targets": [
+            {
+              "datasource": {
+                "type": "questdb-questdb-datasource",
+                "uid": "${DS_QUESTDB}"
+              },
+              "format": 1,
+              "queryType": "sql",
+              "rawSql": "SELECT last_not_null(vpn_type) AS \"VPN Type\", last_not_null(vpn_user_num_active) AS \"VPN User Active\"\nFROM ${measurement}_metrics\nWHERE timestamp >= dateadd('d', -1, now())\n  AND box ~ '^${boxtag:regex}$'\n  AND (vpn_type IS NOT NULL OR vpn_user_num_active IS NOT NULL)",
+              "refId": "A",
+              "selectedFormat": 1
+            }
+          ],
+          "title": "VPN Infos",
+          "transformations": [],
+          "type": "table"
+        },
+        {
+          "datasource": {
+            "type": "questdb-questdb-datasource",
+            "uid": "${DS_QUESTDB}"
+          },
+          "description": "",
+          "fieldConfig": {
+            "defaults": {
+              "color": {
+                "mode": "thresholds"
+              },
+              "custom": {
+                "align": "auto",
+                "displayMode": "auto",
+                "inspect": false
+              },
+              "mappings": [],
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "green",
+                    "value": null
+                  },
+                  {
+                    "color": "red",
+                    "value": 80
+                  }
+                ]
+              }
+            },
+            "overrides": []
+          },
+          "gridPos": {
+            "h": 8,
+            "w": 9,
+            "x": 0,
+            "y": 38
+          },
+          "id": 62,
+          "options": {
+            "footer": {
+              "fields": "",
+              "reducer": [
+                "sum"
+              ],
+              "show": false
+            },
+            "showHeader": true
+          },
+          "pluginVersion": "9.2.2",
+          "targets": [
+            {
+              "datasource": {
+                "type": "questdb-questdb-datasource",
+                "uid": "${DS_QUESTDB}"
+              },
+              "format": 1,
+              "queryType": "sql",
+              "rawSql": "SELECT last_not_null(ddns_domain) AS \"Domain\",\n  last_not_null(CASE WHEN ddns_provider_name IS NULL THEN NULL WHEN ddns_enabled THEN 'True' ELSE 'False' END) AS \"Enabled\",\n  last_not_null(ddns_mode) AS \"Mode\", last_not_null(ddns_provider_name) AS \"Provider\",\n  last_not_null(ddns_status_ipv4) AS \"Status IPv4\", last_not_null(ddns_status_ipv6) AS \"Status IPv6\"\nFROM ${measurement}_metrics\nWHERE timestamp >= dateadd('d', -1, now())\n  AND box ~ '^${boxtag:regex}$'\n  AND (ddns_domain IS NOT NULL OR ddns_mode IS NOT NULL\n       OR ddns_provider_name IS NOT NULL OR ddns_status_ipv4 IS NOT NULL OR ddns_status_ipv6 IS NOT NULL)",
+              "refId": "A",
+              "selectedFormat": 1
+            }
+          ],
+          "title": "DynDNS Info",
+          "transformations": [],
+          "type": "table"
+        },
+        {
+          "datasource": {
+            "type": "questdb-questdb-datasource",
+            "uid": "${DS_QUESTDB}"
+          },
+          "description": "",
+          "fieldConfig": {
+            "defaults": {
+              "color": {
+                "mode": "thresholds"
+              },
+              "custom": {
+                "align": "auto",
+                "displayMode": "auto",
+                "inspect": false
+              },
+              "mappings": [],
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "green",
+                    "value": null
+                  }
+                ]
+              }
+            },
+            "overrides": [
+              {
+                "matcher": {
+                  "id": "byName",
+                  "options": "Connected"
+                },
+                "properties": [
+                  {
+                    "id": "custom.displayMode",
+                    "value": "color-text"
+                  },
+                  {
+                    "id": "mappings",
+                    "value": [
+                      {
+                        "options": {
+                          "False": {
+                            "color": "light-blue",
+                            "index": 1
+                          },
+                          "True": {
+                            "color": "light-green",
+                            "index": 0
+                          }
+                        },
+                        "type": "value"
+                      }
+                    ]
+                  }
+                ]
+              },
+              {
+                "matcher": {
+                  "id": "byName",
+                  "options": "Name"
+                },
+                "properties": [
+                  {
+                    "id": "color",
+                    "value": {
+                      "fixedColor": "light-yellow",
+                      "mode": "fixed"
+                    }
+                  },
+                  {
+                    "id": "custom.displayMode",
+                    "value": "color-text"
+                  }
+                ]
+              }
+            ]
+          },
+          "gridPos": {
+            "h": 8,
+            "w": 15,
+            "x": 9,
+            "y": 38
+          },
+          "id": 66,
+          "options": {
+            "footer": {
+              "fields": "",
+              "reducer": [
+                "sum"
+              ],
+              "show": false
+            },
+            "showHeader": true
+          },
+          "pluginVersion": "9.2.2",
+          "targets": [
+            {
+              "datasource": {
+                "type": "questdb-questdb-datasource",
+                "uid": "${DS_QUESTDB}"
+              },
+              "format": 1,
+              "queryType": "sql",
+              "rawSql": "SELECT name AS \"Name\", vpn_type AS \"Type\",\n  last_not_null(CASE WHEN vpn_user_active THEN 'True' ELSE 'False' END) AS \"Active\", last_not_null(CASE WHEN vpn_user_connected THEN 'True' ELSE 'False' END) AS \"Connected\",\n  last_not_null(vpn_user_virtual_address) AS \"Virtual Address\", last_not_null(vpn_user_remote_address) AS \"Remote Address\"\nFROM ${measurement}_metrics\nWHERE timestamp >= dateadd('d', -1, now())\n  AND box ~ '^${boxtag:regex}$'\n  AND name IS NOT NULL\n  AND vpn_type IS NOT NULL\nGROUP BY name, vpn_type\nORDER BY name",
+              "refId": "A",
+              "selectedFormat": 1
+            }
+          ],
+          "title": "VPN User Overview",
+          "transformations": [],
+          "type": "table"
+        }
+      ],
+      "title": "VPN and DynDNS Info",
+      "type": "row"
+    },
+    {
+      "collapsed": true,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 30
+      },
+      "id": 28,
+      "panels": [
+        {
+          "datasource": {
+            "type": "questdb-questdb-datasource",
+            "uid": "${DS_QUESTDB}"
+          },
+          "description": "",
+          "fieldConfig": {
+            "defaults": {
+              "color": {
+                "mode": "thresholds"
+              },
+              "custom": {
+                "align": "auto",
+                "displayMode": "auto",
+                "inspect": false
+              },
+              "mappings": [],
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "green"
+                  },
+                  {
+                    "color": "red",
+                    "value": 80
+                  }
+                ]
+              }
+            },
+            "overrides": [
+              {
+                "matcher": {
+                  "id": "byName",
+                  "options": "Last seen"
+                },
+                "properties": [
+                  {
+                    "id": "custom.width",
+                    "value": 185
+                  }
+                ]
+              },
+              {
+                "matcher": {
+                  "id": "byName",
+                  "options": "Type"
+                },
+                "properties": [
+                  {
+                    "id": "custom.width",
+                    "value": 89
+                  }
+                ]
+              },
+              {
+                "matcher": {
+                  "id": "byName",
+                  "options": "Mac"
+                },
+                "properties": [
+                  {
+                    "id": "custom.width",
+                    "value": 138
+                  }
+                ]
+              },
+              {
+                "matcher": {
+                  "id": "byName",
+                  "options": "IPv4"
+                },
+                "properties": [
+                  {
+                    "id": "custom.width",
+                    "value": 131
+                  }
+                ]
+              },
+              {
+                "matcher": {
+                  "id": "byName",
+                  "options": "Port"
+                },
+                "properties": [
+                  {
+                    "id": "custom.filterable",
+                    "value": true
+                  }
+                ]
+              },
+              {
+                "matcher": {
+                  "id": "byName",
+                  "options": "Type"
+                },
+                "properties": [
+                  {
+                    "id": "custom.filterable",
+                    "value": true
+                  }
+                ]
+              }
+            ]
+          },
+          "gridPos": {
+            "h": 18,
+            "w": 24,
+            "x": 0,
+            "y": 31
+          },
+          "id": 72,
+          "options": {
+            "footer": {
+              "fields": "",
+              "reducer": [
+                "sum"
+              ],
+              "show": false
+            },
+            "showHeader": true,
+            "sortBy": [
+              {
+                "desc": false,
+                "displayName": "Name"
+              }
+            ]
+          },
+          "pluginVersion": "9.2.2",
+          "targets": [
+            {
+              "datasource": {
+                "type": "questdb-questdb-datasource",
+                "uid": "${DS_QUESTDB}"
+              },
+              "format": 1,
+              "queryType": "sql",
+              "rawSql": "SELECT timestamp AS time, active_hosts_name AS \"Name\",\n  active_hosts_mac AS \"MAC\", active_hosts_ipv4 AS \"IPv4\",\n  active_hosts_type AS \"Type\", active_hosts_parent AS \"Parent\",\n  active_hosts_port AS \"Port\", active_hosts_additional_text AS \"Info\",\n  active_hosts_ipv4_last_used AS \"Last seen\"\nFROM ${measurement}_metrics\nWHERE timestamp >= dateadd('h', -1, now())\n  AND box ~ '^${boxtag:regex}$'\n  AND active_hosts_name IS NOT NULL\nORDER BY timestamp DESC",
+              "refId": "A",
+              "selectedFormat": 1
+            }
+          ],
+          "title": "Active Hosts",
+          "transformations": [
+            {
+              "id": "joinByLabels",
+              "options": {
+                "value": "_field"
+              }
+            },
+            {
+              "id": "calculateField",
+              "options": {
+                "alias": "active_hosts_ipv4_last_seen",
+                "binary": {
+                  "left": "active_hosts_ipv4_last_used",
+                  "operator": "*",
+                  "reducer": "sum",
+                  "right": "1000"
+                },
+                "mode": "binary",
+                "reduce": {
+                  "reducer": "sum"
+                }
+              }
+            },
+            {
+              "id": "convertFieldType",
+              "options": {
+                "conversions": [
+                  {
+                    "dateFormat": "X",
+                    "destinationType": "time",
+                    "targetField": "active_hosts_ipv4_last_seen"
+                  }
+                ],
+                "fields": {}
+              }
+            },
+            {
+              "id": "organize",
+              "options": {
+                "excludeByName": {
+                  "Last seen": false,
+                  "Last seen 2": false,
+                  "Parent": true,
+                  "Time": true,
+                  "active_hosts_ipv4_last_used": true,
+                  "uid": true
+                },
+                "indexByName": {
+                  "active_hosts_additional_text": 7,
+                  "active_hosts_ipv4": 2,
+                  "active_hosts_ipv4_last_seen": 4,
+                  "active_hosts_ipv4_last_used": 9,
+                  "active_hosts_mac": 3,
+                  "active_hosts_name": 1,
+                  "active_hosts_parent": 8,
+                  "active_hosts_port": 6,
+                  "active_hosts_type": 5,
+                  "uid": 0
+                },
+                "renameByName": {
+                  "Last seen": "",
+                  "Last seen * 1000": "Last Seen",
+                  "Last seen 2": "",
+                  "Type": "",
+                  "active_hosts_additional_text": "Info",
+                  "active_hosts_ipv4": "IPv4",
+                  "active_hosts_ipv4_last_seen": "Last seen",
+                  "active_hosts_ipv4_last_used": "",
+                  "active_hosts_mac": "Mac",
+                  "active_hosts_name": "Name",
+                  "active_hosts_parent": "Parent",
+                  "active_hosts_port": "Port",
+                  "active_hosts_type": "Type"
+                }
+              }
+            },
+            {
+              "id": "sortBy",
+              "options": {
+                "fields": {},
+                "sort": [
+                  {
+                    "field": "Name"
+                  }
+                ]
+              }
+            }
+          ],
+          "type": "table"
+        },
+        {
+          "datasource": {
+            "type": "questdb-questdb-datasource",
+            "uid": "${DS_QUESTDB}"
+          },
+          "description": "",
+          "fieldConfig": {
+            "defaults": {
+              "color": {
+                "mode": "thresholds"
+              },
+              "custom": {
+                "align": "auto",
+                "displayMode": "auto",
+                "inspect": false
+              },
+              "mappings": [],
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "green"
+                  },
+                  {
+                    "color": "red",
+                    "value": 80
+                  }
+                ]
+              }
+            },
+            "overrides": []
+          },
+          "gridPos": {
+            "h": 17,
+            "w": 24,
+            "x": 0,
+            "y": 49
+          },
+          "id": 73,
+          "options": {
+            "footer": {
+              "fields": "",
+              "reducer": [
+                "sum"
+              ],
+              "show": false
+            },
+            "showHeader": true
+          },
+          "pluginVersion": "9.2.2",
+          "targets": [
+            {
+              "datasource": {
+                "type": "questdb-questdb-datasource",
+                "uid": "${DS_QUESTDB}"
+              },
+              "format": 1,
+              "queryType": "sql",
+              "rawSql": "SELECT timestamp AS time, passive_hosts_name AS \"Name\",\n  passive_hosts_mac AS \"MAC\", passive_hosts_ipv4 AS \"IPv4\",\n  passive_hosts_port AS \"Port\"\nFROM ${measurement}_metrics\nWHERE timestamp >= dateadd('h', -1, now())\n  AND box ~ '^${boxtag:regex}$'\n  AND passive_hosts_name IS NOT NULL\nORDER BY timestamp DESC",
+              "refId": "A",
+              "selectedFormat": 1
+            }
+          ],
+          "title": "Passive Hosts",
+          "transformations": [
+            {
+              "id": "joinByLabels",
+              "options": {
+                "value": "_field"
+              }
+            },
+            {
+              "id": "organize",
+              "options": {
+                "excludeByName": {
+                  "Parent": true,
+                  "Time": true,
+                  "uid": true
+                },
+                "indexByName": {
+                  "passive_hosts_ipv4": 2,
+                  "passive_hosts_mac": 3,
+                  "passive_hosts_name": 1,
+                  "passive_hosts_port": 4,
+                  "uid": 0
+                },
+                "renameByName": {
+                  "passive_hosts_ipv4": "IPv4",
+                  "passive_hosts_mac": "MAC",
+                  "passive_hosts_name": "Name",
+                  "passive_hosts_port": "Port"
+                }
+              }
+            },
+            {
+              "id": "sortBy",
+              "options": {
+                "fields": {},
+                "sort": [
+                  {
+                    "field": "Name"
+                  }
+                ]
+              }
+            }
+          ],
+          "type": "table"
+        }
+      ],
+      "title": "Network Hosts",
+      "type": "row"
+    }
+  ],
+  "refresh": "1m",
+  "schemaVersion": 37,
+  "style": "dark",
+  "tags": [],
+  "templating": {
+    "list": [
+      {
+        "description": "Measurement name for the fritzflux data",
+        "hide": 0,
+        "label": "FritzBox",
+        "name": "measurement",
+        "query": "SELECT left(table_name, length(table_name) - 8) FROM tables() WHERE table_name LIKE 'fritzbox%' AND table_name LIKE '%_metrics' ORDER BY table_name",
+        "skipUrlSync": false,
+        "type": "query",
+        "current": {
+          "selected": false,
+          "text": "",
+          "value": ""
+        },
+        "options": [],
+        "datasource": {
+          "type": "questdb-questdb-datasource",
+          "uid": "${DS_QUESTDB}"
+        },
+        "definition": "SELECT left(table_name, length(table_name) - 8) FROM tables() WHERE table_name LIKE 'fritzbox%' AND table_name LIKE '%_metrics' ORDER BY table_name",
+        "includeAll": false,
+        "multi": false,
+        "refresh": 1,
+        "sort": 1
+      },
+      {
+        "current": {
+          "selected": false,
+          "text": "fritz.box",
+          "value": "fritz.box"
+        },
+        "datasource": {
+          "type": "questdb-questdb-datasource",
+          "uid": "${DS_QUESTDB}"
+        },
+        "definition": "SELECT DISTINCT box\nFROM ${measurement}_metrics\nWHERE $__timeFilter(timestamp)\n  AND box IS NOT NULL\nORDER BY box",
+        "hide": 0,
+        "includeAll": false,
+        "label": "FritzBox",
+        "multi": false,
+        "name": "boxtag",
+        "options": [],
+        "query": "SELECT DISTINCT box\nFROM ${measurement}_metrics\nWHERE $__timeFilter(timestamp)\n  AND box IS NOT NULL\nORDER BY box",
+        "refresh": 1,
+        "regex": "",
+        "skipUrlSync": false,
+        "sort": 1,
+        "type": "query",
+        "allValue": ""
+      },
+      {
+        "allValue": "",
+        "current": {
+          "selected": false,
+          "text": "Europe/Berlin",
+          "value": "Europe/Berlin"
+        },
+        "datasource": {
+          "type": "questdb-questdb-datasource",
+          "uid": "${DS_QUESTDB}"
+        },
+        "definition": "SELECT fritzfluxdb_setting_timezone\nFROM ${measurement}_metrics\nWHERE timestamp >= dateadd('d', -2, now())\n  AND box ~ '^${boxtag:regex}$'\n  AND fritzfluxdb_setting_timezone IS NOT NULL\nORDER BY timestamp DESC LIMIT 1",
+        "hide": 0,
+        "includeAll": false,
+        "multi": false,
+        "name": "timezone",
+        "options": [],
+        "query": "SELECT fritzfluxdb_setting_timezone\nFROM ${measurement}_metrics\nWHERE timestamp >= dateadd('d', -2, now())\n  AND box ~ '^${boxtag:regex}$'\n  AND fritzfluxdb_setting_timezone IS NOT NULL\nORDER BY timestamp DESC LIMIT 1",
+        "refresh": 1,
+        "regex": "",
+        "skipUrlSync": false,
+        "sort": 0,
+        "type": "query"
+      },
+      {
+        "current": {
+          "selected": false,
+          "text": "disabled",
+          "value": "disabled"
+        },
+        "datasource": {
+          "type": "questdb-questdb-datasource",
+          "uid": "${DS_QUESTDB}"
+        },
+        "definition": "SELECT CASE\n  WHEN enabled = true AND schema_version = 1\n    AND ((profile = 'low' AND raw_days > 0 AND raw_days <= 30 AND rollup_interval = '1m' AND rollup_view = '${measurement}_metrics_rollup_1m') OR (profile = 'medium' AND raw_days > 0 AND raw_days <= 7 AND rollup_interval = '1m' AND rollup_view = '${measurement}_metrics_rollup_1m') OR (profile = 'high' AND raw_days > 0 AND raw_days <= 1 AND rollup_interval = '5m' AND rollup_view = '${measurement}_metrics_rollup_5m')) THEN profile\n  ELSE 'disabled' END\nFROM \"_fritzfluxdb_downsampling\"\nWHERE measurement = '${measurement}_metrics'\nLATEST ON timestamp PARTITION BY measurement",
+        "hide": 2,
+        "includeAll": false,
+        "label": "Downsampling Profile",
+        "multi": false,
+        "name": "downsampling_profile",
+        "options": [],
+        "query": "SELECT CASE\n  WHEN enabled = true AND schema_version = 1\n    AND ((profile = 'low' AND raw_days > 0 AND raw_days <= 30 AND rollup_interval = '1m' AND rollup_view = '${measurement}_metrics_rollup_1m') OR (profile = 'medium' AND raw_days > 0 AND raw_days <= 7 AND rollup_interval = '1m' AND rollup_view = '${measurement}_metrics_rollup_1m') OR (profile = 'high' AND raw_days > 0 AND raw_days <= 1 AND rollup_interval = '5m' AND rollup_view = '${measurement}_metrics_rollup_5m')) THEN profile\n  ELSE 'disabled' END\nFROM \"_fritzfluxdb_downsampling\"\nWHERE measurement = '${measurement}_metrics'\nLATEST ON timestamp PARTITION BY measurement",
+        "refresh": 1,
+        "sort": 0,
+        "type": "query"
+      },
+      {
+        "current": {
+          "selected": false,
+          "text": "0",
+          "value": "0"
+        },
+        "datasource": {
+          "type": "questdb-questdb-datasource",
+          "uid": "${DS_QUESTDB}"
+        },
+        "definition": "SELECT CASE\n  WHEN enabled = true AND schema_version = 1\n    AND ((profile = 'low' AND raw_days > 0 AND raw_days <= 30 AND rollup_interval = '1m' AND rollup_view = '${measurement}_metrics_rollup_1m') OR (profile = 'medium' AND raw_days > 0 AND raw_days <= 7 AND rollup_interval = '1m' AND rollup_view = '${measurement}_metrics_rollup_1m') OR (profile = 'high' AND raw_days > 0 AND raw_days <= 1 AND rollup_interval = '5m' AND rollup_view = '${measurement}_metrics_rollup_5m')) THEN raw_days\n  ELSE 0 END\nFROM \"_fritzfluxdb_downsampling\"\nWHERE measurement = '${measurement}_metrics'\nLATEST ON timestamp PARTITION BY measurement",
+        "hide": 2,
+        "includeAll": false,
+        "label": "Downsampling Raw Days",
+        "multi": false,
+        "name": "downsampling_raw_days",
+        "options": [],
+        "query": "SELECT CASE\n  WHEN enabled = true AND schema_version = 1\n    AND ((profile = 'low' AND raw_days > 0 AND raw_days <= 30 AND rollup_interval = '1m' AND rollup_view = '${measurement}_metrics_rollup_1m') OR (profile = 'medium' AND raw_days > 0 AND raw_days <= 7 AND rollup_interval = '1m' AND rollup_view = '${measurement}_metrics_rollup_1m') OR (profile = 'high' AND raw_days > 0 AND raw_days <= 1 AND rollup_interval = '5m' AND rollup_view = '${measurement}_metrics_rollup_5m')) THEN raw_days\n  ELSE 0 END\nFROM \"_fritzfluxdb_downsampling\"\nWHERE measurement = '${measurement}_metrics'\nLATEST ON timestamp PARTITION BY measurement",
+        "refresh": 1,
+        "sort": 0,
+        "type": "query"
+      },
+      {
+        "current": {
+          "selected": false,
+          "text": "${measurement}_metrics",
+          "value": "${measurement}_metrics"
+        },
+        "datasource": {
+          "type": "questdb-questdb-datasource",
+          "uid": "${DS_QUESTDB}"
+        },
+        "definition": "SELECT source\nFROM (\n  SELECT CASE WHEN '${downsampling_profile:raw}' = 'low' THEN '${measurement}_metrics_rollup_1m' WHEN '${downsampling_profile:raw}' = 'medium' THEN '${measurement}_metrics_rollup_1m' WHEN '${downsampling_profile:raw}' = 'high' THEN '${measurement}_metrics_rollup_5m' END AS source, 0 AS priority\n  FROM tables()\n  WHERE (('${downsampling_profile:raw}' = 'low' AND $__fromTime < dateadd('d', -${downsampling_raw_days:raw}, now()) AND table_name LIKE '${measurement}_metrics_rollup_1m_g%_v1')\n      OR ('${downsampling_profile:raw}' = 'medium' AND $__fromTime < dateadd('d', -${downsampling_raw_days:raw}, now()) AND table_name LIKE '${measurement}_metrics_rollup_1m_g%_v1')\n      OR ('${downsampling_profile:raw}' = 'high' AND $__fromTime < dateadd('d', -${downsampling_raw_days:raw}, now()) AND table_name LIKE '${measurement}_metrics_rollup_5m_g%_v1'))\n  UNION ALL\n  SELECT table_name AS source, 1 AS priority\n  FROM tables()\n  WHERE table_name = '${measurement}_metrics'\n)\nORDER BY priority\nLIMIT 1",
+        "hide": 2,
+        "includeAll": false,
+        "label": "metric_source",
+        "multi": false,
+        "name": "metric_source",
+        "options": [],
+        "query": "SELECT source\nFROM (\n  SELECT CASE WHEN '${downsampling_profile:raw}' = 'low' THEN '${measurement}_metrics_rollup_1m' WHEN '${downsampling_profile:raw}' = 'medium' THEN '${measurement}_metrics_rollup_1m' WHEN '${downsampling_profile:raw}' = 'high' THEN '${measurement}_metrics_rollup_5m' END AS source, 0 AS priority\n  FROM tables()\n  WHERE (('${downsampling_profile:raw}' = 'low' AND $__fromTime < dateadd('d', -${downsampling_raw_days:raw}, now()) AND table_name LIKE '${measurement}_metrics_rollup_1m_g%_v1')\n      OR ('${downsampling_profile:raw}' = 'medium' AND $__fromTime < dateadd('d', -${downsampling_raw_days:raw}, now()) AND table_name LIKE '${measurement}_metrics_rollup_1m_g%_v1')\n      OR ('${downsampling_profile:raw}' = 'high' AND $__fromTime < dateadd('d', -${downsampling_raw_days:raw}, now()) AND table_name LIKE '${measurement}_metrics_rollup_5m_g%_v1'))\n  UNION ALL\n  SELECT table_name AS source, 1 AS priority\n  FROM tables()\n  WHERE table_name = '${measurement}_metrics'\n)\nORDER BY priority\nLIMIT 1",
+        "refresh": 2,
+        "sort": 0,
+        "type": "query"
+      },
+      {
+        "current": {
+          "selected": false,
+          "text": "",
+          "value": ""
+        },
+        "datasource": {
+          "type": "questdb-questdb-datasource",
+          "uid": "${DS_QUESTDB}"
+        },
+        "definition": "SELECT CASE WHEN '${metric_source:raw}' LIKE '%_rollup_%' THEN '_sum' ELSE '/*raw*/' END",
+        "hide": 2,
+        "includeAll": false,
+        "label": "metric_source_gauge_sum_suffix",
+        "multi": false,
+        "name": "metric_source_gauge_sum_suffix",
+        "options": [],
+        "query": "SELECT CASE WHEN '${metric_source:raw}' LIKE '%_rollup_%' THEN '_sum' ELSE '/*raw*/' END",
+        "refresh": 2,
+        "sort": 0,
+        "type": "query"
+      },
+      {
+        "current": {
+          "selected": false,
+          "text": "",
+          "value": ""
+        },
+        "datasource": {
+          "type": "questdb-questdb-datasource",
+          "uid": "${DS_QUESTDB}"
+        },
+        "definition": "SELECT CASE WHEN '${metric_source:raw}' LIKE '%_rollup_%' THEN '_count' ELSE '/*raw*/' END",
+        "hide": 2,
+        "includeAll": false,
+        "label": "metric_source_gauge_count_suffix",
+        "multi": false,
+        "name": "metric_source_gauge_count_suffix",
+        "options": [],
+        "query": "SELECT CASE WHEN '${metric_source:raw}' LIKE '%_rollup_%' THEN '_count' ELSE '/*raw*/' END",
+        "refresh": 2,
+        "sort": 0,
+        "type": "query"
+      },
+      {
+        "current": {
+          "selected": false,
+          "text": "",
+          "value": ""
+        },
+        "datasource": {
+          "type": "questdb-questdb-datasource",
+          "uid": "${DS_QUESTDB}"
+        },
+        "definition": "SELECT CASE WHEN '${metric_source:raw}' LIKE '%_rollup_%' THEN 'sum' ELSE 'count' END",
+        "hide": 2,
+        "includeAll": false,
+        "label": "metric_source_gauge_count_aggregate",
+        "multi": false,
+        "name": "metric_source_gauge_count_aggregate",
+        "options": [],
+        "query": "SELECT CASE WHEN '${metric_source:raw}' LIKE '%_rollup_%' THEN 'sum' ELSE 'count' END",
+        "refresh": 2,
+        "sort": 0,
+        "type": "query"
+      },
+      {
+        "current": {
+          "selected": false,
+          "text": "",
+          "value": ""
+        },
+        "datasource": {
+          "type": "questdb-questdb-datasource",
+          "uid": "${DS_QUESTDB}"
+        },
+        "definition": "SELECT CASE WHEN '${metric_source:raw}' LIKE '%_rollup_%' THEN '_last' ELSE '/*raw*/' END",
+        "hide": 2,
+        "includeAll": false,
+        "label": "metric_source_counter_suffix",
+        "multi": false,
+        "name": "metric_source_counter_suffix",
+        "options": [],
+        "query": "SELECT CASE WHEN '${metric_source:raw}' LIKE '%_rollup_%' THEN '_last' ELSE '/*raw*/' END",
+        "refresh": 2,
+        "sort": 0,
+        "type": "query"
+      },
+      {
+        "current": {
+          "selected": false,
+          "text": "",
+          "value": ""
+        },
+        "datasource": {
+          "type": "questdb-questdb-datasource",
+          "uid": "${DS_QUESTDB}"
+        },
+        "definition": "SELECT CASE WHEN '${metric_source:raw}' LIKE '%_rollup_%' THEN '_g' ELSE '/*' END",
+        "hide": 2,
+        "includeAll": false,
+        "label": "metric_source_group_open",
+        "multi": false,
+        "name": "metric_source_group_open",
+        "options": [],
+        "query": "SELECT CASE WHEN '${metric_source:raw}' LIKE '%_rollup_%' THEN '_g' ELSE '/*' END",
+        "refresh": 2,
+        "sort": 0,
+        "type": "query"
+      },
+      {
+        "current": {
+          "selected": false,
+          "text": "",
+          "value": ""
+        },
+        "datasource": {
+          "type": "questdb-questdb-datasource",
+          "uid": "${DS_QUESTDB}"
+        },
+        "definition": "SELECT CASE WHEN '${metric_source:raw}' LIKE '%_rollup_%' THEN '_v1' ELSE '*/' END",
+        "hide": 2,
+        "includeAll": false,
+        "label": "metric_source_group_close",
+        "multi": false,
+        "name": "metric_source_group_close",
+        "options": [],
+        "query": "SELECT CASE WHEN '${metric_source:raw}' LIKE '%_rollup_%' THEN '_v1' ELSE '*/' END",
+        "refresh": 2,
+        "sort": 0,
+        "type": "query"
+      },
+      {
+        "current": {
+          "selected": false,
+          "text": "${measurement}_metrics",
+          "value": "${measurement}_metrics"
+        },
+        "datasource": {
+          "type": "questdb-questdb-datasource",
+          "uid": "${DS_QUESTDB}"
+        },
+        "definition": "SELECT source\nFROM (\n  SELECT CASE WHEN '${downsampling_profile:raw}' = 'low' THEN '${measurement}_metrics_rollup_1m' WHEN '${downsampling_profile:raw}' = 'medium' THEN '${measurement}_metrics_rollup_1m' WHEN '${downsampling_profile:raw}' = 'high' THEN '${measurement}_metrics_rollup_5m' END AS source, 0 AS priority\n  FROM tables()\n  WHERE (('${downsampling_profile:raw}' = 'low' AND dateadd('d', -1, now()) < dateadd('d', -${downsampling_raw_days:raw}, now()) AND table_name LIKE '${measurement}_metrics_rollup_1m_g%_v1')\n      OR ('${downsampling_profile:raw}' = 'medium' AND dateadd('d', -1, now()) < dateadd('d', -${downsampling_raw_days:raw}, now()) AND table_name LIKE '${measurement}_metrics_rollup_1m_g%_v1')\n      OR ('${downsampling_profile:raw}' = 'high' AND dateadd('d', -1, now()) < dateadd('d', -${downsampling_raw_days:raw}, now()) AND table_name LIKE '${measurement}_metrics_rollup_5m_g%_v1'))\n  UNION ALL\n  SELECT table_name AS source, 1 AS priority\n  FROM tables()\n  WHERE table_name = '${measurement}_metrics'\n)\nORDER BY priority\nLIMIT 1",
+        "hide": 2,
+        "includeAll": false,
+        "label": "metric_source_1d",
+        "multi": false,
+        "name": "metric_source_1d",
+        "options": [],
+        "query": "SELECT source\nFROM (\n  SELECT CASE WHEN '${downsampling_profile:raw}' = 'low' THEN '${measurement}_metrics_rollup_1m' WHEN '${downsampling_profile:raw}' = 'medium' THEN '${measurement}_metrics_rollup_1m' WHEN '${downsampling_profile:raw}' = 'high' THEN '${measurement}_metrics_rollup_5m' END AS source, 0 AS priority\n  FROM tables()\n  WHERE (('${downsampling_profile:raw}' = 'low' AND dateadd('d', -1, now()) < dateadd('d', -${downsampling_raw_days:raw}, now()) AND table_name LIKE '${measurement}_metrics_rollup_1m_g%_v1')\n      OR ('${downsampling_profile:raw}' = 'medium' AND dateadd('d', -1, now()) < dateadd('d', -${downsampling_raw_days:raw}, now()) AND table_name LIKE '${measurement}_metrics_rollup_1m_g%_v1')\n      OR ('${downsampling_profile:raw}' = 'high' AND dateadd('d', -1, now()) < dateadd('d', -${downsampling_raw_days:raw}, now()) AND table_name LIKE '${measurement}_metrics_rollup_5m_g%_v1'))\n  UNION ALL\n  SELECT table_name AS source, 1 AS priority\n  FROM tables()\n  WHERE table_name = '${measurement}_metrics'\n)\nORDER BY priority\nLIMIT 1",
+        "refresh": 2,
+        "sort": 0,
+        "type": "query"
+      },
+      {
+        "current": {
+          "selected": false,
+          "text": "",
+          "value": ""
+        },
+        "datasource": {
+          "type": "questdb-questdb-datasource",
+          "uid": "${DS_QUESTDB}"
+        },
+        "definition": "SELECT CASE WHEN '${metric_source_1d:raw}' LIKE '%_rollup_%' THEN '_sum' ELSE '/*raw*/' END",
+        "hide": 2,
+        "includeAll": false,
+        "label": "metric_source_1d_gauge_sum_suffix",
+        "multi": false,
+        "name": "metric_source_1d_gauge_sum_suffix",
+        "options": [],
+        "query": "SELECT CASE WHEN '${metric_source_1d:raw}' LIKE '%_rollup_%' THEN '_sum' ELSE '/*raw*/' END",
+        "refresh": 2,
+        "sort": 0,
+        "type": "query"
+      },
+      {
+        "current": {
+          "selected": false,
+          "text": "",
+          "value": ""
+        },
+        "datasource": {
+          "type": "questdb-questdb-datasource",
+          "uid": "${DS_QUESTDB}"
+        },
+        "definition": "SELECT CASE WHEN '${metric_source_1d:raw}' LIKE '%_rollup_%' THEN '_count' ELSE '/*raw*/' END",
+        "hide": 2,
+        "includeAll": false,
+        "label": "metric_source_1d_gauge_count_suffix",
+        "multi": false,
+        "name": "metric_source_1d_gauge_count_suffix",
+        "options": [],
+        "query": "SELECT CASE WHEN '${metric_source_1d:raw}' LIKE '%_rollup_%' THEN '_count' ELSE '/*raw*/' END",
+        "refresh": 2,
+        "sort": 0,
+        "type": "query"
+      },
+      {
+        "current": {
+          "selected": false,
+          "text": "",
+          "value": ""
+        },
+        "datasource": {
+          "type": "questdb-questdb-datasource",
+          "uid": "${DS_QUESTDB}"
+        },
+        "definition": "SELECT CASE WHEN '${metric_source_1d:raw}' LIKE '%_rollup_%' THEN 'sum' ELSE 'count' END",
+        "hide": 2,
+        "includeAll": false,
+        "label": "metric_source_1d_gauge_count_aggregate",
+        "multi": false,
+        "name": "metric_source_1d_gauge_count_aggregate",
+        "options": [],
+        "query": "SELECT CASE WHEN '${metric_source_1d:raw}' LIKE '%_rollup_%' THEN 'sum' ELSE 'count' END",
+        "refresh": 2,
+        "sort": 0,
+        "type": "query"
+      },
+      {
+        "current": {
+          "selected": false,
+          "text": "",
+          "value": ""
+        },
+        "datasource": {
+          "type": "questdb-questdb-datasource",
+          "uid": "${DS_QUESTDB}"
+        },
+        "definition": "SELECT CASE WHEN '${metric_source_1d:raw}' LIKE '%_rollup_%' THEN '_last' ELSE '/*raw*/' END",
+        "hide": 2,
+        "includeAll": false,
+        "label": "metric_source_1d_counter_suffix",
+        "multi": false,
+        "name": "metric_source_1d_counter_suffix",
+        "options": [],
+        "query": "SELECT CASE WHEN '${metric_source_1d:raw}' LIKE '%_rollup_%' THEN '_last' ELSE '/*raw*/' END",
+        "refresh": 2,
+        "sort": 0,
+        "type": "query"
+      },
+      {
+        "current": {
+          "selected": false,
+          "text": "",
+          "value": ""
+        },
+        "datasource": {
+          "type": "questdb-questdb-datasource",
+          "uid": "${DS_QUESTDB}"
+        },
+        "definition": "SELECT CASE WHEN '${metric_source_1d:raw}' LIKE '%_rollup_%' THEN '_g' ELSE '/*' END",
+        "hide": 2,
+        "includeAll": false,
+        "label": "metric_source_1d_group_open",
+        "multi": false,
+        "name": "metric_source_1d_group_open",
+        "options": [],
+        "query": "SELECT CASE WHEN '${metric_source_1d:raw}' LIKE '%_rollup_%' THEN '_g' ELSE '/*' END",
+        "refresh": 2,
+        "sort": 0,
+        "type": "query"
+      },
+      {
+        "current": {
+          "selected": false,
+          "text": "",
+          "value": ""
+        },
+        "datasource": {
+          "type": "questdb-questdb-datasource",
+          "uid": "${DS_QUESTDB}"
+        },
+        "definition": "SELECT CASE WHEN '${metric_source_1d:raw}' LIKE '%_rollup_%' THEN '_v1' ELSE '*/' END",
+        "hide": 2,
+        "includeAll": false,
+        "label": "metric_source_1d_group_close",
+        "multi": false,
+        "name": "metric_source_1d_group_close",
+        "options": [],
+        "query": "SELECT CASE WHEN '${metric_source_1d:raw}' LIKE '%_rollup_%' THEN '_v1' ELSE '*/' END",
+        "refresh": 2,
+        "sort": 0,
+        "type": "query"
+      },
+      {
+        "current": {
+          "selected": false,
+          "text": "${measurement}_metrics",
+          "value": "${measurement}_metrics"
+        },
+        "datasource": {
+          "type": "questdb-questdb-datasource",
+          "uid": "${DS_QUESTDB}"
+        },
+        "definition": "SELECT source\nFROM (\n  SELECT CASE WHEN '${downsampling_profile:raw}' = 'low' THEN '${measurement}_metrics_rollup_1m' WHEN '${downsampling_profile:raw}' = 'medium' THEN '${measurement}_metrics_rollup_1m' WHEN '${downsampling_profile:raw}' = 'high' THEN '${measurement}_metrics_rollup_5m' END AS source, 0 AS priority\n  FROM tables()\n  WHERE (('${downsampling_profile:raw}' = 'low' AND dateadd('d', -7, now()) < dateadd('d', -${downsampling_raw_days:raw}, now()) AND table_name LIKE '${measurement}_metrics_rollup_1m_g%_v1')\n      OR ('${downsampling_profile:raw}' = 'medium' AND dateadd('d', -7, now()) < dateadd('d', -${downsampling_raw_days:raw}, now()) AND table_name LIKE '${measurement}_metrics_rollup_1m_g%_v1')\n      OR ('${downsampling_profile:raw}' = 'high' AND dateadd('d', -7, now()) < dateadd('d', -${downsampling_raw_days:raw}, now()) AND table_name LIKE '${measurement}_metrics_rollup_5m_g%_v1'))\n  UNION ALL\n  SELECT table_name AS source, 1 AS priority\n  FROM tables()\n  WHERE table_name = '${measurement}_metrics'\n)\nORDER BY priority\nLIMIT 1",
+        "hide": 2,
+        "includeAll": false,
+        "label": "metric_source_7d",
+        "multi": false,
+        "name": "metric_source_7d",
+        "options": [],
+        "query": "SELECT source\nFROM (\n  SELECT CASE WHEN '${downsampling_profile:raw}' = 'low' THEN '${measurement}_metrics_rollup_1m' WHEN '${downsampling_profile:raw}' = 'medium' THEN '${measurement}_metrics_rollup_1m' WHEN '${downsampling_profile:raw}' = 'high' THEN '${measurement}_metrics_rollup_5m' END AS source, 0 AS priority\n  FROM tables()\n  WHERE (('${downsampling_profile:raw}' = 'low' AND dateadd('d', -7, now()) < dateadd('d', -${downsampling_raw_days:raw}, now()) AND table_name LIKE '${measurement}_metrics_rollup_1m_g%_v1')\n      OR ('${downsampling_profile:raw}' = 'medium' AND dateadd('d', -7, now()) < dateadd('d', -${downsampling_raw_days:raw}, now()) AND table_name LIKE '${measurement}_metrics_rollup_1m_g%_v1')\n      OR ('${downsampling_profile:raw}' = 'high' AND dateadd('d', -7, now()) < dateadd('d', -${downsampling_raw_days:raw}, now()) AND table_name LIKE '${measurement}_metrics_rollup_5m_g%_v1'))\n  UNION ALL\n  SELECT table_name AS source, 1 AS priority\n  FROM tables()\n  WHERE table_name = '${measurement}_metrics'\n)\nORDER BY priority\nLIMIT 1",
+        "refresh": 2,
+        "sort": 0,
+        "type": "query"
+      },
+      {
+        "current": {
+          "selected": false,
+          "text": "",
+          "value": ""
+        },
+        "datasource": {
+          "type": "questdb-questdb-datasource",
+          "uid": "${DS_QUESTDB}"
+        },
+        "definition": "SELECT CASE WHEN '${metric_source_7d:raw}' LIKE '%_rollup_%' THEN '_sum' ELSE '/*raw*/' END",
+        "hide": 2,
+        "includeAll": false,
+        "label": "metric_source_7d_gauge_sum_suffix",
+        "multi": false,
+        "name": "metric_source_7d_gauge_sum_suffix",
+        "options": [],
+        "query": "SELECT CASE WHEN '${metric_source_7d:raw}' LIKE '%_rollup_%' THEN '_sum' ELSE '/*raw*/' END",
+        "refresh": 2,
+        "sort": 0,
+        "type": "query"
+      },
+      {
+        "current": {
+          "selected": false,
+          "text": "",
+          "value": ""
+        },
+        "datasource": {
+          "type": "questdb-questdb-datasource",
+          "uid": "${DS_QUESTDB}"
+        },
+        "definition": "SELECT CASE WHEN '${metric_source_7d:raw}' LIKE '%_rollup_%' THEN '_count' ELSE '/*raw*/' END",
+        "hide": 2,
+        "includeAll": false,
+        "label": "metric_source_7d_gauge_count_suffix",
+        "multi": false,
+        "name": "metric_source_7d_gauge_count_suffix",
+        "options": [],
+        "query": "SELECT CASE WHEN '${metric_source_7d:raw}' LIKE '%_rollup_%' THEN '_count' ELSE '/*raw*/' END",
+        "refresh": 2,
+        "sort": 0,
+        "type": "query"
+      },
+      {
+        "current": {
+          "selected": false,
+          "text": "",
+          "value": ""
+        },
+        "datasource": {
+          "type": "questdb-questdb-datasource",
+          "uid": "${DS_QUESTDB}"
+        },
+        "definition": "SELECT CASE WHEN '${metric_source_7d:raw}' LIKE '%_rollup_%' THEN 'sum' ELSE 'count' END",
+        "hide": 2,
+        "includeAll": false,
+        "label": "metric_source_7d_gauge_count_aggregate",
+        "multi": false,
+        "name": "metric_source_7d_gauge_count_aggregate",
+        "options": [],
+        "query": "SELECT CASE WHEN '${metric_source_7d:raw}' LIKE '%_rollup_%' THEN 'sum' ELSE 'count' END",
+        "refresh": 2,
+        "sort": 0,
+        "type": "query"
+      },
+      {
+        "current": {
+          "selected": false,
+          "text": "",
+          "value": ""
+        },
+        "datasource": {
+          "type": "questdb-questdb-datasource",
+          "uid": "${DS_QUESTDB}"
+        },
+        "definition": "SELECT CASE WHEN '${metric_source_7d:raw}' LIKE '%_rollup_%' THEN '_last' ELSE '/*raw*/' END",
+        "hide": 2,
+        "includeAll": false,
+        "label": "metric_source_7d_counter_suffix",
+        "multi": false,
+        "name": "metric_source_7d_counter_suffix",
+        "options": [],
+        "query": "SELECT CASE WHEN '${metric_source_7d:raw}' LIKE '%_rollup_%' THEN '_last' ELSE '/*raw*/' END",
+        "refresh": 2,
+        "sort": 0,
+        "type": "query"
+      },
+      {
+        "current": {
+          "selected": false,
+          "text": "",
+          "value": ""
+        },
+        "datasource": {
+          "type": "questdb-questdb-datasource",
+          "uid": "${DS_QUESTDB}"
+        },
+        "definition": "SELECT CASE WHEN '${metric_source_7d:raw}' LIKE '%_rollup_%' THEN '_g' ELSE '/*' END",
+        "hide": 2,
+        "includeAll": false,
+        "label": "metric_source_7d_group_open",
+        "multi": false,
+        "name": "metric_source_7d_group_open",
+        "options": [],
+        "query": "SELECT CASE WHEN '${metric_source_7d:raw}' LIKE '%_rollup_%' THEN '_g' ELSE '/*' END",
+        "refresh": 2,
+        "sort": 0,
+        "type": "query"
+      },
+      {
+        "current": {
+          "selected": false,
+          "text": "",
+          "value": ""
+        },
+        "datasource": {
+          "type": "questdb-questdb-datasource",
+          "uid": "${DS_QUESTDB}"
+        },
+        "definition": "SELECT CASE WHEN '${metric_source_7d:raw}' LIKE '%_rollup_%' THEN '_v1' ELSE '*/' END",
+        "hide": 2,
+        "includeAll": false,
+        "label": "metric_source_7d_group_close",
+        "multi": false,
+        "name": "metric_source_7d_group_close",
+        "options": [],
+        "query": "SELECT CASE WHEN '${metric_source_7d:raw}' LIKE '%_rollup_%' THEN '_v1' ELSE '*/' END",
+        "refresh": 2,
+        "sort": 0,
+        "type": "query"
+      }
+    ]
+  },
+  "time": {
+    "from": "now-12h",
+    "to": "now"
+  },
+  "timepicker": {
+    "refresh_intervals": [
+      "5s",
+      "10s",
+      "30s",
+      "1m",
+      "5m",
+      "15m",
+      "30m",
+      "1h",
+      "2h",
+      "1d"
+    ],
+    "time_options": [
+      "5m",
+      "15m",
+      "1h",
+      "6h",
+      "12h",
+      "24h",
+      "2d",
+      "7d",
+      "30d"
+    ]
+  },
+  "timezone": "",
+  "title": "FRITZ!Box Router System (QuestDB)",
+  "uid": "fritzbox-system-questdb",
+  "version": 8,
+  "weekStart": ""
+}

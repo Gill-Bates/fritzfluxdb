@@ -1,0 +1,84 @@
+# =============================================================================
+# fritzFluxDB - Docker build context excludes
+# =============================================================================
+# The image only needs: pyproject.toml, README.md, app/
+# and docker/entrypoint.sh (see docker/Dockerfile). Everything else is
+# excluded to keep the build context small and to avoid leaking secrets
+# (.env) into it.
+# =============================================================================
+
+# --- Secrets / local runtime config (must NEVER enter the build context) ---
+.env
+.env.*
+*.env
+.trivyignore
+
+# --- Version control & CI ---------------------------------------------------
+.git
+.gitignore
+.gitattributes
+.github/
+.claude/
+.kiro/
+.omc/
+.omx/
+.agents/
+
+# --- Python caches / virtualenvs / build artifacts -------------------------
+**/__pycache__/
+**/*.py[cod]
+**/*$py.class
+**/*.so
+.venv/
+venv/
+ENV/
+env/
+.pytest_cache/
+.coverage
+htmlcov/
+**/*.egg-info/
+build/
+dist/
+site/
+full_codebase*
+.ruff_cache/
+.docker-build.lock
+
+# --- Not needed inside the image (Dockerfile only COPYs app/
+# and docker/entrypoint.sh) --------------------------------------
+tests/
+tools/
+docs/
+utils/
+conftest.py
+
+# --- Docker files not needed inside the image ------------------------------
+# (docker/entrypoint.sh IS copied by the Dockerfile, so it is NOT ignored)
+.dockerignore
+docker/Dockerfile
+docker/docker-compose*.yml
+
+# --- Project assets unrelated to the runtime (dashboards live in utils/) ---
+**/*.xml
+!app/fritzbox/service_definitions/homeauto_sample.xml
+**/*.md
+!README.md
+LICENSE
+setup.conf
+# BUILD_INFO is written inside the image from the build args (see the Dockerfile);
+# a stray host copy must never enter the build context.
+BUILD_INFO
+# NOTE: pyproject.toml is intentionally NOT ignored - it is the single source
+# of truth for the version and the dependency list (see docker/Dockerfile).
+
+# --- Editors / OS cruft -----------------------------------------------------
+.idea/
+.vscode/
+**/*.swp
+**/*.swo
+**/.DS_Store
+
+# --- Logs / temp / backups --------------------------------------------------
+**/*.log
+**/*.tmp
+**/*.backup

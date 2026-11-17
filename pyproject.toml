@@ -1,0 +1,80 @@
+#
+# pyproject.toml
+# Copyright (C) 2026 Gill-Bates http://github.com/Gill-Bates
+#
+# Single source of truth for the project version and its dependencies.
+# Replaces the former VERSION and requirements.txt files: the docker-build.yml workflow
+# reads the version back from here, and app/utils/version.py reads it at runtime for the
+# startup banner.
+
+[build-system]
+requires = ["setuptools>=77"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "fritzfluxdb"
+version = "2.0.0"
+description = "Tiny daemon fetching FritzBox data into InfluxDB"
+readme = "README.md"
+requires-python = ">=3.13"
+license = "MIT"
+authors = [{ name = "Gill-Bates" }]
+urls = { Homepage = "https://github.com/Gill-Bates/fritzfluxdb" }
+
+dependencies = [
+    "defusedxml==0.7.1",
+    "httpx==0.28.1",
+    "pydantic==2.14.3",
+    "xmltodict==1.0.4",
+]
+
+[project.scripts]
+fritzflux-cli = "app.utils.questdb_admin:main"
+
+[project.optional-dependencies]
+dev = [
+    "pytest==9.2.0",
+    "pytest-randomly==5.1.0",
+    "pytest-xdist==3.8.0",
+    "ruff==0.17.5",
+]
+docs = [
+    "mkdocs==1.6.1",
+    "mkdocs-git-revision-date-localized-plugin==1.7.0",
+    "mkdocs-material==9.8.1",
+    "mkdocs-minify-plugin==0.8.0",
+    "pymdown-extensions==13.1",
+]
+
+[tool.setuptools.packages.find]
+include = ["app*"]
+
+[tool.setuptools.package-data]
+"app.fritzbox.service_definitions" = ["homeauto_sample.xml"]
+
+[tool.ruff]
+# Keep the local and CI checks on the same Ruff version and Python target.
+# Formatting (`ruff format`) is not a gate; only `ruff check .` is enforced.
+required-version = "==0.17.5"
+target-version = "py313"
+extend-exclude = ["__pycache__", ".venv", "venv", "site", "*.egg-info"]
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "B", "UP"]
+# E501: long lines are the established code style and no formatter enforces a limit.
+# EXE001: project modules keep shebangs even though most are not executable scripts.
+ignore = ["E501", "EXE001"]
+
+[tool.ruff.lint.per-file-ignores]
+# The ASCII-art banner string keeps its trailing spaces as part of the output.
+"app/fritzbox/banner.py" = ["W291"]
+# Imports must follow the list definitions: they register service definitions.
+"app/fritzbox/service_definitions/__init__.py" = ["E402"]
+
+[tool.ruff.lint.isort]
+known-first-party = ["app", "tools", "utils"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]
+addopts = "-ra"

@@ -1,0 +1,35 @@
+<?xml version="1.0"?>
+<!-- Hand-written approximation of the AVM format, not a recording from a real FRITZ!Box. -->
+<scpd xmlns="urn:dslforum-org:service-1-0">
+  <specVersion><major>1</major><minor>0</minor></specVersion>
+  <actionList>
+    <action>
+      <name>GetInfo</name>
+      <argumentList>
+        <argument><name>NewEnable</name><direction>out</direction><relatedStateVariable>Enable</relatedStateVariable></argument>
+        <argument><name>NewStatus</name><direction>out</direction><relatedStateVariable>Status</relatedStateVariable></argument>
+        <argument><name>NewChannel</name><direction>out</direction><relatedStateVariable>Channel</relatedStateVariable></argument>
+        <argument><name>NewSSID</name><direction>out</direction><relatedStateVariable>SSID</relatedStateVariable></argument>
+      </argumentList>
+    </action>
+    <action>
+      <name>GetTotalAssociations</name>
+      <argumentList>
+        <argument><name>NewTotalAssociations</name><direction>out</direction><relatedStateVariable>TotalAssociations</relatedStateVariable></argument>
+      </argumentList>
+    </action>
+    <action>
+      <name>SetEnable</name>
+      <argumentList>
+        <argument><name>NewEnable</name><direction>in</direction><relatedStateVariable>Enable</relatedStateVariable></argument>
+      </argumentList>
+    </action>
+  </actionList>
+  <serviceStateTable>
+    <stateVariable sendEvents="no"><name>Enable</name><dataType>boolean</dataType></stateVariable>
+    <stateVariable sendEvents="no"><name>Status</name><dataType>string</dataType></stateVariable>
+    <stateVariable sendEvents="no"><name>Channel</name><dataType>ui1</dataType></stateVariable>
+    <stateVariable sendEvents="no"><name>SSID</name><dataType>string</dataType></stateVariable>
+    <stateVariable sendEvents="no"><name>TotalAssociations</name><dataType>ui2</dataType></stateVariable>
+  </serviceStateTable>
+</scpd>

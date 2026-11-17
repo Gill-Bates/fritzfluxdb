@@ -1,0 +1,114 @@
+{
+    "extends": [
+        "config:best-practices"
+    ],
+    "timezone": "Europe/Berlin",
+    "schedule": [
+        "before 6am on Monday"
+    ],
+    "labels": [
+        "dependencies",
+        "renovate"
+    ],
+    "rebaseWhen": "behind-base-branch",
+    "customManagers": [
+        {
+            "customType": "regex",
+            "description": "Tool versions pinned in workflows, announced by a '# renovate: datasource=... depName=...' comment on the line above",
+            "managerFilePatterns": [
+                "/^\\.github/workflows/[^/]+\\.ya?ml$/"
+            ],
+            "matchStrings": [
+                "# renovate: datasource=(?<datasource>[a-z-]+) depName=(?<depName>\\S+)\\n\\s*(?:[A-Z0-9_]+_VERSION|version): ['\"]?(?<currentValue>[^'\"\\s]+)['\"]?"
+            ]
+        }
+    ],
+    "commitMessagePrefix": "chore(deps):",
+    "prConcurrentLimit": 3,
+    "prHourlyLimit": 2,
+    "packageRules": [
+        {
+            "description": "GitHub Actions: auto-merge minor/patch with digest pinning",
+            "matchManagers": [
+                "github-actions"
+            ],
+            "groupName": "github-actions",
+            "automerge": true,
+            "automergeType": "pr",
+            "automergeStrategy": "squash",
+            "matchUpdateTypes": [
+                "minor",
+                "patch"
+            ],
+            "minimumReleaseAge": "3 days",
+            "pinDigests": true
+        },
+        {
+            "description": "Docker images: pin digests for reproducibility",
+            "matchManagers": [
+                "dockerfile"
+            ],
+            "groupName": "docker-images",
+            "automerge": false,
+            "pinDigests": true,
+            "labels": [
+                "docker"
+            ]
+        },
+        {
+            "description": "Python dependencies: group and review",
+            "matchManagers": [
+                "pep621"
+            ],
+            "groupName": "python-dependencies",
+            "automerge": false,
+            "labels": [
+                "python"
+            ]
+        },
+        {
+            "description": "Pinned workflow tool versions: ACTIONLINT_SHA256 in ci.yml is not bumped by Renovate, so the PR must update it by hand",
+            "matchManagers": [
+                "custom.regex"
+            ],
+            "automerge": false,
+            "labels": [
+                "ci-tooling"
+            ]
+        },
+        {
+            "description": "Trivy scanner (actions and pinned CLI version): reviewed bump, never auto-merged",
+            "matchPackageNames": [
+                "aquasecurity/trivy-action",
+                "aquasecurity/setup-trivy",
+                "aquasecurity/trivy"
+            ],
+            "groupName": "trivy",
+            "automerge": false,
+            "minimumReleaseAge": "1 day",
+            "schedule": [
+                "at any time"
+            ],
+            "labels": [
+                "security"
+            ]
+        },
+        {
+            "description": "Major version updates: require explicit review",
+            "matchUpdateTypes": [
+                "major"
+            ],
+            "automerge": false,
+            "labels": [
+                "breaking-change"
+            ]
+        }
+    ],
+    "vulnerabilityAlerts": {
+        "enabled": true,
+        "labels": [
+            "security",
+            "critical"
+        ]
+    }
+}

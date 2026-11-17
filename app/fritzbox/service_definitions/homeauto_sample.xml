@@ -1,0 +1,9 @@
+<devicelist>
+  <device identifier="00000 0000001" id="test-switch" functionbitmask="0">
+    <name>Test Switch</name>
+    <present>1</present>
+    <switch>
+      <state>0</state>
+    </switch>
+  </device>
+</devicelist>

@@ -1,0 +1,178 @@
+#
+# .github/workflows/security.yml
+# Purpose: weekly rescan of the newest stable image published on Docker Hub. The release
+#   gate in docker-build.yml answers "was the image acceptable when it was built"; this
+#   answers "is it acceptable today". Read-only: it scans by digest and never builds, tags,
+#   pushes or deletes anything. A red run means the published image needs a new release.
+#   A failed run opens or updates one tracking issue.
+# Related: docker-build.yml (release gate and scan policy), ci.yml (source secret scan).
+#
+
+name: Security rescan
+run-name: security-rescan-${{ github.run_number }}
+
+on:
+  schedule:
+    # Weekly is enough; a daily run mostly re-reports the same finding.
+    - cron: '41 4 * * 1'
+  workflow_dispatch:
+
+concurrency:
+  group: security-rescan
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+env:
+  # Docker Hub repository; the image is public, so no registry login is made.
+  IMAGE_NAME: giiibates/fritzfluxdb
+  # Must equal the platforms of the docker-build.yml matrix. The index may not lose a
+  # child silently, so the list is explicit.
+  EXPECTED_PLATFORMS: 'linux/amd64 linux/arm64'
+
+jobs:
+  # The newest stable release is the subject: a prerelease follows only the newest stable
+  # one and is not rescanned, and `latest` is a moving tag that a report could not name.
+  resolve:
+    name: Resolve published digests
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    outputs:
+      version: ${{ steps.resolve.outputs.version }}
+      matrix: ${{ steps.resolve.outputs.matrix }}
+      index_digest: ${{ steps.resolve.outputs.index_digest }}
+
+    steps:
+      # The tools and the job helper are the only files this job needs.
+      - name: Checkout tools and job helper
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
+          sparse-checkout: |
+            .github/scripts
+            tools
+      # The helper lives in the repository, so the checkout has to come first. It prints
+      # the agent banner and points TMPDIR, TMP and TEMP at the job temp directory.
+      - name: Agent banner and job temp directory
+        run: python3 .github/scripts/ci_job_setup.py
+
+      # Fails when the registry lists no stable release tag.
+      - name: Find the highest stable release tag
+        id: latest
+        run: python3 tools/release_newest.py latest --repo "$IMAGE_NAME" >> "$GITHUB_OUTPUT"
+
+      # Reads the version back into its index and per-platform digests. Fails when the
+      # tag does not resolve or its platform list differs from EXPECTED_PLATFORMS, so a
+      # missing child is a failure and not a shorter scan.
+      - name: Resolve index and platform digests
+        id: resolve
+        env:
+          VERSION: ${{ steps.latest.outputs.version }}
+        run: |
+          set -euo pipefail
+          python3 tools/release_publish.py resolve --image "$IMAGE_NAME" \
+            --version "$VERSION" --platforms "$EXPECTED_PLATFORMS" >> "$GITHUB_OUTPUT"
+
+      - name: Summarize the scan subject
+        env:
+          VERSION: ${{ steps.resolve.outputs.version }}
+          INDEX_DIGEST: ${{ steps.resolve.outputs.index_digest }}
+        run: |
+          set -euo pipefail
+          echo "Rescanning release ${VERSION} (${INDEX_DIGEST})"
+          echo "### Rescan of ${VERSION} (${INDEX_DIGEST})" >> "$GITHUB_STEP_SUMMARY"
+
+  scan:
+    name: Rescan ${{ matrix.arch }} digest
+    needs: resolve
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(needs.resolve.outputs.matrix) }}
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
+      # The helper lives in the repository, so the checkout has to come first. It prints
+      # the agent banner and points TMPDIR, TMP and TEMP at the job temp directory.
+      - name: Agent banner and job temp directory
+        run: python3 .github/scripts/ci_job_setup.py
+
+      # Same policy as the release gate in docker-build.yml (action revision, scanners,
+      # severity, ignore-unfixed, .trivyignore); the platform child is addressed by digest.
+      - name: Trivy vulnerability scan
+        id: trivy
+        # Pinned to an immutable commit SHA, see GHSA-69fq-xp46-6x23.
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          cache: 'true'
+          image-ref: ${{ format('docker.io/{0}@{1}', env.IMAGE_NAME, matrix.digest) }}
+          format: 'json'
+          output: 'trivy-${{ matrix.arch }}.json'
+          exit-code: '1'
+          ignore-unfixed: true
+          # Lists every package, so a clean scan still proves which targets it covered.
+          list-all-pkgs: true
+          # Source secrets and misconfiguration are gated in ci.yml.
+          scanners: 'vuln'
+          vuln-type: 'os,library'
+          severity: 'CRITICAL,HIGH'
+          timeout: '10m'
+          trivyignores: '.trivyignore'
+
+      # Scanner failure (no valid report, or no OS and Python package results) and
+      # findings (valid report, counts > 0) are separate: an unreadable report never
+      # passes as "0 findings". The scan step above carries the blocking exit code.
+      - name: Summarize Trivy report
+        if: ${{ !cancelled() && steps.trivy.conclusion != 'skipped' }}
+        env:
+          ARCH: ${{ matrix.arch }}
+          DIGEST: ${{ matrix.digest }}
+          VERSION: ${{ needs.resolve.outputs.version }}
+        run: |
+          set -euo pipefail
+          python3 tools/trivy_report.py status "trivy-${ARCH}.json" \
+            --expect-class os-pkgs --expect-class lang-pkgs \
+            --summary-title "Trivy (${VERSION}, ${ARCH}, ${DIGEST})" --list 20 >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload Trivy report (${{ matrix.arch }})
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: trivy-rescan-${{ matrix.arch }}
+          path: trivy-${{ matrix.arch }}.json
+          retention-days: 30
+          if-no-files-found: warn
+
+  # One tracking issue per failure, not one per run. Only this job may write issues.
+  report-failure:
+    name: Report failed rescan
+    needs: [resolve, scan]
+    if: ${{ failure() }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      contents: read  # checkout of the tools
+      issues: write
+
+    steps:
+      - name: Checkout tools and job helper
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
+          sparse-checkout: |
+            .github/scripts
+            tools
+      # The helper lives in the repository, so the checkout has to come first. It prints
+      # the agent banner and points TMPDIR, TMP and TEMP at the job temp directory.
+      - name: Agent banner and job temp directory
+        run: python3 .github/scripts/ci_job_setup.py
+
+      - name: Open or update the tracking issue
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python3 tools/failure_issue.py --title "Security rescan failed"

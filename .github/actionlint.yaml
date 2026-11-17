@@ -1,0 +1,10 @@
+# .github/actionlint.yaml
+#
+# actionlint 1.7.x does not know `concurrency.queue` yet, which GitHub Actions
+# accepts (queue: max, see docker-build.yml). Only that one syntax message is
+# ignored, and only for this workflow; drop the entry once the pinned actionlint
+# knows the key.
+paths:
+  "**/docker-build.yml":
+    ignore:
+      - 'unexpected key "queue" for "concurrency" section'

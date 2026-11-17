@@ -1,0 +1,22 @@
+<?xml version="1.0"?>
+<!-- Hand-written approximation of the AVM format, not a recording from a real FRITZ!Box. -->
+<scpd xmlns="urn:dslforum-org:service-1-0">
+  <specVersion><major>1</major><minor>0</minor></specVersion>
+  <actionList>
+    <action>
+      <name>GetInfo</name>
+      <argumentList>
+        <argument><name>NewManufacturerName</name><direction>out</direction><relatedStateVariable>ManufacturerName</relatedStateVariable></argument>
+        <argument><name>NewSerialNumber</name><direction>out</direction><relatedStateVariable>SerialNumber</relatedStateVariable></argument>
+        <argument><name>NewSoftwareVersion</name><direction>out</direction><relatedStateVariable>SoftwareVersion</relatedStateVariable></argument>
+        <argument><name>NewUpTime</name><direction>out</direction><relatedStateVariable>UpTime</relatedStateVariable></argument>
+      </argumentList>
+    </action>
+  </actionList>
+  <serviceStateTable>
+    <stateVariable sendEvents="no"><name>ManufacturerName</name><dataType>string</dataType></stateVariable>
+    <stateVariable sendEvents="no"><name>SerialNumber</name><dataType>string</dataType></stateVariable>
+    <stateVariable sendEvents="no"><name>SoftwareVersion</name><dataType>string</dataType></stateVariable>
+    <stateVariable sendEvents="no"><name>UpTime</name><dataType>ui4</dataType></stateVariable>
+  </serviceStateTable>
+</scpd>
