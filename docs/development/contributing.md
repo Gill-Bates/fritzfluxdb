@@ -94,7 +94,7 @@ Only a run with both platforms promotes version tags and creates the GitHub Rele
 | --- | --- | --- |
 | `ci.yml` | Every branch push, pull requests to `main`, manual, and as release gate | Jobs `manifest`, `workflows` (actionlint, shellcheck), `zizmor`, `container` (Dockerfile and shell scripts), `check (ruff)`, `check (pytest)`, and `source-scan` (Trivy secrets and misconfiguration). |
 | `docker-build.yml` | Tag `v*`, manual | The release flow above. |
-| `docs-build.yml` | Docs changes on `main` and in pull requests, manual, after a release, weekly | Jobs `build`, `security-scan` (Trivy over the frozen docs dependencies), `deploy` to GitHub Pages, and `report-failure` for the weekly run. |
+| `docs-build.yml` | Docs changes on `main` and in pull requests, manual, after a release, weekly | Jobs `build`, `security-scan` (Trivy over the frozen docs dependencies), `deploy` to GitHub Pages (from `main`, or from another branch through a manual run with the `deploy` input), and `report-failure` for the weekly run. |
 | `security.yml` | Weekly, manual | Resolves the newest stable release on Docker Hub and rescans both platform digests with Trivy. |
 
 `ruff` and `pytest` run as two parallel entries of the matrix job `check`. A failed weekly run

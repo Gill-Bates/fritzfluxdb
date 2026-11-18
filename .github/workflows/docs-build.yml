@@ -40,6 +40,11 @@ on:
       - '.trivyignore'
       - '.github/workflows/docs-build.yml'
   workflow_dispatch:
+    inputs:
+      deploy:
+        description: 'Deploy to GitHub Pages from a branch other than main (main always deploys)'
+        type: boolean
+        default: false
   # A release can ship a changelog bump that never touches docs/** on its own, and a
   # re-run of the release from an existing tag would not fire this workflow at all.
   # Rebuilding after a successful release keeps the deployed site in step with what
@@ -173,14 +178,18 @@ jobs:
             './site/**/*.html'
           fail: true
 
+      # A manual run from another branch publishes only with the deploy input set.
       - name: Upload artifact
         if: |
-          github.ref == 'refs/heads/main' &&
           (
-            github.event_name == 'push' ||
-            github.event_name == 'workflow_dispatch' ||
-            github.event_name == 'workflow_run'
-          )
+            github.ref == 'refs/heads/main' &&
+            (
+              github.event_name == 'push' ||
+              github.event_name == 'workflow_dispatch' ||
+              github.event_name == 'workflow_run'
+            )
+          ) ||
+          (github.event_name == 'workflow_dispatch' && inputs.deploy)
         uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5.0.0
         with:
           path: ./site
@@ -266,13 +275,17 @@ jobs:
           if-no-files-found: warn
 
   deploy:
+    # Same condition as the artifact upload in build; keep both in step.
     if: |
-      github.ref == 'refs/heads/main' &&
       (
-        github.event_name == 'push' ||
-        github.event_name == 'workflow_dispatch' ||
-        github.event_name == 'workflow_run'
-      )
+        github.ref == 'refs/heads/main' &&
+        (
+          github.event_name == 'push' ||
+          github.event_name == 'workflow_dispatch' ||
+          github.event_name == 'workflow_run'
+        )
+      ) ||
+      (github.event_name == 'workflow_dispatch' && inputs.deploy)
     needs: [build, security-scan]
     runs-on: ubuntu-24.04
     timeout-minutes: 10
