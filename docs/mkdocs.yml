@@ -117,7 +117,7 @@ extra:
   generator: false
 
 extra_css:
-  - stylesheets/extra.css
+  - assets/stylesheets/extra.css
 
 copyright: Copyright &copy; 2026 Gill-Bates
 

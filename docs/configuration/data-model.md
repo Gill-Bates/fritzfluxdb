@@ -87,7 +87,7 @@ even if the uptime never visibly dropped. Clock steps on the host (NTP, suspend)
 never reported as an interruption. A start-time shift alone is at most `probable`. A link uptime of
 about 24 hours is no evidence by itself, because classification only runs for a detected interruption.
 
-The [TR-064 WAN PPP Connection specification (v16)](../spec/TR-064_WAN_PPP_Connection_v16.pdf)
+The [TR-064 WAN PPP Connection specification (v16)](../assets/TR-064_WAN_PPP_Connection_v16.pdf)
 defines `NewLastConnectionError` in `GetInfo` and `GetStatusInfo`. The PDF is kept in the
 repository as the reference for this behavior; its source is
 <https://fritz.support/resources/TR-064_WAN_PPP_Connection.pdf>. A newly reported
