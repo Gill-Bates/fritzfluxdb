@@ -49,7 +49,7 @@ zizmor --no-progress --format=github .github/workflows
 | --- | --- |
 | `ci.yml` | Gate on branch pushes and PRs to `main`, also called by the release: `manifest`, `workflows` (actionlint), `zizmor`, `container`, `check` (matrix: `ruff` and `pytest` in parallel), `source-scan` (mandatory Trivy secret and misconfiguration scanning). |
 | `docker-build.yml` | Tag `v*` or manual dispatch. `meta` → `lint-test` (calls `ci.yml`) → `build` (per architecture: smoke test, mandatory Trivy scan, push) → `create-manifest` (candidate tag) → `attest` → `promote` (version tag, `latest` only for the newest stable) → `cleanup` → `create-release`. |
-| `docs-build.yml` | MkDocs build, link check, dependency scan (Trivy), deploy to GitHub Pages from `main`; PRs build only. Also runs weekly and after a completed `docker-build.yml` run. |
+| `docs-build.yml` | Zensical build (`mkdocs.yml` at the repository root), link check, dependency scan (Trivy), deploy to GitHub Pages from `main`; PRs build only. Also runs weekly and after a completed `docker-build.yml` run. |
 | `security.yml` | Mandatory weekly Trivy rescan of the published `latest` image per platform digest. |
 
 - Every job with `steps:` starts with checkout and then `python3 .github/scripts/ci_job_setup.py` (runner banner, temporary directories on `RUNNER_TEMP`). Jobs that call a reusable workflow use the called workflow's setup steps.

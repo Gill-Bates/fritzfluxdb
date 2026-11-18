@@ -20,9 +20,6 @@ Lightweight daemon that collects metrics from your FRITZ!Box and pushes them int
 
 ![Grafana system dashboard showing FritzBox connection, CPU, RAM and traffic panels](https://raw.githubusercontent.com/Gill-Bates/fritzfluxdb/main/.github/img/dashboard_1.png)
 
-This fork runs on Python 3.13, uses `httpx` for database writes, and backs off exponentially
-on HTTP errors. See the [comparison with the original](https://gill-bates.github.io/fritzfluxdb/development/fork-comparison/).
-
 ## Quick Start
 
 The recommended setup uses QuestDB. Create a `.env` file:

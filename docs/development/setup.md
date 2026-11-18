@@ -33,8 +33,8 @@ deliberately disabled to avoid exposing credentials.
 python tools/pyproject-deps.py docs > /tmp/requirements-docs.txt
 python -m pip install -r /tmp/requirements-docs.txt
 cp CHANGELOG.md docs/changelog.md && cp LICENSE docs/license.md   # Git-ignored build copies
-mkdocs serve -f docs/mkdocs.yml
+zensical serve -f mkdocs.yml
 ```
 
-Validate with `mkdocs build -f docs/mkdocs.yml --strict`. The requirements file stays outside the
+Validate with `zensical build -f mkdocs.yml --strict`. The requirements file stays outside the
 repository; `requirements*.txt` files must not be committed.

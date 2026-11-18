@@ -1,6 +1,6 @@
 #
 # .github/workflows/docs-build.yml
-# Purpose: build the MkDocs site, scan its pinned dependencies, deploy to GitHub Pages.
+# Purpose: build the Zensical site, scan its pinned dependencies, deploy to GitHub Pages.
 #   A failed weekly scheduled run opens or updates one tracking issue.
 # Related: ci.yml (PR gate), docker-build.yml (release; a successful release rebuilds the site).
 #
@@ -14,6 +14,7 @@ on:
       - main
     paths:
       - 'docs/**'
+      - 'mkdocs.yml'
       - 'CHANGELOG.md'
       - 'LICENSE'
       - 'pyproject.toml'
@@ -24,6 +25,7 @@ on:
       - main
     paths:
       - 'docs/**'
+      - 'mkdocs.yml'
       - 'CHANGELOG.md'
       - 'LICENSE'
       - 'pyproject.toml'
@@ -72,7 +74,6 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
-          fetch-depth: 0  # git-revision-date-localized needs the full history
           persist-credentials: false
           # No explicit ref: on workflow_run the default checkout is the head of the
           # default branch, which is what must be deployed. The release's own head_sha
@@ -99,7 +100,7 @@ jobs:
           pip install -r "$RUNNER_TEMP/requirements-docs.txt"
 
       # mkdocs.yml's nav references both files; they live at the repository root and
-      # are mirrored into docs/ for the build.
+      # are mirrored into docs/ for the build (untracked, see .gitignore).
       - name: Copy root files into the docs tree
         run: |
           set -euo pipefail
@@ -109,7 +110,7 @@ jobs:
       - name: Build documentation
         run: |
           set -euo pipefail
-          mkdocs build -f docs/mkdocs.yml --strict
+          zensical build -f mkdocs.yml --strict
 
       # site_url puts the site under /fritzfluxdb/, so every internal link in the
       # generated HTML is root-relative. lychee resolves those against --root-dir,
@@ -124,7 +125,7 @@ jobs:
       # would only produce reruns. The site's own base URL is excluded because every
       # page carries it as its canonical link: checking it over the network tests the
       # currently deployed site, not this build, and fails before the first deploy.
-      # Internal link integrity is covered by the strict mkdocs build above.
+      # Internal link integrity is covered by the strict Zensical build above.
       - name: Check links
         uses: lycheeverse/lychee-action@e7477775783ea5526144ba13e8db5eec57747ce8 # v2.9.0
         with:

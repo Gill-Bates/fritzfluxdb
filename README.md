@@ -47,9 +47,6 @@
   <img src=".github/img/dashboard_1.png" alt="Grafana system dashboard showing FritzBox connection, CPU, RAM and traffic panels" width="800">
 </p>
 
-This fork runs on Python 3.13, writes through a single `httpx` client, and backs off exponentially
-on HTTP errors. See the [comparison with the original](https://gill-bates.github.io/fritzfluxdb/development/fork-comparison/).
-
 ## Quick Start
 
 > **Version 2.0.0 starts with fresh database schemas.** Use a new QuestDB instance, InfluxDB

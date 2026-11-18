@@ -26,7 +26,7 @@ find utils/grafana -name '*.json' -print0 | xargs -0 -n1 jq empty
 ## Documentation validation
 
 ```bash
-mkdocs build -f docs/mkdocs.yml --strict
+zensical build -f mkdocs.yml --strict
 ```
 
 Every page in the navigation must exist. Keep environment examples credential-free and update

@@ -7,27 +7,24 @@ repo_name: Gill-Bates/fritzfluxdb
 repo_url: https://github.com/Gill-Bates/fritzfluxdb
 edit_uri: edit/main/docs/
 
-docs_dir: .
-site_dir: ../site
+docs_dir: docs
+site_dir: site
 use_directory_urls: true
 
-# docs_dir is the docs folder itself: keep contributor instructions and the
-# site configuration out of the published site.
+# Keep contributor instructions out of the published site.
 exclude_docs: |
   AGENTS.md
-  mkdocs.yml
 
+# Zensical checks internal links and their anchors; any warning fails
+# `zensical build --strict`. The MkDocs nav and absolute-link checks have no
+# equivalent.
 validation:
-  nav:
-    omitted_files: warn
-    absolute_links: warn
   links:
+    not_found: warn
     anchors: warn
-    absolute_links: warn
-    unrecognized_links: warn
 
 theme:
-  name: material
+  variant: classic
   language: en
   palette:
     - media: "(prefers-color-scheme)"
@@ -66,16 +63,6 @@ plugins:
   - search
   - minify:
       minify_html: true
-  - git-revision-date-localized:
-      enable_creation_date: true
-      type: timeago
-      fallback_to_build_date: true
-      # New, uncommitted pages have no per-file Git history during local builds.
-      strict: false
-      # changelog.md and license.md are copies of root files made at build time.
-      exclude:
-        - changelog.md
-        - license.md
 
 markdown_extensions:
   - abbr
@@ -92,8 +79,8 @@ markdown_extensions:
   - pymdownx.caret
   - pymdownx.details
   - pymdownx.emoji:
-      emoji_index: !!python/name:material.extensions.emoji.twemoji
-      emoji_generator: !!python/name:material.extensions.emoji.to_svg
+      emoji_index: !!python/name:zensical.extensions.emoji.twemoji
+      emoji_generator: !!python/name:zensical.extensions.emoji.to_svg
   - pymdownx.highlight:
       anchor_linenums: true
       line_spans: __span
@@ -141,7 +128,6 @@ nav:
       - Architecture: development/architecture.md
       - Local development: development/setup.md
       - Testing and releases: development/contributing.md
-      - Comparison with the original: development/fork-comparison.md
   - Reference:
       - Changelog: changelog.md
       - License: license.md
