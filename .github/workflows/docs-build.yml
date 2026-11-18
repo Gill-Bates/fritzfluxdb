@@ -66,6 +66,8 @@ jobs:
       (
         github.event.workflow_run.conclusion == 'success' &&
         github.event.workflow_run.event == 'push' &&
+        github.event.workflow_run.repository.full_name == github.repository &&
+        github.event.workflow_run.head_repository.full_name == github.repository &&
         startsWith(github.event.workflow_run.head_branch, 'v')
       )
     runs-on: ubuntu-24.04
@@ -98,6 +100,7 @@ jobs:
           python tools/pyproject-deps.py docs > "$RUNNER_TEMP/requirements-docs.txt"
           cat "$RUNNER_TEMP/requirements-docs.txt"
           pip install -r "$RUNNER_TEMP/requirements-docs.txt"
+          python -m pip check
 
       # mkdocs.yml's nav references both files; they live at the repository root and
       # are mirrored into docs/ for the build (untracked, see .gitignore).
@@ -110,7 +113,12 @@ jobs:
       - name: Build documentation
         run: |
           set -euo pipefail
-          zensical build -f mkdocs.yml --strict
+          zensical build --config-file mkdocs.yml --strict --clean
+
+      # Zensical has no nav validation; this replaces the former MkDocs omitted_files and
+      # nav checks and proves the built site holds the pages and assets that get deployed.
+      - name: Check navigation and smoke-test the site
+        run: python3 tools/docs_site_check.py
 
       # site_url puts the site under /fritzfluxdb/, so every internal link in the
       # generated HTML is root-relative. lychee resolves those against --root-dir,
@@ -165,6 +173,8 @@ jobs:
       (
         github.event.workflow_run.conclusion == 'success' &&
         github.event.workflow_run.event == 'push' &&
+        github.event.workflow_run.repository.full_name == github.repository &&
+        github.event.workflow_run.head_repository.full_name == github.repository &&
         startsWith(github.event.workflow_run.head_branch, 'v')
       )
     runs-on: ubuntu-24.04
@@ -197,6 +207,7 @@ jobs:
           python tools/pyproject-deps.py docs > "$RUNNER_TEMP/requirements-docs.txt"
           python -m venv "$venv"
           "$venv/bin/python" -m pip install -r "$RUNNER_TEMP/requirements-docs.txt"
+          "$venv/bin/python" -m pip check
           mkdir -p "$RUNNER_TEMP/docs-scan"
           "$venv/bin/python" -m pip freeze --all > "$RUNNER_TEMP/docs-scan/requirements.txt"
           cat "$RUNNER_TEMP/docs-scan/requirements.txt"

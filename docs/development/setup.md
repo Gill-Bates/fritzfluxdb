@@ -36,5 +36,5 @@ cp CHANGELOG.md docs/changelog.md && cp LICENSE docs/license.md   # Git-ignored 
 zensical serve -f mkdocs.yml
 ```
 
-Validate with `zensical build -f mkdocs.yml --strict`. The requirements file stays outside the
+Validate with `zensical build --config-file mkdocs.yml --strict --clean` and `python tools/docs_site_check.py`. The requirements file stays outside the
 repository; `requirements*.txt` files must not be committed.
