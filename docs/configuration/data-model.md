@@ -167,7 +167,8 @@ login is attempted at most every 30 seconds. A successful attempt or a network e
 count, so a box that restarts and answers a login briefly with a rejection does not end the daemon.
 
 A login block (`BlockTime`) neither counts nor resets the count; the next Lua login waits at least
-for the block time, and the block is logged once per phase. At startup a block is temporary (exit
+for the block time, at most 1 hour, and the block is logged once per phase. A block time that is not
+a finite, non-negative number of seconds falls back to the 30-second login interval. At startup a block is temporary (exit
 `1`, never `78`).
 
 TR-064 checks the login again during operation only when a polling cycle has queried actions and

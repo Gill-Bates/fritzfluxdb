@@ -1,7 +1,7 @@
 ## [v2.0.1] - 2026-xx-xx
 
+- ``Changed`` A single timeout or dropped connection on a FRITZ!Box request is no longer logged as an error. After 3 consecutive failures of a service a rate-limited warning is logged, and its recovery is logged once.
 - ``Security`` An unexpected session ID in a FRITZ!Box login response is no longer written to the log, and an invalid or excessive login block time reported by the box can no longer stall logins indefinitely (waits are capped at one hour).
-
 
 
 <details markdown="1">
