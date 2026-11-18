@@ -11,9 +11,11 @@ Replaces the MkDocs nav validation that Zensical does not provide.
 from __future__ import annotations
 
 import argparse
+import json
 import re
 import sys
 from pathlib import Path
+from urllib.parse import unquote, urlsplit
 
 from ci_output import REPO_URL, log, print_header
 
@@ -23,23 +25,23 @@ HELP_URL = f"{REPO_URL}/blob/main/tools/{SCRIPT.name}"
 # Build-time copies of root files; they exist only after the workflow copy step.
 GENERATED_PAGES = frozenset({"changelog.md", "license.md"})
 NAV_PAGE_RE = re.compile(r"^\s+-\s+(?:[^:#]+:\s+)?(\S+\.md)\s*$")
-# Page URL directories and files the published site must contain.
+# Files and directories the published site must contain besides the nav pages.
 REQUIRED_SITE_FILES = (
-    "index.html",
     "404.html",
     "search.json",
     "sitemap.xml",
-    "getting-started/installation/index.html",
-    "configuration/environment/index.html",
-    "storage/questdb/index.html",
-    "monitoring/troubleshooting/index.html",
-    "development/setup/index.html",
-    "changelog/index.html",
-    "license/index.html",
     "assets/stylesheets/extra.css",
     "assets/TR-064_WAN_PPP_Connection_v16.pdf",
 )
-FORBIDDEN_SITE_NAMES = ("mkdocs.yml", "AGENTS.md", "pyproject.toml", ".git")
+FORBIDDEN_SITE_NAMES = ("mkdocs.yml", "AGENTS.md", "pyproject.toml", ".git", ".env", ".env.*")
+URL_ATTR_RE = re.compile(r"""\b(?:href|src)=("[^"]*"|'[^']*'|[^\s>]+)""")
+SITE_URL_RE = re.compile(r"^site_url:\s*(\S+)\s*$", re.M)
+
+
+def page_html(page: str) -> str:
+    """Map a nav page to the HTML file Zensical builds with directory URLs."""
+    stem = page.removesuffix(".md")
+    return "index.html" if stem == "index" else f"{stem.removesuffix('/index')}/index.html"
 
 
 def nav_pages(config_text: str) -> list[str]:
@@ -72,14 +74,52 @@ def check_nav(config_text: str, docs_dir: Path) -> list[str]:
     return errors
 
 
-def check_site(site_dir: Path) -> list[str]:
-    """Report required files that are missing and repository files that leaked in."""
-    errors = [f"missing from site: {name}" for name in REQUIRED_SITE_FILES if not (site_dir / name).is_file()]
+def site_url(config_text: str) -> str:
+    """Return the configured site_url with a trailing slash, or an empty string."""
+    match = SITE_URL_RE.search(config_text)
+    return match.group(1).rstrip("/") + "/" if match else ""
+
+
+def _target_exists(site_dir: Path, relative: str) -> bool:
+    path = site_dir / unquote(relative)
+    return path.is_file() or (path.is_dir() and (path / "index.html").is_file())
+
+
+def check_links(site_dir: Path, base_url: str) -> list[str]:
+    """Check root-absolute URLs against the base path and absolute self-links against the site."""
+    base_path = urlsplit(base_url).path
+    errors: list[str] = []
+    for html in sorted(site_dir.rglob("*.html")):
+        text = html.read_text(encoding="utf-8", errors="replace")
+        for raw in URL_ATTR_RE.findall(text):
+            url = raw.strip("\"'")
+            if url.startswith("/") and not url.startswith("//") and not url.startswith(base_path):
+                errors.append(f"{html.relative_to(site_dir)}: root-absolute URL outside {base_path}: {url}")
+            elif url.startswith(base_url):
+                relative = urlsplit(url[len(base_url):]).path
+                if relative and not _target_exists(site_dir, relative):
+                    errors.append(f"{html.relative_to(site_dir)}: self-link without target: {url}")
+    return errors
+
+
+def check_site(site_dir: Path, pages: list[str] | None = None, base_url: str = "") -> list[str]:
+    """Report missing nav pages, assets and search index, leaked files and bad links."""
+    wanted = [page_html(p) for p in pages or []] + list(REQUIRED_SITE_FILES)
+    errors = [f"missing from site: {name}" for name in wanted if not (site_dir / name).is_file()]
     errors += [
         f"must not be published: {path.relative_to(site_dir)}"
         for name in FORBIDDEN_SITE_NAMES
         for path in site_dir.rglob(name)
     ]
+    try:
+        index = json.loads((site_dir / "search.json").read_text(encoding="utf-8"))
+        items = index.get("items") if isinstance(index, dict) else index
+        if not items:
+            errors.append("search index is empty")
+    except (OSError, ValueError):
+        errors.append("search index is missing or not valid JSON")
+    if base_url:
+        errors += check_links(site_dir, base_url)
     return errors
 
 
@@ -91,8 +131,9 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--site-dir", type=Path, default=Path("site"))
     args = parser.parse_args(argv)
     try:
-        errors = check_nav(args.config.read_text(encoding="utf-8"), args.docs_dir)
-        errors += check_site(args.site_dir)
+        config = args.config.read_text(encoding="utf-8")
+        errors = check_nav(config, args.docs_dir)
+        errors += check_site(args.site_dir, nav_pages(config), site_url(config))
     except OSError as exc:
         log("error", str(exc))
         return 1

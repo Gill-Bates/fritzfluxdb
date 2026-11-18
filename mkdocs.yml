@@ -15,13 +15,13 @@ use_directory_urls: true
 exclude_docs: |
   AGENTS.md
 
-# Zensical checks internal links and their anchors; any warning fails
-# `zensical build --strict`. The MkDocs nav and absolute-link checks have no
-# equivalent.
+# Keys Zensical 0.1.2 reads (config.py): both are on by default and are set
+# explicitly so the checks cannot be lost; `--strict` turns any warning into a
+# failure. The MkDocs nav and absolute-link checks have no equivalent here;
+# tools/docs_site_check.py covers the nav.
 validation:
-  links:
-    not_found: warn
-    anchors: warn
+  invalid_links: true
+  invalid_link_anchors: true
 
 theme:
   variant: classic

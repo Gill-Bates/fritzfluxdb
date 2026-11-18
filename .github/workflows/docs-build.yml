@@ -19,6 +19,10 @@ on:
       - 'LICENSE'
       - 'pyproject.toml'
       - 'tools/pyproject-deps.py'
+      - 'tools/docs_site_check.py'
+      - 'tools/trivy_report.py'
+      - 'tests/test_docs_site_check.py'
+      - '.trivyignore'
       - '.github/workflows/docs-build.yml'
   pull_request:
     branches:
@@ -30,6 +34,10 @@ on:
       - 'LICENSE'
       - 'pyproject.toml'
       - 'tools/pyproject-deps.py'
+      - 'tools/docs_site_check.py'
+      - 'tools/trivy_report.py'
+      - 'tests/test_docs_site_check.py'
+      - '.trivyignore'
       - '.github/workflows/docs-build.yml'
   workflow_dispatch:
   # A release can ship a changelog bump that never touches docs/** on its own, and a
@@ -102,6 +110,23 @@ jobs:
           pip install -r "$RUNNER_TEMP/requirements-docs.txt"
           python -m pip check
 
+      # The exact package set the site is built with; security-scan scans this file.
+      # Trivy's pip analyzer only recognizes a file named exactly requirements.txt.
+      - name: Freeze the build environment
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/docs-scan"
+          python -m pip freeze --all > "$RUNNER_TEMP/docs-scan/requirements.txt"
+          cat "$RUNNER_TEMP/docs-scan/requirements.txt"
+
+      - name: Upload frozen docs environment
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: docs-frozen-requirements
+          path: ${{ runner.temp }}/docs-scan/requirements.txt
+          retention-days: 1
+          if-no-files-found: error
+
       # mkdocs.yml's nav references both files; they live at the repository root and
       # are mirrored into docs/ for the build (untracked, see .gitignore).
       - name: Copy root files into the docs tree
@@ -133,7 +158,8 @@ jobs:
       # would only produce reruns. The site's own base URL is excluded because every
       # page carries it as its canonical link: checking it over the network tests the
       # currently deployed site, not this build, and fails before the first deploy.
-      # Internal link integrity is covered by the strict Zensical build above.
+      # Internal link integrity is covered by the strict Zensical build above, and
+      # absolute self-links (canonical URLs excluded here) by tools/docs_site_check.py.
       - name: Check links
         uses: lycheeverse/lychee-action@e7477775783ea5526144ba13e8db5eec57747ce8 # v2.9.0
         with:
@@ -160,11 +186,12 @@ jobs:
           path: ./site
 
   # The docs extra pins only direct dependencies, so the resolved transitive set is only
-  # known after an install. This job installs the same declared group into a venv and
-  # scans the frozen result; Trivy reports on what a manifest names, and the frozen list
-  # adds the transitive packages.
+  # known after an install. The build job freezes it and this job scans that file.
+  # Because it needs build, a failed or skipped build also skips the scan; deploy and
+  # report-failure still see the failure through their own needs.
   security-scan:
     name: Scan docs dependencies
+    needs: [build]
     # workflow_run fires on every conclusion of the release workflow, including manual
     # test dispatches (push=false, one architecture). Only a successful tag push (v*)
     # always publishes, so only that rebuilds the docs; other triggers are unaffected.
@@ -190,27 +217,13 @@ jobs:
       - name: Agent banner and job temp directory
         run: python3 .github/scripts/ci_job_setup.py
 
-      - name: Set up Python
-        uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v6.2.0
+      # The scan covers the build job's frozen package set, so it scans exactly what the
+      # published HTML was built with, not a second resolution that could differ.
+      - name: Download frozen docs environment
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
-          python-version: '3.13'
-          cache: pip
-          cache-dependency-path: pyproject.toml
-
-      # Trivy's pip analyzer recognizes only a file named exactly requirements.txt (measured
-      # with Trivy 0.70.0, not on a differently named file). It lives in its own scan
-      # directory below the job temp directory, outside the repository tree.
-      - name: Freeze the resolved docs environment
-        run: |
-          set -euo pipefail
-          venv="$RUNNER_TEMP/docs-venv"
-          python tools/pyproject-deps.py docs > "$RUNNER_TEMP/requirements-docs.txt"
-          python -m venv "$venv"
-          "$venv/bin/python" -m pip install -r "$RUNNER_TEMP/requirements-docs.txt"
-          "$venv/bin/python" -m pip check
-          mkdir -p "$RUNNER_TEMP/docs-scan"
-          "$venv/bin/python" -m pip freeze --all > "$RUNNER_TEMP/docs-scan/requirements.txt"
-          cat "$RUNNER_TEMP/docs-scan/requirements.txt"
+          name: docs-frozen-requirements
+          path: ${{ runner.temp }}/docs-scan
 
       - name: Trivy scan docs dependencies
         id: trivy
