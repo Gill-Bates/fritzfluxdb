@@ -1,5 +1,7 @@
 ## [v2.0.1] - 2026-xx-xx
 
+- ``Security`` An unexpected session ID in a FRITZ!Box login response is no longer written to the log, and an invalid or excessive login block time reported by the box can no longer stall logins indefinitely (waits are capped at one hour).
+
 
 
 <details markdown="1">

@@ -151,7 +151,7 @@ def avm_temp_map(
     if int_value > input_max:
         return float(output_max)
 
-    return float((int_value-input_min)/(input_max-input_min)*(output_max-output_min)+output_min)
+    return (int_value-input_min)/(input_max-input_min)*(output_max-output_min)+output_min
 
 
 def get_ha_temperature(data) -> float:
@@ -159,7 +159,7 @@ def get_ha_temperature(data) -> float:
     if in_test_mode():
         return random.randrange(220, 250) / 10
 
-    return float((int(grab(data, "temperature.celsius")) + int(grab(data, "temperature.offset")))/10)
+    return (int(grab(data, "temperature.celsius")) + int(grab(data, "temperature.offset")))/10
 
 
 def get_ha_powermeter_power(data) -> float:
@@ -167,7 +167,7 @@ def get_ha_powermeter_power(data) -> float:
     if in_test_mode():
         return random.randrange(300_000, 500_000) / 1000
 
-    return float(int(grab(data, "powermeter.power")) / 1000)
+    return int(grab(data, "powermeter.power")) / 1000
 
 
 def get_ha_powermeter_energy(data) -> float:
@@ -184,7 +184,7 @@ def get_ha_powermeter_voltage(data) -> float:
     if in_test_mode():
         return random.randrange(225_000, 234_000) / 1000
 
-    return float(int(grab(data, "powermeter.voltage")) / 1000)
+    return int(grab(data, "powermeter.voltage")) / 1000
 
 
 def get_ha_switch_state(data) -> int:
@@ -414,7 +414,7 @@ lua_services.append(
                     "type": float,
                     "tags_function": _device_tags,
                     "value_function": lambda data: (
-                        float(int(grab(data, "temperature.celsius")) / 10)
+                        int(grab(data, "temperature.celsius")) / 10
                     ),
                     "exclude_filter_function": lambda data: grab(data, "temperature.celsius") is None
                 }
@@ -426,7 +426,7 @@ lua_services.append(
                     "type": float,
                     "tags_function": _device_tags,
                     "value_function": lambda data: (
-                        float(int(grab(data, "temperature.offset")) / 10)
+                        int(grab(data, "temperature.offset")) / 10
                     ),
                     "exclude_filter_function": lambda data: grab(data, "temperature.offset") is None
                 }

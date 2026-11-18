@@ -13,6 +13,7 @@ from collections.abc import Callable, Mapping, Sequence
 from datetime import UTC, datetime
 from typing import Any
 
+from app.fritzbox.model import FritzBoxLinkTypes
 from app.fritzbox.tr064.exceptions import (
     TR064ActionNotFound,
     TR064ClientClosed,
@@ -347,7 +348,7 @@ class WanWatcher:
             self._tracker = self._tracker_factory(link_type)
             self._window = None
             self._window_refreshed_mono = None
-        is_dsl = link_type == "DSL"
+        is_dsl = link_type == FritzBoxLinkTypes.DSL
         counters = {"attempted": 0, "failed": 0}
 
         previous_call = self._status_call

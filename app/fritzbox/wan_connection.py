@@ -8,7 +8,7 @@
 
 import re
 
-from app.fritzbox.model import FritzBoxModel
+from app.fritzbox.model import FritzBoxLinkTypes, FritzBoxModel
 from app.fritzbox.tr064.exceptions import (
     TR064ActionNotFound,
     TR064HttpForbidden,
@@ -41,7 +41,7 @@ def resolve_status_call(session, link_type: str | None) -> tuple[str, str]:
         # Reading the default route needs configuration rights that a monitoring user may lack.
         pass
     # Older boxes without Layer3Forwarding keep their compatibility path; failures are retried.
-    if link_type == "DSL":
+    if link_type == FritzBoxLinkTypes.DSL:
         return DSL_STATUS_CALL
     if session.has_action("WANIPConnection:1", "GetInfo"):
         return "WANIPConnection:1", "GetInfo"

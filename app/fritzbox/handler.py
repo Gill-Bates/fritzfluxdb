@@ -7,6 +7,7 @@
 import asyncio
 import hashlib
 import logging
+import math
 import re
 import ssl
 import threading
@@ -73,6 +74,8 @@ REJECTION_ACCESS_DISABLED = "TR-064 access is disabled"
 
 # Pause between failed logins, so concurrent services do not hammer the box and trigger its login block.
 LOGIN_RETRY_COOLDOWN = 30.0
+# Cap for a box-reported login block: the box escalates in minutes, so one hour bounds a bogus value.
+MAX_LOGIN_BLOCK_SECONDS = 3600.0
 # Upper bound for the pause between TR-064 reconnects while the box is unreachable.
 MAX_RECONNECT_DELAY = 300.0
 # After a reconnect proved the login valid, all-401 cycles are classified as missing action rights
@@ -1090,7 +1093,7 @@ class FritzBoxLuaHandler(FritzBoxHandlerBase):
             return
 
         if sid != NULL_SID:
-            log.error(f"Unexpected {self.name} session id: {sanitize_text(sid)}")
+            log.error(f"Unexpected {self.name} session id in login response")
             return
 
         if not challenge:
@@ -1122,13 +1125,20 @@ class FritzBoxLuaHandler(FritzBoxHandlerBase):
         if block_time and block_time != "0":
             self._block_login()
             try:
-                self._block_seconds = float(block_time)
+                seconds = float(block_time)
             except ValueError:
-                self._block_seconds = 0.0
+                seconds = math.nan
+            if math.isfinite(seconds) and seconds >= 0:
+                seconds = min(seconds, MAX_LOGIN_BLOCK_SECONDS)
+                shown = f"'{seconds:g}' seconds"
+            else:
+                seconds = 0.0
+                shown = "an invalid duration"
+            self._block_seconds = seconds
             if not self._block_logged:
                 self._block_logged = True
                 log.error(f"Failed to connect to {self.name} '{self.config.hostname}'. "
-                          f"Logins blocked for '{block_time}' seconds!")
+                          f"Logins blocked for {shown}!")
             return
 
         if sid == NULL_SID:

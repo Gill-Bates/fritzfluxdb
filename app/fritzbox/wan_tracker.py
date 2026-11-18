@@ -15,6 +15,7 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict
 
+from app.fritzbox.model import FritzBoxLinkTypes
 from app.fritzbox.wan_cause import (
     ERROR_FORCED_DISCONNECT,
     START_JITTER_S,
@@ -91,7 +92,7 @@ class WanInterruptionTracker:
     def __init__(
         self, link_type: str, start_jitter_s: float = START_JITTER_S, poll_interval_s: float = 5.0
     ) -> None:
-        self._is_dsl = link_type == "DSL"
+        self._is_dsl = link_type == FritzBoxLinkTypes.DSL
         self._max_gap_s = max_observation_gap_s(poll_interval_s)
         self._jitter = start_jitter_s
         self._link: _Base | None = None

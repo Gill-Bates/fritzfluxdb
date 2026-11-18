@@ -170,19 +170,19 @@ def _read_service(element: Element, origin: Origin) -> ServiceInfo | None:
     if not all(values.values()):
         log.debug("Skipping incomplete service entry in %s", origin)
         return None
-    service_id = values["serviceId"] or ""
+    service_id = values["serviceId"]
     key = service_id.rsplit(":", 1)[-1]
     if not key:
         log.debug("Skipping service entry with empty key in %s", origin)
         return None
-    if len(service_id) > MAX_NAME_LENGTH or len(values["serviceType"] or "") > MAX_NAME_LENGTH:
+    if len(service_id) > MAX_NAME_LENGTH or len(values["serviceType"]) > MAX_NAME_LENGTH:
         raise TR064ProtocolError("serviceId or serviceType too long")
     return ServiceInfo(
         key=key,
-        service_type=values["serviceType"] or "",
+        service_type=values["serviceType"],
         service_id=service_id,
-        control_url=validate_path(values["controlURL"] or ""),
-        scpd_url=validate_path(values["SCPDURL"] or ""),
+        control_url=validate_path(values["controlURL"]),
+        scpd_url=validate_path(values["SCPDURL"]),
         origin=origin,
     )
 
@@ -242,7 +242,7 @@ def build_discovery(igd_document: bytes | None, tr64_document: bytes | None) -> 
         services[key] = info
     if len(services) > MAX_SERVICES:
         raise TR064ProtocolError(f"more than {MAX_SERVICES} services discovered")
-    return Discovery(services=dict(services))
+    return Discovery(services=services)
 
 
 def parse_scpd(data: bytes) -> Scpd:

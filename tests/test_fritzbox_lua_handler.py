@@ -488,6 +488,29 @@ def test_malformed_session_id_is_not_accepted(monkeypatch, sid):
     assert handler.auth_failed is False
 
 
+def test_unexpected_session_id_is_not_logged(monkeypatch, caplog):
+    handler = make_handler()
+    with caplog.at_level(logging.DEBUG):
+        _login_with(handler, monkeypatch, _session_info("0123456789abcdef"))
+    assert handler.sid is None
+    assert "0123456789abcdef" not in caplog.text
+    assert "Unexpected" in caplog.text
+
+
+@pytest.mark.parametrize(("block", "expected"), [
+    ("120", 120.0), ("inf", 0.0), ("nan", 0.0), ("-5", 0.0), ("1e999", 0.0),
+    ("999999", 3600.0), ("abc\nFORGED", 0.0),
+])
+def test_block_time_is_validated_and_capped(monkeypatch, caplog, block, expected):
+    handler = make_handler()
+    body = f"<SessionInfo><SID>{'0' * 16}</SID><BlockTime>{block}</BlockTime></SessionInfo>".encode()
+    with caplog.at_level(logging.DEBUG):
+        _login_with(handler, monkeypatch, LOGIN_CHALLENGE, body)
+    assert handler._block_seconds == expected
+    assert "FORGED" not in caplog.text
+    assert "inf" not in caplog.text.replace("info", "")
+
+
 def test_null_session_id_is_a_credentials_rejection(monkeypatch):
     handler = make_handler()
     _login_with(handler, monkeypatch, LOGIN_CHALLENGE, _session_info("0" * 16))
