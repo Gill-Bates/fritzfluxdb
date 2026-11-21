@@ -326,6 +326,8 @@ async def _run(args: argparse.Namespace, admin: QuestDBAdmin) -> None:
                 parameters = await admin.query(
                     "(SHOW PARAMETERS) WHERE property_path = 'http.security.readonly';"
                 )
+            except AdminConfigError:
+                raise
             except AdminError:
                 parameters = []
             if parameters:
