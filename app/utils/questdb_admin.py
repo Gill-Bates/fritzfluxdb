@@ -19,8 +19,19 @@ from datetime import date
 from pathlib import Path
 
 import httpx
+from gillbates_questdb_client import (
+    AsyncQuestDBClient,
+    QuestDBConfig,
+    QuestDBConfigError,
+    QuestDBError,
+    QuestDBQueryError,
+    format_exception,
+    parse_version,
+    quote_ident,
+    quote_literal,
+)
 
-from app.influxdb.config import (
+from app.influxdb.config import import (
     QUESTDB_DOWNSAMPLING_SCHEMA_VERSION,
     QUESTDB_DOWNSAMPLING_STATE_TABLE,
     InfluxDBConfig,
@@ -29,13 +40,6 @@ from app.influxdb.handler import (
     _QUESTDB_TAG_COLUMNS,
     QUESTDB_METRICS_TABLE_SUFFIX,
     QUESTDB_MINIMUM_MAJOR_VERSION,
-    QuestDBVersionError,
-    _format_exc,
-    _format_url_host,
-    _questdb_identifier,
-    _questdb_literal,
-    parse_questdb_version,
-    questdb_exec_query_string,
     questdb_expected_columns,
 )
 from app.utils.settings import reveal
@@ -48,7 +52,7 @@ _BOX_TABLE = re.compile(rf"fritzbox(?:_[A-Za-z0-9_]+)?{re.escape(QUESTDB_METRICS
 _ROLLUP_VIEW = re.compile(r".+_rollup_[0-9]+[mhd]_g[0-9]{2}_v[0-9]+\Z")
 _STATE_TABLE_SQL = (
     "SELECT table_name FROM tables() "
-    f"WHERE table_name = {_questdb_literal(QUESTDB_DOWNSAMPLING_STATE_TABLE)};"
+    f"WHERE table_name = {quote_literal(QUESTDB_DOWNSAMPLING_STATE_TABLE)};"
 )
 
 
@@ -62,53 +66,45 @@ class AdminConfigError(AdminError):
 
 class QuestDBAdmin:
     def __init__(self, config: InfluxDBConfig):
-        scheme = "https" if config.tls_enabled else "http"
-        host = _format_url_host(config.hostname)
-        auth = (config.username, reveal(config.password)) if config.username else None
         self.confirmed_ids: dict[str, object] = {}
-        self.client = httpx.AsyncClient(
-            base_url=f"{scheme}://{host}:{config.port}",
-            auth=auth,
-            timeout=20,
-            verify=config.verify_tls,
+        self.questdb = AsyncQuestDBClient(
+            QuestDBConfig(
+                host=config.hostname,
+                port=config.port,
+                https=config.tls_enabled,
+                username=config.username,
+                password=reveal(config.password),
+                verify_certificate=config.verify_tls,
+                timeout=20,
+            ),
+            minimum_major=QUESTDB_MINIMUM_MAJOR_VERSION,
         )
 
     async def __aenter__(self):
         return self
 
     async def __aexit__(self, *_):
-        await self.client.aclose()
+        await self.questdb.aclose()
 
     async def query(self, sql: str) -> list[list]:
+        """Run one statement; the single place where package errors become admin errors (78 vs 1)."""
         try:
-            response = await self.client.get("/exec", params=questdb_exec_query_string(sql))
-            response.raise_for_status()
-            data = response.json()
-        except httpx.HTTPStatusError as exc:
-            if exc.response.status_code in (401, 403):
-                raise AdminConfigError(
-                    f"QuestDB rejected the configured credentials or their permissions "
-                    f"(HTTP {exc.response.status_code})"
-                ) from exc
-            raise AdminError(f"QuestDB request failed: {_format_exc(exc)}") from exc
-        except (httpx.HTTPError, ValueError) as exc:
-            raise AdminError(f"QuestDB request failed: {_format_exc(exc)}") from exc
-        if not isinstance(data, dict):
-            raise AdminError("QuestDB returned an invalid SQL response")
-        if data.get("error"):
-            raise AdminError(f"QuestDB rejected SQL: {data['error']}")
-        dataset = data.get("dataset")
-        if dataset is None:
-            return []
-        if not isinstance(dataset, list) or not all(isinstance(row, list) for row in dataset):
-            raise AdminError("QuestDB returned an invalid dataset")
-        return dataset
+            return await self.questdb.execute(sql)
+        except QuestDBConfigError as exc:
+            raise AdminConfigError(str(exc)) from exc
+        except QuestDBQueryError as exc:
+            raise AdminError(f"QuestDB rejected SQL: {exc}") from exc
+        except (httpx.HTTPError, QuestDBError) as exc:
+            raise AdminError(f"QuestDB request failed: {format_exception(exc)}") from exc
 
     async def current_ids(self, names: list[str]) -> dict[str, object]:
         """QuestDB ids of the named tables or views right now; None for a missing object."""
-        rows = await self.query("SELECT table_name, id FROM tables();")
-        found = {str(row[0]): row[1] for row in rows if len(row) > 1}
-        return {name: found.get(name) for name in names}
+        try:
+            return await self.questdb.table_ids(names)
+        except QuestDBConfigError as exc:
+            raise AdminConfigError(str(exc)) from exc
+        except (httpx.HTTPError, QuestDBError) as exc:
+            raise AdminError(f"QuestDB request failed: {format_exception(exc)}") from exc
     async def is_fritzfluxdb_table(self, table: str) -> bool:
         """Check the table schema as a supplement to the ownership record.
 
@@ -116,7 +112,7 @@ class QuestDBAdmin:
         the application writes. This does not prove ownership on its own; inventory()
         additionally requires the status row the application writes for the table.
         """
-        rows = await self.query(f"SELECT \"column\" FROM table_columns({_questdb_literal(table)});")
+        rows = await self.query(f"SELECT \"column\" FROM table_columns({quote_literal(table)});")
         columns = {str(row[0]) for row in rows if row}
         metric_columns = set(questdb_expected_columns()) - set(_QUESTDB_TAG_COLUMNS)
         return "box" in columns and bool(columns & metric_columns)
@@ -142,7 +138,7 @@ class QuestDBAdmin:
         if QUESTDB_DOWNSAMPLING_STATE_TABLE in table_ids:
             state_rows = await self.query(
                 "SELECT measurement, table_id FROM "
-                f"{_questdb_identifier(QUESTDB_DOWNSAMPLING_STATE_TABLE)} "
+                f"{quote_ident(QUESTDB_DOWNSAMPLING_STATE_TABLE)} "
                 "LATEST ON timestamp PARTITION BY measurement;"
             )
             recorded = {str(row[0]): row[1] for row in state_rows if len(row) > 1}
@@ -169,14 +165,12 @@ class QuestDBAdmin:
 
     async def partitions(self, table: str) -> list[tuple[str, str, int]]:
         await self.require_box(table)
-        rows = await self.query(
-            "SELECT partitionBy, name, numRows FROM "
-            f"table_partitions({_questdb_literal(table)});"
-        )
         try:
-            return [(str(kind), str(name), int(count)) for kind, name, count in rows]
-        except (ValueError, TypeError) as exc:
-            raise AdminError("QuestDB returned an invalid partition listing") from exc
+            return await self.questdb.partitions(table)
+        except QuestDBConfigError as exc:
+            raise AdminConfigError(str(exc)) from exc
+        except (httpx.HTTPError, QuestDBError) as exc:
+            raise AdminError(f"QuestDB request failed: {format_exception(exc)}") from exc
 
 
 def _partial_failure(exc: AdminError, done: list[str], remaining: list[str]) -> AdminError:
@@ -375,7 +369,7 @@ async def _run(args: argparse.Namespace, admin: QuestDBAdmin) -> None:
                     await _drop_box(admin, box, all_views[box], record_disabled=False)
                     done.append(f"box table {box}")
                 if state:
-                    await admin.query(f"DROP TABLE {_questdb_identifier(QUESTDB_DOWNSAMPLING_STATE_TABLE)};")
+                    await admin.query(f"DROP TABLE {quote_ident(QUESTDB_DOWNSAMPLING_STATE_TABLE)};")
             except AdminError as exc:
                 raise _partial_failure(exc, done, [item for item in planned if item not in done]) from exc
             print("FritzFluxDB tables and rollups dropped")
@@ -440,8 +434,8 @@ async def _run(args: argparse.Namespace, admin: QuestDBAdmin) -> None:
         try:
             for name, _ in selected:
                 await admin.query(
-                    f"ALTER TABLE {_questdb_identifier(args.table)} "
-                    f"DROP PARTITION LIST {_questdb_literal(name)};"
+                    f"ALTER TABLE {quote_ident(args.table)} "
+                    f"DROP PARTITION LIST {quote_literal(name)};"
                 )
                 dropped.append(name)
         except AdminError as exc:
@@ -453,7 +447,7 @@ async def _run(args: argparse.Namespace, admin: QuestDBAdmin) -> None:
         if dropped:
             try:
                 for name in view_names:
-                    await admin.query(f"REFRESH MATERIALIZED VIEW {_questdb_identifier(name)} FULL;")
+                    await admin.query(f"REFRESH MATERIALIZED VIEW {quote_ident(name)} FULL;")
                     refreshed.append(name)
                 if view_names:
                     print("Full refresh queued for dependent views; refresh runs asynchronously")
@@ -489,7 +483,7 @@ async def _run(args: argparse.Namespace, admin: QuestDBAdmin) -> None:
             return
         await _ensure_unchanged(admin, [args.table, *selected])
         for name in selected:
-            await admin.query(f"REFRESH MATERIALIZED VIEW {_questdb_identifier(name)} {suffix};")
+            await admin.query(f"REFRESH MATERIALIZED VIEW {quote_ident(name)} {suffix};")
         print("Refresh queued; check `list` for asynchronous completion")
 
 
@@ -497,10 +491,10 @@ def _require_supported_version(build: list[list]) -> None:
     """Raise AdminConfigError for a QuestDB older than the daemon supports; an unreadable build() is skipped."""
     if not build or not build[0]:
         return
-    try:
-        major = parse_questdb_version(str(build[0][0]))[0]
-    except QuestDBVersionError:
+    version = parse_version(build[0][0])
+    if version is None:
         return
+    major = version[0]
     if major < QUESTDB_MINIMUM_MAJOR_VERSION:
         raise AdminConfigError(
             f"QuestDB {major} is not supported; version {QUESTDB_MINIMUM_MAJOR_VERSION} or newer is required"
@@ -514,10 +508,10 @@ def _require_managed_views(table: str, views: list[tuple]) -> None:
 
 def _disabled_state_sql(table: str) -> str:
     return (
-        f"INSERT INTO {_questdb_identifier(QUESTDB_DOWNSAMPLING_STATE_TABLE)} "
+        f"INSERT INTO {quote_ident(QUESTDB_DOWNSAMPLING_STATE_TABLE)} "
         "(timestamp, measurement, profile, schema_version, enabled, raw_days, "
         "rollup_interval, rollup_view, raw_ttl_managed) VALUES ("
-        f"now(), {_questdb_literal(table)}, 'disabled', "
+        f"now(), {quote_literal(table)}, 'disabled', "
         f"{QUESTDB_DOWNSAMPLING_SCHEMA_VERSION}, false, 0, '', '', false);"
     )
 
@@ -530,23 +524,23 @@ async def _state_repair_pending(admin: QuestDBAdmin, table: str) -> bool:
     """
     if not _BOX_TABLE.fullmatch(table):
         return False
-    if await admin.query(f"SELECT table_name FROM tables() WHERE table_name = {_questdb_literal(table)};"):
+    if await admin.query(f"SELECT table_name FROM tables() WHERE table_name = {quote_literal(table)};"):
         return False
     if not await admin.query(_STATE_TABLE_SQL):
         return False
     latest = await admin.query(
-        f"SELECT enabled FROM {_questdb_identifier(QUESTDB_DOWNSAMPLING_STATE_TABLE)} "
-        f"WHERE measurement = {_questdb_literal(table)} LATEST ON timestamp PARTITION BY measurement;"
+        f"SELECT enabled FROM {quote_ident(QUESTDB_DOWNSAMPLING_STATE_TABLE)} "
+        f"WHERE measurement = {quote_literal(table)} LATEST ON timestamp PARTITION BY measurement;"
     )
     return bool(latest) and latest[0][0] is True
 
 
 async def _drop_box(admin: QuestDBAdmin, table: str, views: list[tuple], *, record_disabled: bool) -> None:
     operations = [
-        (f"DROP MATERIALIZED VIEW {name}", f"DROP MATERIALIZED VIEW {_questdb_identifier(name)};")
+        (f"DROP MATERIALIZED VIEW {name}", f"DROP MATERIALIZED VIEW {quote_ident(name)};")
         for name, *_ in views
     ]
-    operations.append((f"DROP TABLE {table}", f"DROP TABLE {_questdb_identifier(table)};"))
+    operations.append((f"DROP TABLE {table}", f"DROP TABLE {quote_ident(table)};"))
     if record_disabled:
         # Looked up before the first change, so every read happens while nothing is modified.
         state = await admin.query(_STATE_TABLE_SQL)

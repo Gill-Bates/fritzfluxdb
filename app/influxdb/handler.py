@@ -10,6 +10,7 @@ import logging
 import re
 import time
 import zlib
+from collections.abc import Awaitable, Callable
 from contextlib import suppress
 from datetime import UTC, datetime
 from email.utils import parsedate_to_datetime
@@ -17,9 +18,20 @@ from enum import StrEnum
 from ipaddress import ip_address
 from logging import LogRecord
 from typing import ClassVar
-from urllib.parse import quote_plus
 
 import httpx
+from gillbates_questdb_client import (
+    AsyncQuestDBClient,
+    QuestDBConfig,
+    QuestDBConfigError,
+    QuestDBError,
+    compact_ident,
+    db_ttl_days,
+    format_exception,
+    is_permanent_failure,
+    quote_ident,
+    quote_literal,
+)
 
 from app.fritzbox.config import FritzBoxConfig
 from app.influxdb.config import (
@@ -55,10 +67,6 @@ class DatabaseConfigError(PermanentConfigError):
     """The database rejects the configuration (credentials, database, version); restarting cannot fix it."""
 
 
-class QuestDBVersionError(DatabaseConfigError):
-    """The QuestDB server is older than the supported minimum."""
-
-
 def _raise_for_rejected_config(resp: httpx.Response, label: str, *, missing_target: str | None) -> None:
     """Classify the answers that no retry can change: 401/403 always, 404 where a target must exist."""
     if resp.status_code in (401, 403):
@@ -69,39 +77,17 @@ def _raise_for_rejected_config(resp: httpx.Response, label: str, *, missing_targ
         raise DatabaseConfigError(f"{label}: {missing_target} not found (HTTP 404): {resp.text[:200]}")
 
 
-def parse_questdb_version(build_info: str) -> tuple[int, int, int]:
-    """Extract (major, minor, patch) from the build() text, e.g. 'Build Information: QuestDB 10.0.1, JDK 25, ...'."""
-    match = re.search(r"QuestDB\s+(\d+)\.(\d+)(?:\.(\d+))?", build_info)
-    if match is None:
-        raise QuestDBVersionError(f"Unrecognized QuestDB build information: {build_info!r}")
-    return int(match.group(1)), int(match.group(2)), int(match.group(3) or 0)
+async def _as_database_config_error[T](awaitable: Awaitable[T]) -> T:
+    """The one place where the package's permanent QuestDB failures become the app's exit-78 error.
 
-
-def _is_permanent_questdb_failure(exc: BaseException) -> bool:
-    """A failure that repeating the identical statement cannot fix."""
-    if isinstance(exc, QuestDBStatementTooLongError):
-        return True
-    if isinstance(exc, httpx.HTTPStatusError):
-        # Size-related rejections of an unchanged statement; other 4xx may be transient (WAL lag).
-        return exc.response.status_code in {413, 414, 431}
-    return False
-
-
-def _format_exc(exc: BaseException) -> str:
-    """Render an exception for logging, including its type name.
-
-    Several httpx transport errors (e.g. ConnectError, ReadTimeout) have an
-    empty str(), which would otherwise produce uninformative messages like
-    'unreachable: '. Always surface the exception class so the cause is visible.
+    QuestDBConfigError (HTTP 401/403) and its QuestDBVersionError subclass (server too old or unreadable)
+    are permanent; every other package or transport error keeps its class and is never a config error.
     """
-    if isinstance(exc, httpx.HTTPStatusError):
-        # str() of this error embeds the full request URL, i.e. the whole SQL statement.
-        response = exc.response
-        return f"{type(exc).__name__}: HTTP {response.status_code} {response.reason_phrase}".rstrip()
-    text = str(exc)
-    if len(text) > 300:
-        text = text[:300] + "..."
-    return f"{type(exc).__name__}: {text}" if text else type(exc).__name__
+    try:
+        return await awaitable
+    except QuestDBConfigError as exc:
+        raise DatabaseConfigError(str(exc)) from exc
+
 
 log = get_logger()
 
@@ -264,76 +250,8 @@ QUESTDB_STATE_METRICS = frozenset({
 _QUESTDB_ROLLUP_DIMENSIONS = ("box", "id", "name", "vpn_type")
 
 
-# QuestDB's /exec accepts GET only, so a statement travels in the URL. Proxies commonly reject
-# header sizes of 8-16 KiB (HTTP 414/431); the cap stays below 8 KiB and fails fast instead.
-QUESTDB_MAX_QUERY_URL_BYTES = 8_000
-
-
-class QuestDBStatementTooLongError(ValueError):
-    """The URL-encoded statement exceeds QUESTDB_MAX_QUERY_URL_BYTES."""
-
-
-def questdb_exec_query_string(query: str) -> str:
-    """Encode a statement as the /exec query string, keeping SQL punctuation unescaped."""
-    encoded = "query=" + quote_plus(query, safe="(),*")
-    # The limit covers the whole request target ("/exec?" + parameters), which is what a proxy counts.
-    target_length = len("/exec?") + len(encoded)
-    if target_length > QUESTDB_MAX_QUERY_URL_BYTES:
-        # A group that outgrows the limit fails loudly instead of being split silently: splitting
-        # would change which view holds a column and break the schema contract.
-        raise QuestDBStatementTooLongError(
-            f"request is {target_length} bytes URL-encoded, limit is {QUESTDB_MAX_QUERY_URL_BYTES}"
-        )
-    return encoded
-
-
-def _questdb_identifier(name: str) -> str:
-    return '"' + str(name).replace('"', '""') + '"'
-
-
-_QUESTDB_PLAIN_IDENTIFIER = re.compile(r"[a-z][a-z0-9_]*\Z")
-_QUESTDB_KEYWORDS = frozenset({
-    "all", "and", "as", "asc", "between", "by", "case", "cast", "create", "desc", "distinct", "else",
-    "end", "from", "group", "in", "is", "join", "left", "like", "limit", "not", "null", "on", "or",
-    "order", "select", "table", "then", "union", "when", "where", "with",
-})
-
-
-def _questdb_compact_identifier(name: str) -> str:
-    """Leave a plain lowercase name unquoted: each quote costs three bytes in the URL."""
-    if _QUESTDB_PLAIN_IDENTIFIER.match(name) and name not in _QUESTDB_KEYWORDS:
-        return name
-    return _questdb_identifier(name)
-
-
-def _questdb_literal(value: str) -> str:
-    return "'" + str(value).replace("'", "''") + "'"
-
-
 def _questdb_metric_name(name: str) -> str:
     return str(name).replace(".", "_")
-
-
-_QUESTDB_TTL_UNIT_HOURS = {"HOUR": 1, "DAY": 24, "WEEK": 24 * 7, "MONTH": 24 * 30, "YEAR": 24 * 365}
-
-
-def _questdb_ttl_days(ttl_value, ttl_unit) -> int | None:
-    """Whole days covered by a QuestDB TTL, or None for an unsupported unit.
-
-    Months and years are approximated (30/365 days); the value is only used to compare
-    and publish the effective raw history, never to compute a retention boundary.
-    """
-    try:
-        value = int(ttl_value or 0)
-    except (TypeError, ValueError):
-        return None
-    if value <= 0:
-        return 0
-
-    hours_per_unit = _QUESTDB_TTL_UNIT_HOURS.get(str(ttl_unit or "").upper().rstrip("S"))
-    if hours_per_unit is None:
-        return None
-    return value * hours_per_unit // 24
 
 
 def _collect_metric_columns(metric_name: str, metric_params: object, columns: dict[str, str]) -> None:
@@ -383,17 +301,17 @@ def questdb_event_columns() -> dict[str, str]:
 
 
 def questdb_events_ddl(table_name: str) -> str:
-    keys = ", ".join(_questdb_identifier(key) for key in QUESTDB_EVENT_UPSERT_KEYS)
-    tag_columns = ", ".join(f"{_questdb_identifier(name)} {sql_type}" for name, sql_type in _QUESTDB_EVENT_TAG_COLUMNS.items())
+    keys = ", ".join(quote_ident(key) for key in QUESTDB_EVENT_UPSERT_KEYS)
+    tag_columns = ", ".join(f"{quote_ident(name)} {sql_type}" for name, sql_type in _QUESTDB_EVENT_TAG_COLUMNS.items())
     return (
-        f"CREATE TABLE IF NOT EXISTS {_questdb_identifier(table_name)} (timestamp TIMESTAMP, {tag_columns}) "
+        f"CREATE TABLE IF NOT EXISTS {quote_ident(table_name)} (timestamp TIMESTAMP, {tag_columns}) "
         f"TIMESTAMP(timestamp) PARTITION BY DAY WAL DEDUP UPSERT KEYS({keys});"
     )
 
 
 def questdb_events_dedup_ddl(table_name: str) -> str:
-    keys = ", ".join(_questdb_identifier(key) for key in QUESTDB_EVENT_UPSERT_KEYS)
-    return f"ALTER TABLE {_questdb_identifier(table_name)} DEDUP ENABLE UPSERT KEYS({keys});"
+    keys = ", ".join(quote_ident(key) for key in QUESTDB_EVENT_UPSERT_KEYS)
+    return f"ALTER TABLE {quote_ident(table_name)} DEDUP ENABLE UPSERT KEYS({keys});"
 
 
 def questdb_expected_columns() -> dict[str, str]:
@@ -490,10 +408,10 @@ def questdb_rollup_ddl(
         raise ValueError(f"QuestDB rollup group {group} has no explicitly classified metric")
 
     projections = ["timestamp"]
-    projections.extend(_questdb_identifier(name) for name in _QUESTDB_ROLLUP_DIMENSIONS if name in expected)
-    alias = _questdb_compact_identifier
+    projections.extend(quote_ident(name) for name in _QUESTDB_ROLLUP_DIMENSIONS if name in expected)
+    alias = compact_ident
     for name, column_type in members.items():
-        column = _questdb_compact_identifier(name)
+        column = compact_ident(name)
         if questdb_metric_class(name, column_type) is QuestDBMetricClass.GAUGE:
             # The dashboards read gauges as sum / count only; min, max and last are left out so
             # the statement, which travels in a GET URL, stays small.
@@ -507,9 +425,9 @@ def questdb_rollup_ddl(
     ttl_clause = f" TTL {int(retention_days)} DAYS" if retention_days > 0 else ""
     # Single line without indentation: the statement is sent in the URL, every byte counts.
     return (
-        f"CREATE MATERIALIZED VIEW IF NOT EXISTS {_questdb_identifier(view_name)} "
-        f"WITH BASE {_questdb_identifier(table_name)} REFRESH IMMEDIATE AS ("
-        f"SELECT {select_list} FROM {_questdb_identifier(table_name)} "
+        f"CREATE MATERIALIZED VIEW IF NOT EXISTS {quote_ident(view_name)} "
+        f"WITH BASE {quote_ident(table_name)} REFRESH IMMEDIATE AS ("
+        f"SELECT {select_list} FROM {quote_ident(table_name)} "
         f"SAMPLE BY {profile.rollup_interval} ALIGN TO CALENDAR"
         f") PARTITION BY DAY{ttl_clause};"
     )
@@ -559,6 +477,7 @@ class InfluxHandler:
         self.questdb_version: str | None = None
         self.questdb_schema_ensured = False
         self.client: httpx.AsyncClient | None = None
+        self._questdb: AsyncQuestDBClient | None = None
         self.init_successful = False
         self.connection_lost = False
         self.last_connection_warning: datetime | None = None
@@ -610,7 +529,7 @@ class InfluxHandler:
         if not self.connection_lost:
             log.error(
                 "%s '%s' unreachable: %s — buffering data until connection is restored",
-                self.name, self.config.hostname, _format_exc(exc),
+                self.name, self.config.hostname, format_exception(exc),
             )
             self.last_connection_warning = now
         elif (
@@ -633,9 +552,7 @@ class InfluxHandler:
             with suppress(asyncio.CancelledError):
                 await retry_task
         async with self._write_lock:
-            if self.client is not None:
-                await self.client.aclose()
-                self.client = None
+            await self._close_client()
 
     def _basic_auth(self) -> tuple[str, str] | None:
         return (self.config.username, reveal(self.config.password)) if self.config.username else None
@@ -653,37 +570,61 @@ class InfluxHandler:
             headers=headers,
         )
 
+    def _new_questdb_client(self) -> AsyncQuestDBClient:
+        """Client for /exec; the write path keeps using `self.client`."""
+        return AsyncQuestDBClient(
+            QuestDBConfig(
+                host=self.config.hostname,
+                port=self.config.port,
+                https=self.config.tls_enabled,
+                username=self.config.username,
+                password=reveal(self.config.password),
+                verify_certificate=self.config.verify_tls,
+                timeout=self.connection_timeout_v2,
+            ),
+            minimum_major=QUESTDB_MINIMUM_MAJOR_VERSION,
+            user_agent=self.user_agent,
+        )
+
+    async def _close_client(self) -> None:
+        questdb, self._questdb = self._questdb, None
+        client, self.client = self.client, None
+        if questdb is not None:
+            await questdb.aclose()
+        if client is not None:
+            await client.aclose()
+
     async def _init_client(self) -> bool:
         self.client = self._new_client()
+        if self.version == "questdb":
+            self._questdb = self._new_questdb_client()
 
         try:
             if self.version in (1, 2):
                 await self._probe_influxdb(self.client)
             elif self.version == "questdb":
-                auth = self._basic_auth()
-                self.questdb_version = await self._fetch_questdb_version(self.client, auth)
+                self.questdb_version = await self._fetch_questdb_version(self._questdb)
                 # ILP auto-creates columns afterwards, so the schema is ensured once and only
                 # retried (inline, then in the background) until it first succeeds.
                 if not self.questdb_schema_ensured:
                     try:
-                        self.questdb_schema_ensured = await self._ensure_questdb_schema(auth=auth)
+                        self.questdb_schema_ensured = await self._ensure_questdb_schema()
                     except DatabaseConfigError:
                         raise
                     except Exception as exc:  # noqa: BLE001 - schema setup is retried in the background
                         log.error("Failed to ensure QuestDB schema for '%s': %s",
-                                  self._questdb_metrics_table, _format_exc(exc))
+                                  self._questdb_metrics_table, format_exception(exc))
                     if not self.questdb_schema_ensured and not self._rollup_failure_permanent:
-                        self._schedule_questdb_downsampling_retry(auth=auth)
-        except httpx.HTTPError as exc:
+                        self._schedule_questdb_downsampling_retry()
+        except (httpx.HTTPError, QuestDBError) as exc:
+            # A rejected build() statement is no QuestDB answer to trust: retry, never exit 78.
             self._note_connection_lost(exc)
             self.init_successful = False
-            await self.client.aclose()
-            self.client = None
+            await self._close_client()
             return False
         except DatabaseConfigError:
-            # Permanent: close the client so the failed reconnect does not leak it.
-            await self.client.aclose()
-            self.client = None
+            # Permanent: close the clients so the failed reconnect does not leak them.
+            await self._close_client()
             raise
 
         self.init_successful = True
@@ -693,27 +634,9 @@ class InfluxHandler:
             log.info("Connection to %s established", self.name)
         return True
 
-    async def _fetch_questdb_version(self, client: httpx.AsyncClient, auth) -> str:
+    async def _fetch_questdb_version(self, questdb: AsyncQuestDBClient) -> str:
         """Query build() and enforce the minimum. Transport errors propagate as httpx.HTTPError."""
-        resp = await client.get("/exec", params={"query": "SELECT build();"}, auth=auth)
-        _raise_for_rejected_config(resp, self.name, missing_target=None)
-        resp.raise_for_status()
-        try:
-            body = resp.json()
-        except ValueError as exc:
-            # A proxy maintenance or login page is transient, not a permanent version error.
-            raise httpx.DecodingError(f"QuestDB answered build() without JSON: {exc}", request=resp.request) from exc
-        try:
-            build_str = str(body["dataset"][0][0])
-        except (KeyError, IndexError, TypeError) as exc:
-            raise QuestDBVersionError(f"Unable to read the QuestDB version from build(): {exc}") from exc
-        version = parse_questdb_version(build_str)
-        if version[0] < QUESTDB_MINIMUM_MAJOR_VERSION:
-            raise QuestDBVersionError(
-                f"QuestDB {'.'.join(map(str, version))} is not supported; "
-                f"version {QUESTDB_MINIMUM_MAJOR_VERSION} or newer is required"
-            )
-        return ".".join(map(str, version))
+        return await _as_database_config_error(questdb.fetch_version())
 
     async def _probe_influxdb(self, client: httpx.AsyncClient) -> None:
         """An empty write proves credentials, write permission and target without storing data."""
@@ -730,115 +653,100 @@ class InfluxHandler:
 
     async def preflight(self) -> None:
         """Startup gate: raises DatabaseConfigError for rejected settings, tolerates an unreachable server."""
-        async with self._new_client() as client:
+        async with self._new_client() as client, self._new_questdb_client() as questdb:
             try:
                 if self.version == "questdb":
-                    self.questdb_version = await self._fetch_questdb_version(client, self._basic_auth())
+                    self.questdb_version = await self._fetch_questdb_version(questdb)
                 else:
                     await self._probe_influxdb(client)
             except httpx.HTTPStatusError as exc:
                 log.warning("%s preflight postponed, unexpected answer: %s: %.200s",
-                            self.name, _format_exc(exc), exc.response.text)
+                            self.name, format_exception(exc), exc.response.text)
                 return
-            except httpx.HTTPError as exc:
-                log.warning("%s preflight postponed, server not reachable: %s", self.name, _format_exc(exc))
+            except (httpx.HTTPError, QuestDBError) as exc:
+                log.warning("%s preflight postponed, server not reachable: %s", self.name, format_exception(exc))
                 return
         log.info("%s preflight passed for '%s'", self.name, self.config.hostname)
 
-    async def _questdb_exec(self, query: str, *, auth=None) -> dict:
-        if self.client is None:
+    async def _questdb_call[T](self, call: Callable[[AsyncQuestDBClient], Awaitable[T]]) -> T:
+        """Run one package call; the single /exec boundary of the handler."""
+        if self._questdb is None:
             raise RuntimeError("QuestDB client is not initialized")
-        resp = await self.client.get("/exec", params=questdb_exec_query_string(query), auth=auth)
-        _raise_for_rejected_config(resp, self.name, missing_target=None)
-        if resp.status_code == 400:
-            # QuestDB answers a rejected statement with 400 and the reason in the JSON body.
-            with suppress(ValueError):
-                body = resp.json()
-                if isinstance(body, dict) and body.get("error"):
-                    raise RuntimeError(f"{body.get('error')} at position {body.get('position')}")
-        resp.raise_for_status()
-        data = resp.json()
-        if isinstance(data, dict) and data.get("error"):
-            raise RuntimeError(f"{data.get('error')} at position {data.get('position')}")
-        return data
+        return await _as_database_config_error(call(self._questdb))
+
+    async def _questdb_exec(self, query: str) -> list[list]:
+        return await self._questdb_call(lambda q: q.execute(query))
 
     @property
     def _questdb_metrics_table(self) -> str:
         return questdb_metrics_table_name(self.config.measurement_name)
 
-    async def _ensure_questdb_schema(self, *, auth=None) -> bool:
+    async def _ensure_questdb_schema(self) -> bool:
         # A previous rollup failure must not suppress retries of an earlier schema-setup step.
         self._rollup_failure_permanent = False
         table_name = self._questdb_metrics_table
-        table_ident = _questdb_identifier(table_name)
+        table_ident = quote_ident(table_name)
 
         await self._questdb_exec(
             f"CREATE TABLE IF NOT EXISTS {table_ident} (timestamp TIMESTAMP) "
-            "TIMESTAMP(timestamp) PARTITION BY DAY;",
-            auth=auth,
+            "TIMESTAMP(timestamp) PARTITION BY DAY;"
         )
 
         columns = questdb_expected_columns()
         for column_name, column_type in columns.items():
-            column_ident = _questdb_identifier(column_name)
+            column_ident = quote_ident(column_name)
             await self._questdb_exec(
-                f"ALTER TABLE {table_ident} ADD COLUMN IF NOT EXISTS {column_ident} {column_type};",
-                auth=auth,
+                f"ALTER TABLE {table_ident} ADD COLUMN IF NOT EXISTS {column_ident} {column_type};"
             )
 
         log.debug("Ensured QuestDB schema for %s with %s expected columns", table_name, len(columns))
 
-        if not await self._ensure_questdb_events_table(auth=auth):
+        if not await self._ensure_questdb_events_table():
             return False
 
         profile_name = self.config.downsampling
         if not profile_name:
             # A TTL is applied whenever the table has none, so a retention enabled after a first
             # start with 0 (or a failed first attempt) still takes effect; an existing TTL stays.
-            previously_managed = await self._questdb_raw_ttl_is_managed(auth=auth)
-            raw_ttl_managed = await self._ensure_questdb_ttl(auth=auth) or previously_managed
+            previously_managed = await self._questdb_raw_ttl_is_managed()
+            raw_ttl_managed = await self._ensure_questdb_ttl() or previously_managed
             return await self._set_questdb_downsampling_state(
                 enabled=False,
                 profile_name=QUESTDB_DOWNSAMPLING_DISABLED_PROFILE,
-                raw_ttl_managed=raw_ttl_managed,
-                auth=auth,
+                raw_ttl_managed=raw_ttl_managed
             )
 
         profile = QUESTDB_DOWNSAMPLING_PROFILES[profile_name]
-        return await self._finalize_questdb_downsampling(profile_name, profile, auth=auth)
+        return await self._finalize_questdb_downsampling(profile_name, profile)
 
-    async def _ensure_questdb_events_table(self, *, auth=None) -> bool:
+    async def _ensure_questdb_events_table(self) -> bool:
         """Creates the events table with DEDUP and repairs an existing one. False: TTL not verified."""
         events_table = questdb_events_table_name(self.config.measurement_name)
-        events_ident = _questdb_identifier(events_table)
+        events_ident = quote_ident(events_table)
 
-        await self._questdb_exec(questdb_events_ddl(events_table), auth=auth)
+        await self._questdb_exec(questdb_events_ddl(events_table))
         for column_name, column_type in questdb_event_columns().items():
             await self._questdb_exec(
                 f"ALTER TABLE {events_ident} ADD COLUMN IF NOT EXISTS "
-                f"{_questdb_identifier(column_name)} {column_type};",
-                auth=auth,
+                f"{quote_ident(column_name)} {column_type};"
             )
 
         # A table auto-created through ILP carries no keys; inspect first
         # so an unchanged table is not altered on every start.
         current = await self._questdb_exec(
-            f"SELECT \"column\" FROM table_columns({_questdb_literal(events_table)}) WHERE upsertKey;",
-            auth=auth,
+            f"SELECT \"column\" FROM table_columns({quote_literal(events_table)}) WHERE upsertKey;"
         )
-        current_keys = {row[0] for row in current.get("dataset") or []}
+        current_keys = {row[0] for row in current}
         if current_keys != set(QUESTDB_EVENT_UPSERT_KEYS):
-            await self._questdb_exec(questdb_events_dedup_ddl(events_table), auth=auth)
+            await self._questdb_exec(questdb_events_dedup_ddl(events_table))
             log.info("Enabled QuestDB DEDUP on events table '%s'", events_table)
 
-        return await self._set_questdb_table_ttl(events_table, self.config.data_retention_days, auth=auth)
+        return await self._set_questdb_table_ttl(events_table, self.config.data_retention_days)
 
     async def _finalize_questdb_downsampling(
             self,
             profile_name: str,
-            profile: QuestDBDownsamplingProfile,
-            *,
-            auth=None) -> bool:
+            profile: QuestDBDownsamplingProfile) -> bool:
         table_name = self._questdb_metrics_table
         raw_retention_days = questdb_raw_retention_days(profile, self.config.data_retention_days)
         log.info(
@@ -848,7 +756,7 @@ class InfluxHandler:
             profile.rollup_interval,
             self.config.data_retention_days,
         )
-        if not await self._ensure_questdb_downsampling(profile, auth=auth):
+        if not await self._ensure_questdb_downsampling(profile):
             return False
 
         # The raw TTL is applied and verified before the status is published, so Grafana never
@@ -856,8 +764,7 @@ class InfluxHandler:
         applied = await self._apply_questdb_raw_ttl(
             table_name,
             raw_retention_days,
-            previously_managed=await self._questdb_raw_ttl_is_managed(auth=auth),
-            auth=auth,
+            previously_managed=await self._questdb_raw_ttl_is_managed()
         )
         if applied is None:
             return False
@@ -869,18 +776,17 @@ class InfluxHandler:
             raw_retention_days=effective_raw_days,
             raw_ttl_managed=raw_ttl_managed,
             rollup_interval=profile.rollup_interval,
-            rollup_view=questdb_rollup_view_prefix(table_name, profile),
-            auth=auth,
+            rollup_view=questdb_rollup_view_prefix(table_name, profile)
         )
 
-    def _schedule_questdb_downsampling_retry(self, *, auth=None) -> None:
+    def _schedule_questdb_downsampling_retry(self) -> None:
         task = self._questdb_downsampling_retry_task
         if task is None or task.done():
             self._questdb_downsampling_retry_task = asyncio.create_task(
-                self._retry_questdb_downsampling_setup(auth=auth)
+                self._retry_questdb_downsampling_setup()
             )
 
-    async def _retry_questdb_downsampling_setup(self, *, auth=None) -> None:
+    async def _retry_questdb_downsampling_setup(self) -> None:
         try:
             for attempt in range(1, self.downsampling_retry_attempts + 1):
                 await asyncio.sleep(self.downsampling_retry_interval)
@@ -894,7 +800,7 @@ class InfluxHandler:
                             return
                         # The full schema path, so a table or column that failed to be created
                         # is repaired as well, not only the rollup finalization.
-                        ready = await self._ensure_questdb_schema(auth=auth)
+                        ready = await self._ensure_questdb_schema()
                 except DatabaseConfigError as exc:
                     # Surfaced by the next write, which ends the daemon with exit code 78.
                     self._pending_config_error = exc
@@ -902,7 +808,7 @@ class InfluxHandler:
                 except Exception as exc:  # noqa: BLE001 - reconnect will get another bounded retry sequence
                     log.warning(
                         "QuestDB downsampling retry %s/%s failed: %s",
-                        attempt, self.downsampling_retry_attempts, _format_exc(exc),
+                        attempt, self.downsampling_retry_attempts, format_exception(exc),
                     )
                     continue
                 if ready:
@@ -927,7 +833,7 @@ class InfluxHandler:
     def _rollup_failure_reason(self) -> str:
         return "; ".join(sorted({reason for reason, _ in self._rollup_failures.values()}))
 
-    async def _ensure_questdb_downsampling(self, profile: QuestDBDownsamplingProfile, *, auth=None) -> bool:
+    async def _ensure_questdb_downsampling(self, profile: QuestDBDownsamplingProfile) -> bool:
         """Provision every rollup group view; one failing view does not block the others."""
         table_name = self._questdb_metrics_table
         groups = questdb_rollup_groups()
@@ -942,7 +848,7 @@ class InfluxHandler:
             failure = self._rollup_failures.get(view_name)
             if failure and failure[1]:
                 continue  # permanent failure: resending the identical statement cannot succeed
-            if await self._ensure_questdb_rollup_view(table_name, profile, group, auth=auth):
+            if await self._ensure_questdb_rollup_view(table_name, profile, group):
                 ready.add(view_name)
         pending = [
             name for name in (questdb_rollup_view_name(table_name, profile, g) for g in groups)
@@ -958,35 +864,31 @@ class InfluxHandler:
             self,
             table_name: str,
             profile: QuestDBDownsamplingProfile,
-            group: int,
-            *,
-            auth=None) -> bool:
+            group: int) -> bool:
         view_name = questdb_rollup_view_name(table_name, profile, group)
         try:
             await self._questdb_exec(
-                questdb_rollup_ddl(table_name, profile, self.config.data_retention_days, group),
-                auth=auth,
+                questdb_rollup_ddl(table_name, profile, self.config.data_retention_days, group)
             )
             status = await self._questdb_exec(
                 "SELECT view_name, base_table_name, view_status, "
                 "refresh_base_table_txn, base_table_txn FROM materialized_views() "
-                f"WHERE view_name = {_questdb_literal(view_name)};",
-                auth=auth,
+                f"WHERE view_name = {quote_literal(view_name)};"
             )
         except DatabaseConfigError:
             raise
         except Exception as exc:  # noqa: BLE001 - optional provisioning must not stop raw ingestion
-            reason = _format_exc(exc)
+            reason = format_exception(exc)
             # The retry loop repeats this every interval: report a repeating failure once at ERROR.
             previous = self._rollup_failures.get(view_name)
             level = logging.DEBUG if previous and previous[0] == reason else logging.ERROR
-            self._rollup_failures[view_name] = (reason, _is_permanent_questdb_failure(exc))
+            self._rollup_failures[view_name] = (reason, is_permanent_failure(exc))
             log.log(level, "Unable to provision QuestDB rollup view '%s' (CREATE MATERIALIZED VIEW): %s",
                     view_name, reason)
             return False
         self._rollup_failures.pop(view_name, None)
 
-        rows = status.get("dataset") or []
+        rows = status
         if not rows:
             log.warning("QuestDB rollup view '%s' is not visible yet; raw TTL is unchanged", view_name)
             return False
@@ -1011,19 +913,18 @@ class InfluxHandler:
             )
             return False
 
-        if not await self._view_columns_complete(table_name, view_name, group, auth=auth):
+        if not await self._view_columns_complete(table_name, view_name, group):
             return False
 
         if not await self._set_questdb_table_ttl(
                 view_name,
                 self.config.data_retention_days,
-                materialized_view=True,
-                auth=auth):
+                materialized_view=True):
             return False
         log.debug("QuestDB rollup view '%s' is valid and current", view_name)
         return True
 
-    async def _view_columns_complete(self, table_name: str, view_name: str, group: int, *, auth=None) -> bool:
+    async def _view_columns_complete(self, table_name: str, view_name: str, group: int) -> bool:
         """False when an existing group view lacks expected columns; never drops or alters it.
 
         An incomplete view is not ready, so the raw TTL is not shortened and no status is
@@ -1033,14 +934,14 @@ class InfluxHandler:
         expected = questdb_rollup_view_columns(questdb_rollup_groups()[group])
         try:
             result = await self._questdb_exec(
-                f"SELECT \"column\" FROM table_columns({_questdb_literal(view_name)});", auth=auth)
+                f"SELECT \"column\" FROM table_columns({quote_literal(view_name)});")
         except DatabaseConfigError:
             raise
         except Exception as exc:  # noqa: BLE001 - unverified columns keep the group not ready
             log.warning("Unable to compare columns of QuestDB rollup view '%s': %s; raw TTL is unchanged",
-                        view_name, _format_exc(exc))
+                        view_name, format_exception(exc))
             return False
-        present = {row[0] for row in result.get("dataset") or []}
+        present = {row[0] for row in result}
         missing = tuple(sorted(set(expected) - present))
         if not missing:
             self._rollup_incomplete.pop(view_name, None)
@@ -1050,7 +951,7 @@ class InfluxHandler:
         if repeated:
             log.debug("QuestDB rollup view '%s' still lacks columns %s", view_name, ", ".join(missing))
             return False
-        horizon = await self._raw_history_horizon(table_name, missing, auth=auth)
+        horizon = await self._raw_history_horizon(table_name, missing)
         log.error(
             "QuestDB rollup view '%s' (table '%s', group %02d) lacks columns %s, so the group is not ready: "
             "the raw retention is not shortened any further and a raw TTL shortened earlier is not extended "
@@ -1061,12 +962,12 @@ class InfluxHandler:
         )
         return False
 
-    async def _raw_history_horizon(self, table_name: str, missing: tuple[str, ...], *, auth=None) -> str:
+    async def _raw_history_horizon(self, table_name: str, missing: tuple[str, ...]) -> str:
         """Describe how far back the affected metrics can still be rebuilt from raw data."""
         parts = []
         try:
-            existing = await self._read_questdb_table_ttl(table_name, auth=auth)
-            days = _questdb_ttl_days(*existing) if existing and existing[0] else None
+            existing = await self._read_questdb_table_ttl(table_name)
+            days = db_ttl_days(*existing) if existing and existing[0] else None
             if days:
                 parts.append(f"The raw TTL is {days} day(s), so history of these metrics older than "
                              f"now minus {days} day(s) is no longer recoverable.")
@@ -1074,78 +975,70 @@ class InfluxHandler:
                 parts.append("The raw table has no TTL (or an unknown unit).")
             for column in sorted({re.sub(r"_(sum|count|last)$", "", name) for name in missing})[:5]:
                 result = await self._questdb_exec(
-                    f"SELECT min(timestamp) FROM {_questdb_identifier(table_name)} "
-                    f"WHERE {_questdb_identifier(column)} IS NOT NULL;", auth=auth)
-                rows = result.get("dataset") or []
+                    f"SELECT min(timestamp) FROM {quote_ident(table_name)} "
+                    f"WHERE {quote_ident(column)} IS NOT NULL;")
+                rows = result
                 if rows and rows[0] and rows[0][0]:
                     parts.append(f"Oldest raw value of '{column}': {rows[0][0]}; older history is not recoverable.")
         except DatabaseConfigError:
             raise
         except Exception as exc:  # noqa: BLE001 - the horizon is advisory; the missing columns are reported anyway
-            parts.append(f"The raw data horizon could not be read ({_format_exc(exc)}).")
+            parts.append(f"The raw data horizon could not be read ({format_exception(exc)}).")
         return " ".join(parts)
 
-    async def _read_questdb_downsampling_state(self, *, auth=None) -> list | None:
+    async def _read_questdb_downsampling_state(self) -> list | None:
         """Latest status row for this measurement, or None when it is unavailable.
 
         Creates the status table if missing so a caller can rely on the columns being present.
         """
-        state_table = _questdb_identifier(QUESTDB_DOWNSAMPLING_STATE_TABLE)
+        state_table = quote_ident(QUESTDB_DOWNSAMPLING_STATE_TABLE)
         try:
             await self._questdb_exec(
                 f"CREATE TABLE IF NOT EXISTS {state_table} ("
                 "timestamp TIMESTAMP, measurement SYMBOL, profile SYMBOL, schema_version LONG, "
                 "enabled BOOLEAN, raw_days LONG, rollup_interval SYMBOL, rollup_view SYMBOL, "
                 "raw_ttl_managed BOOLEAN, table_id LONG) "
-                "TIMESTAMP(timestamp) PARTITION BY DAY;",
-                auth=auth,
+                "TIMESTAMP(timestamp) PARTITION BY DAY;"
             )
             current = await self._questdb_exec(
                 "SELECT profile, schema_version, enabled, raw_days, rollup_interval, rollup_view, "
                 f"raw_ttl_managed, table_id FROM {state_table} "
-                f"WHERE measurement = {_questdb_literal(self._questdb_metrics_table)} "
-                "LATEST ON timestamp PARTITION BY measurement;",
-                auth=auth,
+                f"WHERE measurement = {quote_literal(self._questdb_metrics_table)} "
+                "LATEST ON timestamp PARTITION BY measurement;"
             )
         except DatabaseConfigError:
             raise
         except Exception as exc:  # noqa: BLE001 - state reporting must not stop raw ingestion
             log.error(
                 "Unable to read QuestDB downsampling state for '%s': %s",
-                self._questdb_metrics_table, _format_exc(exc),
+                self._questdb_metrics_table, format_exception(exc),
             )
             return None
 
-        rows = current.get("dataset") or []
-        return list(rows[0][:8]) if rows else []
+        return list(current[0][:8]) if current else []
 
-    async def _questdb_table_id(self, *, auth=None) -> int | None:
+    async def _questdb_table_id(self) -> int | None:
         """QuestDB's id of the current raw table, which changes when a table is re-created."""
         try:
-            result = await self._questdb_exec(
-                "SELECT id FROM tables() "
-                f"WHERE table_name = {_questdb_literal(self._questdb_metrics_table)};",
-                auth=auth,
-            )
+            ids = await self._questdb_call(lambda q: q.table_ids([self._questdb_metrics_table]))
         except DatabaseConfigError:
             raise
         except Exception as exc:  # noqa: BLE001 - the id is an ownership hint, not required
-            log.debug("Unable to read the QuestDB table id: %s", _format_exc(exc))
+            log.debug("Unable to read the QuestDB table id: %s", format_exception(exc))
             return None
-        rows = result.get("dataset") or []
-        value = rows[0][0] if rows and rows[0] else None
+        value = ids.get(self._questdb_metrics_table)
         return value if isinstance(value, int) and not isinstance(value, bool) else None
 
-    async def _questdb_raw_ttl_is_managed(self, *, auth=None) -> bool:
+    async def _questdb_raw_ttl_is_managed(self) -> bool:
         """True only if a previous run recorded the raw TTL as set by fritzfluxdb.
 
         An unreadable status or table id counts as administrator-owned, so an existing TTL of unknown
         origin is never replaced; a status row of a dropped predecessor table carries another id.
         """
-        state = await self._read_questdb_downsampling_state(auth=auth)
+        state = await self._read_questdb_downsampling_state()
         if not state:
             return False
-        table_id = await self._questdb_table_id(auth=auth)
+        table_id = await self._questdb_table_id()
         return table_id is not None and state[7] == table_id and state[6] is True
 
     async def _set_questdb_downsampling_state(
@@ -1156,10 +1049,9 @@ class InfluxHandler:
             raw_retention_days: int = 0,
             raw_ttl_managed: bool = False,
             rollup_interval: str = "",
-            rollup_view: str = "",
-            auth=None) -> bool:
+            rollup_view: str = "") -> bool:
         measurement = self._questdb_metrics_table
-        current = await self._read_questdb_downsampling_state(auth=auth)
+        current = await self._read_questdb_downsampling_state()
         if current is None:
             return False
 
@@ -1173,28 +1065,27 @@ class InfluxHandler:
             raw_ttl_managed,
         ]
         # The stored table id binds the status row to this table instance (see questdb_admin).
-        table_id = await self._questdb_table_id(auth=auth)
+        table_id = await self._questdb_table_id()
         stored_id = current[7] if current else None
         if current[:7] == expected and (table_id is None or stored_id == table_id):
             return True
 
         try:
             await self._questdb_exec(
-                f"INSERT INTO {_questdb_identifier(QUESTDB_DOWNSAMPLING_STATE_TABLE)} "
+                f"INSERT INTO {quote_ident(QUESTDB_DOWNSAMPLING_STATE_TABLE)} "
                 "(timestamp, measurement, profile, schema_version, enabled, raw_days, "
                 "rollup_interval, rollup_view, raw_ttl_managed, table_id) VALUES ("
-                f"now(), {_questdb_literal(measurement)}, {_questdb_literal(profile_name)}, "
+                f"now(), {quote_literal(measurement)}, {quote_literal(profile_name)}, "
                 f"{QUESTDB_DOWNSAMPLING_SCHEMA_VERSION}, {'true' if enabled else 'false'}, "
                 f"{int(raw_retention_days)}, "
-                f"{_questdb_literal(rollup_interval)}, {_questdb_literal(rollup_view)}, "
+                f"{quote_literal(rollup_interval)}, {quote_literal(rollup_view)}, "
                 f"{'true' if raw_ttl_managed else 'false'}, "
-                f"{'NULL' if table_id is None else table_id});",
-                auth=auth,
+                f"{'NULL' if table_id is None else table_id});"
             )
         except DatabaseConfigError:
             raise
         except Exception as exc:  # noqa: BLE001 - state reporting must not stop raw ingestion
-            log.error("Unable to update QuestDB downsampling state for '%s': %s", measurement, _format_exc(exc))
+            log.error("Unable to update QuestDB downsampling state for '%s': %s", measurement, format_exception(exc))
             return False
 
         if enabled:
@@ -1210,7 +1101,7 @@ class InfluxHandler:
             )
         return True
 
-    async def _ensure_questdb_ttl(self, *, auth=None) -> bool:
+    async def _ensure_questdb_ttl(self) -> bool:
         """
         Applies data_retention_days as table TTL, but only to a table without a TTL: a TTL
         configured by the database admin always wins. Transport errors propagate; `_init_client`
@@ -1222,48 +1113,37 @@ class InfluxHandler:
             return False
 
         table_name = self._questdb_metrics_table
-        existing = await self._read_questdb_table_ttl(table_name, auth=auth)
+        existing = await self._read_questdb_table_ttl(table_name)
         if existing is None:
             return False
         if existing[0]:
             log.info("QuestDB table '%s' keeps its existing TTL of %s %s", table_name, *existing)
             return False
 
-        return await self._alter_questdb_table_ttl(table_name, retention_days, auth=auth)
+        return await self._alter_questdb_table_ttl(table_name, retention_days)
 
-    async def _read_questdb_table_ttl(self, table_name: str, *, auth=None) -> tuple[int, str] | None:
+    async def _read_questdb_table_ttl(self, table_name: str) -> tuple[int, str] | None:
         """Current TTL as (value, unit), or None when it cannot be determined."""
         try:
-            data = await self._questdb_exec(
-                f"SELECT ttlValue, ttlUnit FROM tables() WHERE table_name = {_questdb_literal(table_name)};",
-                auth=auth,
-            )
-        except (httpx.HTTPStatusError, RuntimeError, ValueError) as exc:
+            existing = await self._questdb_call(lambda q: q.read_ttl(table_name))
+        except (httpx.HTTPStatusError, QuestDBError, RuntimeError) as exc:
             log.warning(
                 "Unable to read TTL of QuestDB table '%s'; "
                 "data retention is not applied: %s",
-                table_name, _format_exc(exc),
+                table_name, format_exception(exc),
             )
             return None
 
-        rows = data.get("dataset") or []
-        if not rows:
+        if existing is None:
             log.warning("QuestDB table '%s' not found; data retention is not applied", table_name)
-            return None
-
-        try:
-            ttl_value = int(rows[0][0] or 0)
-        except (TypeError, ValueError):
-            ttl_value = 0
-        return ttl_value, str(rows[0][1] or "")
+        return existing
 
     async def _apply_questdb_raw_ttl(
             self,
             table_name: str,
             requested_days: int,
             *,
-            previously_managed: bool,
-            auth=None) -> tuple[int, bool] | None:
+            previously_managed: bool) -> tuple[int, bool] | None:
         """Resolve the raw TTL for a downsampling profile.
 
         Returns the verified (effective_raw_days, managed) pair, or None when the raw TTL
@@ -1271,12 +1151,12 @@ class InfluxHandler:
         fritzfluxdb did not set belongs to the administrator and is kept, so the effective
         value is published instead of the profile's requested one.
         """
-        existing = await self._read_questdb_table_ttl(table_name, auth=auth)
+        existing = await self._read_questdb_table_ttl(table_name)
         if existing is None:
             return None
 
         ttl_value, ttl_unit = existing
-        existing_days = _questdb_ttl_days(ttl_value, ttl_unit)
+        existing_days = db_ttl_days(ttl_value, ttl_unit)
         if ttl_value and existing_days == int(requested_days):
             return int(requested_days), previously_managed
 
@@ -1300,11 +1180,11 @@ class InfluxHandler:
                 "Replacing the fritzfluxdb-managed TTL of QuestDB table '%s' (%s %s) with %s day(s)",
                 table_name, ttl_value, ttl_unit, requested_days,
             )
-        if not await self._alter_questdb_table_ttl(table_name, requested_days, auth=auth):
+        if not await self._alter_questdb_table_ttl(table_name, requested_days):
             return None
 
-        verified = await self._read_questdb_table_ttl(table_name, auth=auth)
-        if verified is None or _questdb_ttl_days(*verified) != int(requested_days):
+        verified = await self._read_questdb_table_ttl(table_name)
+        if verified is None or db_ttl_days(*verified) != int(requested_days):
             log.warning(
                 "QuestDB raw TTL of '%s' is not %s day(s) after the change; "
                 "no downsampling status is published",
@@ -1318,20 +1198,19 @@ class InfluxHandler:
             table_name: str,
             retention_days: int,
             *,
-            materialized_view: bool = False,
-            auth=None) -> bool:
+            materialized_view: bool = False) -> bool:
         """Makes an object owned by fritzfluxdb (events table, rollup view) follow retention_days.
 
         A differing TTL is replaced; 0 (unlimited) removes it. The raw table never goes
         through here because it may carry an administrator TTL.
         """
-        existing = await self._read_questdb_table_ttl(table_name, auth=auth)
+        existing = await self._read_questdb_table_ttl(table_name)
         if existing is None:
             return False
 
         ttl_value, ttl_unit = existing
         target = max(int(retention_days), 0)
-        current_days = _questdb_ttl_days(ttl_value, ttl_unit) if ttl_value else 0
+        current_days = db_ttl_days(ttl_value, ttl_unit) if ttl_value else 0
         if current_days == target:
             return True
         if ttl_value:
@@ -1341,26 +1220,22 @@ class InfluxHandler:
                 f"{target} day(s)" if target else "unlimited",
             )
         return await self._alter_questdb_table_ttl(
-            table_name, target, materialized_view=materialized_view, auth=auth)
+            table_name, target, materialized_view=materialized_view)
 
     async def _alter_questdb_table_ttl(
             self,
             table_name: str,
             retention_days: int,
             *,
-            materialized_view: bool = False,
-            auth=None) -> bool:
+            materialized_view: bool = False) -> bool:
         try:
-            object_type = "MATERIALIZED VIEW" if materialized_view else "TABLE"
-            await self._questdb_exec(
-                f"ALTER {object_type} {_questdb_identifier(table_name)} SET TTL "
-                + (f"{int(retention_days)} DAYS;" if int(retention_days) > 0 else "0 HOURS;"),
-                auth=auth,
+            await self._questdb_call(
+                lambda q: q.set_ttl(table_name, retention_days, materialized_view=materialized_view)
             )
-        except (httpx.HTTPStatusError, RuntimeError, ValueError) as exc:
+        except (httpx.HTTPStatusError, QuestDBError, RuntimeError) as exc:
             log.warning(
                 "Unable to set TTL of %s day(s) on QuestDB table '%s': %s",
-                retention_days, table_name, _format_exc(exc),
+                retention_days, table_name, format_exception(exc),
             )
             return False
 
@@ -1696,8 +1571,7 @@ class InfluxHandler:
                         self.current_retry_interval,
                     )
                     self.connection_lost = True
-                    await self.client.aclose()
-                    self.client = None
+                    await self._close_client()
                 elif resp.status_code in {401, 403, 404}:
                     _raise_for_rejected_config(
                         resp, self.name,
@@ -1728,9 +1602,7 @@ class InfluxHandler:
                     )
         except httpx.HTTPError as exc:
             self._note_connection_lost(exc)
-            if self.client is not None:
-                await self.client.aclose()
-                self.client = None
+            await self._close_client()
         except DatabaseConfigError:
             raise
         except Exception:
