@@ -25,6 +25,7 @@ urls = { Homepage = "https://github.com/Gill-Bates/fritzfluxdb" }
 # installing them needs git and read access (no credentials belong in this file).
 dependencies = [
     "gillbates-logging @ git+https://github.com/Gill-Bates/python-libraries.git@gillbates-logging-v0.10.0#subdirectory=packages/logging", # subdirectory=packages/logging
+    "gillbates-questdb-client @ git+https://github.com/Gill-Bates/python-libraries.git@gillbates-questdb-client-v0.10.0#subdirectory=packages/questdb-client", # subdirectory=packages/questdb-client
     "gillbates-shutdown-handler @ git+https://github.com/Gill-Bates/python-libraries.git@gillbates-shutdown-handler-v0.10.0#subdirectory=packages/shutdown-handler", # subdirectory=packages/shutdown-handler
     "defusedxml==0.7.1",
     "httpx==0.28.1",

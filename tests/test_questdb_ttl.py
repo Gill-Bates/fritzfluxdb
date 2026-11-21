@@ -10,11 +10,10 @@ from types import SimpleNamespace
 import httpx
 import pytest
 
-from app.influxdb.handler import (
-    InfluxHandler,
-    QuestDBVersionError,
-    parse_questdb_version,
-)
+from gillbates_questdb_client import QuestDBError, QuestDBQueryError, QuestDBStatementTooLongError
+
+from app.influxdb.handler import DatabaseConfigError, InfluxHandler
+from tests.questdb_fake import fake_questdb, status_error
 
 TTL_QUERY = "SELECT ttlValue, ttlUnit FROM tables() WHERE table_name = 'fritzbox_AA1_metrics';"
 
@@ -25,14 +24,12 @@ def make_handler(retention_days, responses):
     handler.config = SimpleNamespace(measurement_name="fritzbox_AA1", data_retention_days=retention_days)
     handler.queries = []
 
-    async def fake_exec(query, *, auth=None):
+    async def fake_exec(query):
         handler.queries.append(query)
         response = responses.pop(0)
-        if isinstance(response, Exception):
-            raise response
         return response
 
-    handler._questdb_exec = fake_exec
+    handler._questdb = fake_questdb(fake_exec)
     return handler
 
 
@@ -80,7 +77,7 @@ def test_transport_errors_propagate_for_retry():
         asyncio.run(handler._ensure_questdb_ttl())
 
 
-def test_schema_failure_schedules_background_retry_without_downsampling(monkeypatch):
+def _init_handler(answer):
     handler = InfluxHandler.__new__(InfluxHandler)
     handler.version = "questdb"
     handler.name = "QuestDB"
@@ -89,87 +86,108 @@ def test_schema_failure_schedules_background_retry_without_downsampling(monkeypa
     handler.questdb_schema_ensured = False
     handler.questdb_version = None
     handler._questdb_downsampling_retry_task = None
+    handler.connection_lost = False
+    handler.last_connection_warning = None
+    handler.buffer = []
+    handler.connection_warning_interval = 60
     handler.config = SimpleNamespace(
-        measurement_name="fritzbox_AA1", verify_tls=True, username=None, password=None, downsampling=None,
+        measurement_name="fritzbox_AA1", hostname="questdb", verify_tls=True, username=None, password=None,
+        downsampling=None,
     )
+    handler._new_questdb_client = lambda: fake_questdb(lambda query: answer)
+    return handler
 
-    class Client:
-        def __init__(self, **_):
-            pass
 
-        async def get(self, *_, **__):
-            return SimpleNamespace(status_code=200, raise_for_status=lambda: None, json=lambda: {"dataset": [["Build Information: QuestDB 10.0.1, JDK 25, Commit Hash abc"]]})
+OK_BUILD = {"dataset": [["Build Information: QuestDB 10.0.1, JDK 25, Commit Hash abc"]]}
 
-    async def failing_schema(*, auth=None):
+
+def test_schema_failure_schedules_background_retry_without_downsampling():
+    handler = _init_handler(OK_BUILD)
+
+    async def failing_schema():
         raise RuntimeError("schema failed")
 
     scheduled = []
-    monkeypatch.setattr("app.influxdb.handler.httpx.AsyncClient", Client)
     handler._ensure_questdb_schema = failing_schema
-    handler._schedule_questdb_downsampling_retry = lambda *, auth=None: scheduled.append(True)
-
+    handler._schedule_questdb_downsampling_retry = lambda: scheduled.append(True)
     assert asyncio.run(handler._init_client()) is True
     assert scheduled == [True]
     assert handler.questdb_schema_ensured is False
+    assert handler.questdb_version == "10.0.1"
+    asyncio.run(handler._close_client())
 
 
-def _version_handler(response):
+def fetch_version(answer):
     handler = InfluxHandler.__new__(InfluxHandler)
-    handler.version = "questdb"
-
-    class Client:
-        async def get(self, *_, **__):
-            if isinstance(response, Exception):
-                raise response
-            return SimpleNamespace(status_code=200, raise_for_status=lambda: None, json=lambda: response)
-
-    return handler, Client()
-
-
-@pytest.mark.parametrize("text, expected", [
-    ("Build Information: QuestDB 10.0.1, JDK 25, Commit Hash abc", (10, 0, 1)),
-    ("Build Information: QuestDB 9.3, JDK 21", (9, 3, 0)),
-])
-def test_parse_questdb_version(text, expected):
-    assert parse_questdb_version(text) == expected
-
-
-def test_old_questdb_version_is_rejected():
-    handler, client = _version_handler({"dataset": [["Build Information: QuestDB 9.3.2, JDK 21"]]})
-    with pytest.raises(QuestDBVersionError):
-        asyncio.run(handler._fetch_questdb_version(client, None))
-
-
-def test_unreadable_questdb_version_is_rejected():
-    handler, client = _version_handler({"dataset": []})
-    with pytest.raises(QuestDBVersionError):
-        asyncio.run(handler._fetch_questdb_version(client, None))
+    return asyncio.run(handler._fetch_questdb_version(fake_questdb(lambda query: answer)))
 
 
 def test_current_questdb_version_is_accepted():
-    handler, client = _version_handler({"dataset": [["Build Information: QuestDB 10.2.0, JDK 25"]]})
-    assert asyncio.run(handler._fetch_questdb_version(client, None)) == "10.2.0"
+    assert fetch_version({"dataset": [["Build Information: QuestDB 10.2.0, JDK 25"]]}) == "10.2.0"
 
 
-def test_non_json_answer_is_transient_not_a_version_error():
-    def not_json():
-        raise ValueError("Expecting value")
-
-    handler = InfluxHandler.__new__(InfluxHandler)
-    handler.version = "questdb"
-
-    class Client:
-        async def get(self, *_, **__):
-            return SimpleNamespace(status_code=200, raise_for_status=lambda: None, json=not_json, request=None)
-
-    with pytest.raises(httpx.HTTPError):
-        asyncio.run(handler._fetch_questdb_version(Client(), None))
+@pytest.mark.parametrize("answer", [
+    {"dataset": [["Build Information: QuestDB 9.3.2, JDK 21"]]},
+    {"dataset": []},
+    {"dataset": [["Build Information: something else"]]},
+    status_error(401),
+    status_error(403),
+])
+def test_unusable_version_or_rejected_credentials_are_permanent(answer):
+    """Exit 78: server older than 10, unreadable build(), credentials or permissions rejected."""
+    with pytest.raises(DatabaseConfigError):
+        fetch_version(answer)
 
 
-def test_unreachable_questdb_is_not_a_version_error():
-    handler, client = _version_handler(httpx.ConnectError("down"))
-    with pytest.raises(httpx.ConnectError):
-        asyncio.run(handler._fetch_questdb_version(client, None))
+@pytest.mark.parametrize(("answer", "expected"), [
+    ("<html>maintenance</html>", httpx.DecodingError),
+    (httpx.ConnectError("down"), httpx.ConnectError),
+    (httpx.ReadTimeout("slow"), httpx.ReadTimeout),
+    (status_error(500), httpx.HTTPStatusError),
+    (status_error(404), httpx.HTTPStatusError),
+    (status_error(429), httpx.HTTPStatusError),
+])
+def test_unreachable_or_misbehaving_questdb_is_never_a_config_error(answer, expected):
+    with pytest.raises(expected) as caught:
+        fetch_version(answer)
+    assert not isinstance(caught.value, DatabaseConfigError)
+
+
+def test_rejected_build_statement_is_not_a_config_error():
+    with pytest.raises(QuestDBQueryError) as caught:
+        fetch_version(RuntimeError("function build() not found"))
+    assert not isinstance(caught.value, DatabaseConfigError)
+
+
+def test_rejected_build_statement_during_init_retries_instead_of_failing():
+    handler = _init_handler(RuntimeError("function build() not found"))
+    assert asyncio.run(handler._init_client()) is False
+    assert handler.client is None
+    assert handler._questdb is None
+    assert handler.connection_lost is True
+
+
+@pytest.mark.parametrize("code", [401, 403])
+def test_credentials_rejected_while_running_are_a_config_error(code):
+    handler = make_handler(30, [status_error(code)])
+    with pytest.raises(DatabaseConfigError):
+        asyncio.run(handler._ensure_questdb_ttl())
+
+
+@pytest.mark.parametrize("error", [
+    QuestDBQueryError("sql error"),
+    QuestDBStatementTooLongError("too long"),
+    status_error(400),
+    status_error(404),
+    status_error(500),
+    status_error(503),
+])
+def test_statement_failures_are_not_config_errors(error):
+    handler = make_handler(0, [])
+    handler._questdb = fake_questdb(lambda query: error)
+    with pytest.raises((QuestDBError, httpx.HTTPStatusError)) as caught:
+        asyncio.run(handler._questdb_exec("SELECT 1;"))
+    assert not isinstance(caught.value, DatabaseConfigError)
 
 
 def test_disabled_downsampling_applies_ttl_even_when_status_table_exists():
@@ -190,30 +208,19 @@ def test_disabled_downsampling_applies_ttl_even_when_status_table_exists():
         published.update(kwargs)
         return True
 
-    handler._questdb_exec = noop
+    handler._questdb = fake_questdb(lambda query: {"ddl": "OK"})
     handler._ensure_questdb_events_table = noop
     handler._questdb_raw_ttl_is_managed = managed
     handler._ensure_questdb_ttl = ensure_ttl
     handler._set_questdb_downsampling_state = publish
-
     assert asyncio.run(handler._ensure_questdb_schema()) is True
     assert published["raw_ttl_managed"] is True
 
 
-def test_questdb_version_error_on_reconnect_closes_the_client(monkeypatch):
-    handler = InfluxHandler.__new__(InfluxHandler)
-    handler.version = "questdb"
-    handler.base_url = "http://questdb.invalid:9000"
-    handler.user_agent = None
+def test_questdb_version_error_on_reconnect_closes_the_clients(monkeypatch):
+    handler = _init_handler(status_error(403))
     handler.questdb_schema_ensured = True
-    handler.config = SimpleNamespace(username=None, verify_tls=True)
     closed = []
-
-    async def too_old(client, auth):
-        handler.opened = client
-        raise QuestDBVersionError("too old")
-
-    handler._fetch_questdb_version = too_old
     orig = httpx.AsyncClient.aclose
 
     async def tracking_aclose(self):
@@ -221,8 +228,8 @@ def test_questdb_version_error_on_reconnect_closes_the_client(monkeypatch):
         await orig(self)
 
     monkeypatch.setattr(httpx.AsyncClient, "aclose", tracking_aclose)
-
-    with pytest.raises(QuestDBVersionError):
+    with pytest.raises(DatabaseConfigError):
         asyncio.run(handler._init_client())
     assert handler.client is None
-    assert closed == [handler.opened]
+    assert handler._questdb is None
+    assert len(closed) == 2

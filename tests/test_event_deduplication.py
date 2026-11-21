@@ -26,6 +26,7 @@ from app.influxdb.handler import (
     questdb_expected_columns,
 )
 from app.utils.measurement import FritzMeasurement
+from tests.questdb_fake import fake_questdb
 
 # Header of the FRITZ!Box call-list CSV export.
 CALL_LOG_HEADER = '"Typ";"Datum";"Name";"Rufnummer";"Nebenstelle";"Eigene Rufnummer";"Dauer"'
@@ -243,7 +244,7 @@ def test_event_schema_enables_dedup_only_when_keys_differ():
     for current, expect_alter in (([], True), ([["timestamp"], ["box"], ["log_type"], ["uid"]], False)):
         queries = []
 
-        async def fake_exec(query, *, auth=None, _current=current, _queries=queries):
+        async def fake_exec(query, _current=current, _queries=queries):
             _queries.append(query)
             if "table_columns(" in query:
                 return {"dataset": _current}
@@ -251,7 +252,7 @@ def test_event_schema_enables_dedup_only_when_keys_differ():
                 return {"dataset": [[None, None]]}
             return {"ddl": "OK"}
 
-        handler._questdb_exec = fake_exec
+        handler._questdb = fake_questdb(fake_exec)
         assert asyncio.run(handler._ensure_questdb_events_table()) is True
         assert any("DEDUP ENABLE UPSERT KEYS" in q for q in queries) is expect_alter
 

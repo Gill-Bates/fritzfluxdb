@@ -18,7 +18,7 @@ import pytest
 from app import main as app_main
 from app.fritzbox.config import FritzBoxConfig
 from app.fritzbox.handler import FritzBoxHandler
-from app.influxdb.handler import DatabaseConfigError, InfluxHandler, QuestDBVersionError
+from app.influxdb.handler import DatabaseConfigError, InfluxHandler
 from app.utils.cli_parser import parse_command_line
 from app.utils.measurement import FritzMeasurement
 from tests.fakebox import (
@@ -110,7 +110,7 @@ def make_handler(monkeypatch, no_database_env):
         monkeypatch.setenv("INFLUXDB_TOKEN", "token")
 
         def client(*args, **kwargs):
-            return REAL_CLIENT(*args, transport=httpx.MockTransport(respond), **kwargs)
+            return REAL_CLIENT(*args, **{**kwargs, "transport": httpx.MockTransport(respond)})
 
         monkeypatch.setattr(httpx, "AsyncClient", client)
         return InfluxHandler(configparser.ConfigParser())
@@ -373,7 +373,7 @@ def run_main(monkeypatch):
 
 def test_main_exits_78_when_the_database_rejects_the_settings(run_main):
     assert run_main(preflight_error=DatabaseConfigError("rejected")) == 78
-    assert run_main(preflight_error=QuestDBVersionError("too old")) == 78
+    assert run_main(preflight_error=DatabaseConfigError("QuestDB 9.3.2 is not supported; version 10 or newer is required")) == 78
 
 
 def test_main_exits_78_when_tr064_is_disabled(run_main):

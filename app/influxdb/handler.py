@@ -435,6 +435,7 @@ def questdb_rollup_ddl(
 
 class InfluxHandler:
     name = "InfluxDB"
+    _questdb: AsyncQuestDBClient | None = None
     connection_timeout_v1 = 2
     connection_timeout_v2 = 5
     max_measurements_buffer_size = 1_000_000
@@ -477,7 +478,6 @@ class InfluxHandler:
         self.questdb_version: str | None = None
         self.questdb_schema_ensured = False
         self.client: httpx.AsyncClient | None = None
-        self._questdb: AsyncQuestDBClient | None = None
         self.init_successful = False
         self.connection_lost = False
         self.last_connection_warning: datetime | None = None

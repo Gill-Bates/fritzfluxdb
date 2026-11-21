@@ -31,7 +31,7 @@ from gillbates_questdb_client import (
     quote_literal,
 )
 
-from app.influxdb.config import import (
+from app.influxdb.config import (
     QUESTDB_DOWNSAMPLING_SCHEMA_VERSION,
     QUESTDB_DOWNSAMPLING_STATE_TABLE,
     InfluxDBConfig,

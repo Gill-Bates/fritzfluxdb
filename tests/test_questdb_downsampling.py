@@ -41,6 +41,7 @@ from app.influxdb.handler import (
     questdb_rollup_view_name,
 )
 from app.utils.measurement import FritzMeasurement, WritePrecision
+from tests.questdb_fake import fake_questdb
 
 pytestmark = pytest.mark.usefixtures("no_database_env")
 
@@ -189,13 +190,13 @@ def test_earlier_schema_failure_does_not_inherit_a_permanent_rollup_failure():
     handler = make_handler()
     handler._rollup_failure_permanent = True
 
-    async def execute(query, *, auth=None):
+    async def execute(query):
         return {"dataset": []}
 
-    async def unavailable_events(*, auth=None):
+    async def unavailable_events():
         return False
 
-    handler._questdb_exec = execute
+    handler._questdb = fake_questdb(execute)
     handler._ensure_questdb_events_table = unavailable_events
     assert asyncio.run(handler._ensure_questdb_schema()) is False
     assert handler._rollup_failure_permanent is False
@@ -220,7 +221,7 @@ def test_ready_rollup_is_idempotently_provisioned_and_validated():
     profile = QUESTDB_DOWNSAMPLING_PROFILES["medium"]
     queries = []
 
-    async def fake_exec(query, *, auth=None):
+    async def fake_exec(query):
         queries.append(query)
         if "table_columns(" in query:
             return view_columns_result(query)
@@ -230,7 +231,7 @@ def test_ready_rollup_is_idempotently_provisioned_and_validated():
             return {"dataset": [[90, "DAY"]]}
         return {"ddl": "OK"}
 
-    handler._questdb_exec = fake_exec
+    handler._questdb = fake_questdb(fake_exec)
 
     assert asyncio.run(handler._ensure_questdb_downsampling(profile)) is True
     assert queries[0].startswith("CREATE MATERIALIZED VIEW IF NOT EXISTS")
@@ -244,7 +245,7 @@ def test_pending_initial_refresh_does_not_touch_any_ttl():
     profile = QUESTDB_DOWNSAMPLING_PROFILES["medium"]
     queries = []
 
-    async def fake_exec(query, *, auth=None):
+    async def fake_exec(query):
         queries.append(query)
         if "table_columns(" in query:
             return view_columns_result(query)
@@ -252,7 +253,7 @@ def test_pending_initial_refresh_does_not_touch_any_ttl():
             return {"dataset": [[queried_view(query), "fritzbox_AA1_metrics", "valid", 3, 8]]}
         return {"ddl": "OK"}
 
-    handler._questdb_exec = fake_exec
+    handler._questdb = fake_questdb(fake_exec)
 
     assert asyncio.run(handler._ensure_questdb_downsampling(profile)) is False
     assert len(queries) == 2 * len(questdb_rollup_groups())
@@ -264,12 +265,12 @@ def test_unfinished_rollup_is_logged_by_its_status(caplog, view_status, level):
     handler = make_handler()
     profile = QUESTDB_DOWNSAMPLING_PROFILES["medium"]
 
-    async def fake_exec(query, *, auth=None):
+    async def fake_exec(query):
         if "materialized_views()" in query:
             return {"dataset": [[queried_view(query), "fritzbox_AA1_metrics", view_status, -1, 8]]}
         return {"ddl": "OK"}
 
-    handler._questdb_exec = fake_exec
+    handler._questdb = fake_questdb(fake_exec)
     with caplog.at_level(logging.DEBUG):
         assert asyncio.run(handler._ensure_questdb_downsampling(profile)) is False
 
@@ -282,10 +283,10 @@ def test_downsampling_sql_error_is_tolerated():
     handler = make_handler()
     profile = QUESTDB_DOWNSAMPLING_PROFILES["medium"]
 
-    async def fake_exec(query, *, auth=None):
+    async def fake_exec(query):
         raise RuntimeError("unsupported")
 
-    handler._questdb_exec = fake_exec
+    handler._questdb = fake_questdb(fake_exec)
 
     assert asyncio.run(handler._ensure_questdb_downsampling(profile)) is False
 
@@ -303,7 +304,7 @@ def finalize_exec(queries, raw_ttl, state, *, alter_fails=False):
     """Fake /exec that tracks the raw TTL so a verification read sees the applied value."""
     ttl = {"value": raw_ttl[0], "unit": raw_ttl[1]}
 
-    async def fake_exec(query, *, auth=None):
+    async def fake_exec(query):
         queries.append(query)
         if "table_columns(" in query and "_rollup_" in query:
             return view_columns_result(query)
@@ -342,7 +343,7 @@ def test_schema_shortens_raw_ttl_only_after_rollup_is_current(monkeypatch):
         "app.influxdb.handler.questdb_expected_columns",
         lambda: {"cpu_temp": "LONG"},
     )
-    handler._questdb_exec = finalize_exec(queries, (0, None), None)
+    handler._questdb = fake_questdb(finalize_exec)(queries, (0, None), None)
 
     assert asyncio.run(handler._ensure_questdb_schema()) is True
     raw_ttl_query = 'ALTER TABLE "fritzbox_AA1_metrics" SET TTL 7 DAYS;'
@@ -366,7 +367,7 @@ def test_schema_state_ttl_and_ownership_use_the_metrics_table_only(monkeypatch):
     handler = make_handler()
     queries = []
     monkeypatch.setattr("app.influxdb.handler.questdb_expected_columns", lambda: {"cpu_temp": "LONG"})
-    handler._questdb_exec = finalize_exec(queries, (0, None), None)
+    handler._questdb = fake_questdb(finalize_exec)(queries, (0, None), None)
     assert asyncio.run(handler._ensure_questdb_schema()) is True
     assert any(q.startswith('CREATE TABLE IF NOT EXISTS "fritzbox_AA1_metrics" ') for q in queries)
     assert any(q.startswith('CREATE TABLE IF NOT EXISTS "fritzbox_AA1_events" ') for q in queries)
@@ -382,7 +383,7 @@ def test_ttl_of_a_foreign_status_row_id_is_not_adopted_for_the_metrics_table():
     profile = QUESTDB_DOWNSAMPLING_PROFILES["medium"]
     queries = []
     # The managed flag is only trusted when the stored id equals the metrics table id (42).
-    handler._questdb_exec = finalize_exec(
+    handler._questdb = fake_questdb(finalize_exec)(
         queries, (30, "DAY"), state_row(profile="low", raw_days=30, managed=True, table_id=7)
     )
     assert asyncio.run(handler._finalize_questdb_downsampling("medium", profile)) is True
@@ -393,7 +394,7 @@ def test_administrator_raw_ttl_is_kept_and_published_as_effective_history():
     handler = make_handler()
     profile = QUESTDB_DOWNSAMPLING_PROFILES["medium"]
     queries = []
-    handler._questdb_exec = finalize_exec(queries, (90, "DAY"), None)
+    handler._questdb = fake_questdb(finalize_exec)(queries, (90, "DAY"), None)
 
     assert asyncio.run(handler._finalize_questdb_downsampling("medium", profile)) is True
     assert not any('ALTER TABLE "fritzbox_AA1_metrics" SET TTL' in query for query in queries)
@@ -408,7 +409,7 @@ def test_managed_raw_ttl_is_shortened_on_profile_change():
     handler = make_handler()
     profile = QUESTDB_DOWNSAMPLING_PROFILES["medium"]
     queries = []
-    handler._questdb_exec = finalize_exec(
+    handler._questdb = fake_questdb(finalize_exec)(
         queries,
         (30, "DAY"),
         state_row(profile="low", raw_days=30, managed=True, table_id=42),
@@ -427,7 +428,7 @@ def test_failed_raw_ttl_change_publishes_no_active_state():
     handler = make_handler()
     profile = QUESTDB_DOWNSAMPLING_PROFILES["medium"]
     queries = []
-    handler._questdb_exec = finalize_exec(queries, (0, None), None, alter_fails=True)
+    handler._questdb = fake_questdb(finalize_exec)(queries, (0, None), None, alter_fails=True)
 
     assert asyncio.run(handler._finalize_questdb_downsampling("medium", profile)) is False
     assert not any('INSERT INTO "_fritzfluxdb_downsampling"' in query for query in queries)
@@ -438,7 +439,7 @@ def test_disabled_downsampling_keeps_legacy_ttl_path(monkeypatch):
     queries = []
     monkeypatch.setattr("app.influxdb.handler.questdb_expected_columns", dict)
 
-    async def fake_exec(query, *, auth=None):
+    async def fake_exec(query):
         queries.append(query)
         if "SELECT table_name FROM tables()" in query:
             return {"dataset": [["_fritzfluxdb_downsampling"]]}
@@ -448,7 +449,7 @@ def test_disabled_downsampling_keeps_legacy_ttl_path(monkeypatch):
             return {"dataset": [[90, "DAY"]]}
         return {"ddl": "OK"}
 
-    handler._questdb_exec = fake_exec
+    handler._questdb = fake_questdb(fake_exec)
 
     assert asyncio.run(handler._ensure_questdb_schema()) is True
     assert not any("MATERIALIZED VIEW" in query for query in queries)
@@ -459,7 +460,7 @@ def test_disabling_publishes_versioned_state_without_changing_ttl():
     handler = make_handler(profile_name="")
     queries = []
 
-    async def fake_exec(query, *, auth=None):
+    async def fake_exec(query):
         queries.append(query)
         if "SELECT table_name FROM tables()" in query:
             return {"dataset": [["_fritzfluxdb_downsampling"]]}
@@ -467,7 +468,7 @@ def test_disabling_publishes_versioned_state_without_changing_ttl():
             return {"dataset": [state_row(managed=True)]}
         return {"ddl": "OK"}
 
-    handler._questdb_exec = fake_exec
+    handler._questdb = fake_questdb(fake_exec)
 
     assert asyncio.run(handler._set_questdb_downsampling_state(
         enabled=False,
@@ -486,13 +487,13 @@ def test_repeated_state_does_not_append_duplicate_row():
     handler = make_handler()
     queries = []
 
-    async def fake_exec(query, *, auth=None):
+    async def fake_exec(query):
         queries.append(query)
         if "LATEST ON timestamp" in query:
             return {"dataset": [state_row(managed=True)]}
         return {"ddl": "OK"}
 
-    handler._questdb_exec = fake_exec
+    handler._questdb = fake_questdb(fake_exec)
 
     assert asyncio.run(handler._set_questdb_downsampling_state(
         enabled=True,
@@ -512,7 +513,7 @@ def _state_with_table_id(stored_id, actual_id):
     handler = make_handler()
     queries = []
 
-    async def fake_exec(query, *, auth=None):
+    async def fake_exec(query):
         queries.append(query)
         if "LATEST ON timestamp" in query:
             return {"dataset": [[*state_row(managed=True)[:7], stored_id]]}
@@ -520,7 +521,7 @@ def _state_with_table_id(stored_id, actual_id):
             return {"dataset": [[actual_id]]}
         return {"ddl": "OK"}
 
-    handler._questdb_exec = fake_exec
+    handler._questdb = fake_questdb(fake_exec)
     assert asyncio.run(handler._set_questdb_downsampling_state(
         enabled=True,
         profile_name="medium",
@@ -548,11 +549,11 @@ def test_owned_object_follows_configured_retention_and_unlimited_removes_ttl(cap
     handler = make_handler()
     queries = []
 
-    async def fake_exec(query, *, auth=None):
+    async def fake_exec(query):
         queries.append(query)
         return {"dataset": [[90, "DAY"]]}
 
-    handler._questdb_exec = fake_exec
+    handler._questdb = fake_questdb(fake_exec)
 
     with caplog.at_level("WARNING"):
         assert asyncio.run(handler._set_questdb_table_ttl("fritzbox_AA1_events", 7)) is True
@@ -581,7 +582,7 @@ def test_bounded_retry_completes_after_async_refresh():
     results = iter([False, True])
     attempts = []
 
-    async def fake_ensure(*, auth=None):
+    async def fake_ensure():
         attempts.append((handler.config.downsampling, "1m"))
         return next(results)
 
@@ -606,7 +607,7 @@ def test_bounded_retry_stops_after_configured_attempts():
     handler.downsampling_retry_interval = 0
     attempts = []
 
-    async def fake_ensure(*, auth=None):
+    async def fake_ensure():
         attempts.append(handler.config.downsampling)
         return False
 
@@ -624,7 +625,7 @@ def test_rollup_ttl_mismatch_after_retention_change_is_aligned():
     profile = QUESTDB_DOWNSAMPLING_PROFILES["medium"]
     queries = []
 
-    async def fake_exec(query, *, auth=None):
+    async def fake_exec(query):
         queries.append(query)
         if "table_columns(" in query:
             return view_columns_result(query)
@@ -634,7 +635,7 @@ def test_rollup_ttl_mismatch_after_retention_change_is_aligned():
             return {"dataset": [[30, "DAY"]]}
         return {"ddl": "OK"}
 
-    handler._questdb_exec = fake_exec
+    handler._questdb = fake_questdb(fake_exec)
 
     asyncio.run(handler._finalize_questdb_downsampling("medium", profile))
     assert any(q.startswith("ALTER MATERIALIZED VIEW") and q.endswith("SET TTL 365 DAYS;") for q in queries)
@@ -649,13 +650,13 @@ def test_failed_schema_step_is_repaired_by_the_retry_without_reconnecting(monkey
     inner = finalize_exec(queries, (0, None), None)
     outage = {"active": True}
 
-    async def fake_exec(query, *, auth=None):
+    async def fake_exec(query):
         if outage["active"] and "ADD COLUMN IF NOT EXISTS \"cpu_temp\"" in query:
             outage["active"] = False
             raise RuntimeError("temporary failure")
         return await inner(query, auth=auth)
 
-    handler._questdb_exec = fake_exec
+    handler._questdb = fake_questdb(fake_exec)
 
     async def exercise():
         with pytest.raises(RuntimeError):
@@ -844,7 +845,7 @@ def test_provisioning_creates_every_group_view_and_one_failure_does_not_block_th
     failing = questdb_rollup_view_name(handler._questdb_metrics_table, profile, next(iter(groups)))
     created = []
 
-    async def fake_exec(query, *, auth=None):
+    async def fake_exec(query):
         if query.startswith("CREATE MATERIALIZED VIEW"):
             created.append(re.search(r'EXISTS "([^"]+)"', query).group(1))
             if f'"{failing}"' in query:
@@ -857,7 +858,7 @@ def test_provisioning_creates_every_group_view_and_one_failure_does_not_block_th
             return {"dataset": [[90, "DAY"]]}
         return {"ddl": "OK"}
 
-    handler._questdb_exec = fake_exec
+    handler._questdb = fake_questdb(fake_exec)
     with caplog.at_level("DEBUG"):
         assert asyncio.run(handler._ensure_questdb_downsampling(profile)) is False
         assert asyncio.run(handler._ensure_questdb_downsampling(profile)) is False
@@ -908,10 +909,10 @@ def test_repeated_rollup_failure_logs_error_once_and_is_permanent_on_431(caplog)
     profile = QUESTDB_DOWNSAMPLING_PROFILES["medium"]
     request = httpx.Request("GET", "https://db.example/exec?query=x")
 
-    async def fake_exec(query, *, auth=None):
+    async def fake_exec(query):
         raise httpx.HTTPStatusError("boom", request=request, response=httpx.Response(431, request=request))
 
-    handler._questdb_exec = fake_exec
+    handler._questdb = fake_questdb(fake_exec)
     with caplog.at_level("DEBUG"):
         assert asyncio.run(handler._ensure_questdb_downsampling(profile)) is False
         assert asyncio.run(handler._ensure_questdb_downsampling(profile)) is False
@@ -997,7 +998,7 @@ def test_only_missing_groups_are_retried_and_progress_is_logged(caplog):
     failing = {"on": True}
     created = []
 
-    async def fake_exec(query, *, auth=None):
+    async def fake_exec(query):
         if query.startswith("CREATE MATERIALIZED VIEW"):
             view = re.search(r'EXISTS "([^"]+)"', query).group(1)
             created.append(view)
@@ -1011,7 +1012,7 @@ def test_only_missing_groups_are_retried_and_progress_is_logged(caplog):
             return {"dataset": [[90, "DAY"]]}
         return {"ddl": "OK"}
 
-    handler._questdb_exec = fake_exec
+    handler._questdb = fake_questdb(fake_exec)
     with caplog.at_level("INFO"):
         assert asyncio.run(handler._ensure_questdb_downsampling(profile)) is False
         failing["on"] = False
@@ -1034,14 +1035,14 @@ def test_view_missing_a_column_is_not_ready_keeps_raw_ttl_and_recovers(caplog):
     inner = finalize_exec(queries, (7, "DAY"), None)
     handler._rollup_ready_views.clear()
 
-    async def fake_exec(query, *, auth=None):
+    async def fake_exec(query):
         if "table_columns(" in query and f"_g{group:02d}_v1" in query and not state["complete"]:
             return {"dataset": [[c] for c in questdb_rollup_view_columns(groups[group]) if c != lacking]}
         if "min(timestamp)" in query:
             return {"dataset": [["2026-11-08T10:00:00.000000Z"]]}
         return await inner(query, auth=auth)
 
-    handler._questdb_exec = fake_exec
+    handler._questdb = fake_questdb(fake_exec)
     with caplog.at_level("INFO"):
         assert asyncio.run(handler._finalize_questdb_downsampling("medium", profile)) is False
         assert asyncio.run(handler._finalize_questdb_downsampling("medium", profile)) is False
@@ -1072,7 +1073,7 @@ def test_permanent_group_failure_is_skipped_while_other_groups_are_retried():
     state = {"temp_fails": True}
     request = httpx.Request("GET", "https://db.example/exec?query=x")
 
-    async def fake_exec(query, *, auth=None):
+    async def fake_exec(query):
         if query.startswith("CREATE MATERIALIZED VIEW"):
             view = re.search(r'EXISTS "([^"]+)"', query).group(1)
             sent.append(view)
@@ -1088,7 +1089,7 @@ def test_permanent_group_failure_is_skipped_while_other_groups_are_retried():
             return {"dataset": [[90, "DAY"]]}
         return {"ddl": "OK"}
 
-    handler._questdb_exec = fake_exec
+    handler._questdb = fake_questdb(fake_exec)
     assert asyncio.run(handler._ensure_questdb_downsampling(profile)) is False
     assert handler._rollup_failure_permanent is False  # the temporary failure is still worth retrying
     state["temp_fails"] = False
@@ -1108,12 +1109,12 @@ def test_permanent_group_failure_keeps_raw_ttl_unchanged():
     inner = finalize_exec(queries, (90, "DAY"), None)
     request = httpx.Request("GET", "https://db.example/exec?query=x")
 
-    async def fake_exec(query, *, auth=None):
+    async def fake_exec(query):
         if query.startswith("CREATE MATERIALIZED VIEW") and "_g00_v1" in query:
             raise httpx.HTTPStatusError("x", request=request, response=httpx.Response(431, request=request))
         return await inner(query, auth=auth)
 
-    handler._questdb_exec = fake_exec
+    handler._questdb = fake_questdb(fake_exec)
     assert asyncio.run(handler._finalize_questdb_downsampling("medium", profile)) is False
     assert not any('SET TTL' in q and '"fritzbox_AA1_metrics"' in q for q in queries)
     assert not any("INSERT INTO" in q for q in queries)
@@ -1121,7 +1122,7 @@ def test_permanent_group_failure_keeps_raw_ttl_unchanged():
 
 def _managed_check(state, table_id_result, *, id_query_fails=False):
     handler = make_handler()
-    async def fake_exec(query, *, auth=None):
+    async def fake_exec(query):
         if "LATEST ON timestamp" in query:
             return {"dataset": [state] if state else []}
         if query.startswith("SELECT id FROM tables()"):
@@ -1129,7 +1130,7 @@ def _managed_check(state, table_id_result, *, id_query_fails=False):
                 raise RuntimeError("unreadable")
             return {"dataset": [[table_id_result]] if table_id_result is not None else []}
         return {"ddl": "OK"}
-    handler._questdb_exec = fake_exec
+    handler._questdb = fake_questdb(fake_exec)
     return asyncio.run(handler._questdb_raw_ttl_is_managed())
 
 
@@ -1150,7 +1151,7 @@ def test_administrator_ttl_of_a_recreated_table_is_not_shortened():
     handler = make_handler()
     profile = QUESTDB_DOWNSAMPLING_PROFILES["medium"]
     queries = []
-    handler._questdb_exec = finalize_exec(
+    handler._questdb = fake_questdb(finalize_exec)(
         queries, (30, "DAY"), state_row(profile="low", raw_days=30, managed=True, table_id=10))
     assert asyncio.run(handler._finalize_questdb_downsampling("medium", profile)) is True
     assert not any("SET TTL" in q and "_rollup_" not in q and "_events" not in q for q in queries)
@@ -1159,10 +1160,10 @@ def test_administrator_ttl_of_a_recreated_table_is_not_shortened():
 def test_fresh_state_table_is_created_with_table_id_and_schema_version_1():
     handler = make_handler()
     queries = []
-    async def fake_exec(query, *, auth=None):
+    async def fake_exec(query):
         queries.append(query)
         return {"dataset": []}
-    handler._questdb_exec = fake_exec
+    handler._questdb = fake_questdb(fake_exec)
     assert asyncio.run(handler._read_questdb_downsampling_state()) == []
     assert queries[0].startswith('CREATE TABLE IF NOT EXISTS "_fritzfluxdb_downsampling"')
     assert "schema_version LONG" in queries[0] and "table_id LONG" in queries[0]
@@ -1175,10 +1176,10 @@ def test_all_downsampling_schema_versions_are_1():
     assert questdb_rollup_view_name("fritzbox_AA1_metrics", profile, 0) == "fritzbox_AA1_metrics_rollup_1m_g00_v1"
     queries = []
     handler = make_handler()
-    async def fake_exec(query, *, auth=None):
+    async def fake_exec(query):
         queries.append(query)
         return {"dataset": []}
-    handler._questdb_exec = fake_exec
+    handler._questdb = fake_questdb(fake_exec)
     asyncio.run(handler._set_questdb_downsampling_state(enabled=False))
     insert = next(q for q in queries if q.startswith("INSERT INTO"))
     assert "'', 1, false" in insert
@@ -1212,7 +1213,7 @@ def test_rejected_credentials_in_background_retry_surface_on_next_write():
     handler = make_handler()
     handler.downsampling_retry_attempts = 3
     handler.downsampling_retry_interval = 0
-    async def rejected(*, auth=None):
+    async def rejected():
         raise handler_module.DatabaseConfigError("rejected")
     handler._ensure_questdb_schema = rejected
     asyncio.run(handler._retry_questdb_downsampling_setup())
