@@ -12,6 +12,7 @@ from types import SimpleNamespace
 
 import httpx
 import pytest
+from gillbates_questdb_client import AsyncQuestDBClient, QuestDBConfig
 
 from app.influxdb.config import InfluxDBConfig
 from app.utils.questdb_admin import (
@@ -87,19 +88,16 @@ def test_questdb_admin_uses_password_for_basic_auth(monkeypatch):
     real_client = httpx.AsyncClient
 
     def client(**kwargs):
-        return real_client(
-            transport=httpx.MockTransport(
-                lambda request: headers.append(request.headers["Authorization"])
-                or httpx.Response(200)
-            ),
-            **kwargs,
+        transport = httpx.MockTransport(
+            lambda request: headers.append(request.headers["Authorization"]) or httpx.Response(200, json={"dataset": []})
         )
+        return real_client(**{**kwargs, "transport": transport})
 
-    monkeypatch.setattr("app.utils.questdb_admin.httpx.AsyncClient", client)
+    monkeypatch.setattr(httpx, "AsyncClient", client)
 
     async def request():
         async with QuestDBAdmin(config) as admin:
-            await admin.client.get("/")
+            await admin.query("SELECT 1;")
 
     asyncio.run(request())
 
@@ -242,25 +240,6 @@ def test_inventory_reports_an_unreadable_status_table():
     tables = [["fritzbox_AA1_metrics", False, "DAY", 10], STATE]
     with pytest.raises(AdminError, match="table_id"):
         asyncio.run(inventory_admin(tables, None).inventory())
-
-
-@pytest.mark.parametrize("dataset", ["rows", {"a": 1}, [1, 2], [["ok"], "bad"]])
-def test_query_rejects_an_invalid_dataset(dataset):
-    class Response:
-        def raise_for_status(self):
-            pass
-
-        def json(self):
-            return {"dataset": dataset}
-
-    class Client:
-        async def get(self, *_, **__):
-            return Response()
-
-    admin = object.__new__(QuestDBAdmin)
-    admin.client = Client()
-    with pytest.raises(AdminError, match="invalid dataset"):
-        asyncio.run(admin.query("SELECT 1;"))
 
 
 def test_inventory_rejects_rows_with_unexpected_columns():
@@ -532,8 +511,8 @@ def _query_through(handler):
     """Run one admin query over a mock transport and close the client on every path."""
     async def run():
         admin = object.__new__(QuestDBAdmin)
-        async with httpx.AsyncClient(base_url="http://db", transport=httpx.MockTransport(handler)) as client:
-            admin.client = client
+        async with AsyncQuestDBClient(QuestDBConfig(host="db"), transport=httpx.MockTransport(handler)) as client:
+            admin.questdb = client
             await admin.query("SELECT 1;")
 
     asyncio.run(run())
@@ -546,6 +525,29 @@ def test_query_classifies_rejected_credentials_as_a_configuration_error(status, 
     with pytest.raises(AdminError) as error:
         _query_through(lambda request: httpx.Response(status))
     assert isinstance(error.value, AdminConfigError) is config_error
+
+
+@pytest.mark.parametrize("response", [
+    httpx.Response(400, json={"error": "table does not exist", "position": 7}),
+    httpx.Response(200, json={"error": "bad syntax", "position": 3}),
+])
+def test_rejected_sql_is_an_admin_error_never_a_configuration_error(response):
+    from app.utils.questdb_admin import AdminConfigError
+    with pytest.raises(AdminError, match="rejected SQL") as error:
+        _query_through(lambda request: response)
+    assert not isinstance(error.value, AdminConfigError)
+
+
+def test_statement_over_the_request_limit_is_an_admin_error_never_a_configuration_error():
+    from app.utils.questdb_admin import AdminConfigError
+    async def run():
+        admin = object.__new__(QuestDBAdmin)
+        async with AsyncQuestDBClient(QuestDBConfig(), transport=httpx.MockTransport(lambda r: httpx.Response(200))) as client:
+            admin.questdb = client
+            await admin.query("SELECT " + "x" * 9_000)
+    with pytest.raises(AdminError) as error:
+        asyncio.run(run())
+    assert not isinstance(error.value, AdminConfigError)
 
 
 def test_unreachable_database_is_a_plain_failure_not_a_configuration_error():
@@ -566,9 +568,8 @@ def test_cli_exit_code_follows_the_contract(monkeypatch, status, code, capsys):
     real_client = httpx.AsyncClient
 
     def client(**kwargs):
-        return real_client(transport=httpx.MockTransport(lambda request: httpx.Response(status)), **kwargs)
-
-    monkeypatch.setattr("app.utils.questdb_admin.httpx.AsyncClient", client)
+        return real_client(**{**kwargs, "transport": httpx.MockTransport(lambda request: httpx.Response(status))})
+    monkeypatch.setattr(httpx, "AsyncClient", client)
     assert asyncio.run(main_async(["doctor"])) == code
     capsys.readouterr()
 

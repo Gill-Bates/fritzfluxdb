@@ -9,8 +9,11 @@ from types import SimpleNamespace
 
 import httpx
 import pytest
-
-from gillbates_questdb_client import QuestDBError, QuestDBQueryError, QuestDBStatementTooLongError
+from gillbates_questdb_client import (
+    QuestDBError,
+    QuestDBQueryError,
+    QuestDBStatementTooLongError,
+)
 
 from app.influxdb.handler import DatabaseConfigError, InfluxHandler
 from tests.questdb_fake import fake_questdb, status_error

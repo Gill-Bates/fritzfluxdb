@@ -14,6 +14,12 @@ from unittest.mock import patch
 
 import httpx
 import pytest
+from gillbates_questdb_client import (
+    MAX_QUERY_URL_BYTES,
+    QuestDBQueryError,
+    QuestDBStatementTooLongError,
+    exec_query_string,
+)
 
 import app.influxdb.handler as handler_module
 from app.influxdb.config import (
@@ -22,14 +28,10 @@ from app.influxdb.config import (
 )
 from app.influxdb.handler import (
     QUESTDB_EVENT_UPSERT_KEYS,
-    QUESTDB_MAX_QUERY_URL_BYTES,
     QUESTDB_ROLLUP_GROUP_COUNT,
     InfluxHandler,
     QuestDBMetricClass,
-    QuestDBStatementTooLongError,
-    _format_exc,
     questdb_events_table_name,
-    questdb_exec_query_string,
     questdb_expected_columns,
     questdb_metric_class,
     questdb_metrics_table_name,
@@ -41,7 +43,7 @@ from app.influxdb.handler import (
     questdb_rollup_view_name,
 )
 from app.utils.measurement import FritzMeasurement, WritePrecision
-from tests.questdb_fake import fake_questdb
+from tests.questdb_fake import fake_questdb, status_error
 
 pytestmark = pytest.mark.usefixtures("no_database_env")
 
@@ -320,8 +322,8 @@ def finalize_exec(queries, raw_ttl, state, *, alter_fails=False):
             return {"dataset": [state] if state else []}
         if "SELECT table_name FROM tables()" in query:
             return {"dataset": [["_fritzfluxdb_downsampling"]]}
-        if query.startswith("SELECT id FROM tables()"):
-            return {"dataset": [[42]]}
+        if query.startswith("SELECT table_name, id FROM tables()"):
+            return {"dataset": [["fritzbox_AA1_metrics", 42]]}
         if "ttlValue" in query and "_rollup_" in query:
             return {"dataset": [[90, "DAY"]]}
         if "ttlValue" in query:
@@ -336,6 +338,11 @@ def finalize_exec(queries, raw_ttl, state, *, alter_fails=False):
     return fake_exec
 
 
+def finalize_client(*args, **kwargs):
+    return fake_questdb(finalize_exec(*args, **kwargs))
+
+
+
 def test_schema_shortens_raw_ttl_only_after_rollup_is_current(monkeypatch):
     handler = make_handler()
     queries = []
@@ -343,7 +350,7 @@ def test_schema_shortens_raw_ttl_only_after_rollup_is_current(monkeypatch):
         "app.influxdb.handler.questdb_expected_columns",
         lambda: {"cpu_temp": "LONG"},
     )
-    handler._questdb = fake_questdb(finalize_exec)(queries, (0, None), None)
+    handler._questdb = fake_questdb(finalize_exec(queries, (0, None), None))
 
     assert asyncio.run(handler._ensure_questdb_schema()) is True
     raw_ttl_query = 'ALTER TABLE "fritzbox_AA1_metrics" SET TTL 7 DAYS;'
@@ -367,13 +374,13 @@ def test_schema_state_ttl_and_ownership_use_the_metrics_table_only(monkeypatch):
     handler = make_handler()
     queries = []
     monkeypatch.setattr("app.influxdb.handler.questdb_expected_columns", lambda: {"cpu_temp": "LONG"})
-    handler._questdb = fake_questdb(finalize_exec)(queries, (0, None), None)
+    handler._questdb = fake_questdb(finalize_exec(queries, (0, None), None))
     assert asyncio.run(handler._ensure_questdb_schema()) is True
     assert any(q.startswith('CREATE TABLE IF NOT EXISTS "fritzbox_AA1_metrics" ') for q in queries)
     assert any(q.startswith('CREATE TABLE IF NOT EXISTS "fritzbox_AA1_events" ') for q in queries)
     assert not any('"fritzbox_AA1"' in q or "'fritzbox_AA1'" in q for q in queries)
     # The ownership id and the status row are keyed by the metrics table.
-    assert "SELECT id FROM tables() WHERE table_name = 'fritzbox_AA1_metrics';" in queries
+    assert "SELECT table_name, id FROM tables();" in queries
     assert any("measurement = 'fritzbox_AA1_metrics'" in q for q in queries)
     assert any("now(), 'fritzbox_AA1_metrics'," in q for q in queries if q.startswith("INSERT INTO"))
 
@@ -383,7 +390,7 @@ def test_ttl_of_a_foreign_status_row_id_is_not_adopted_for_the_metrics_table():
     profile = QUESTDB_DOWNSAMPLING_PROFILES["medium"]
     queries = []
     # The managed flag is only trusted when the stored id equals the metrics table id (42).
-    handler._questdb = fake_questdb(finalize_exec)(
+    handler._questdb = finalize_client(
         queries, (30, "DAY"), state_row(profile="low", raw_days=30, managed=True, table_id=7)
     )
     assert asyncio.run(handler._finalize_questdb_downsampling("medium", profile)) is True
@@ -394,7 +401,7 @@ def test_administrator_raw_ttl_is_kept_and_published_as_effective_history():
     handler = make_handler()
     profile = QUESTDB_DOWNSAMPLING_PROFILES["medium"]
     queries = []
-    handler._questdb = fake_questdb(finalize_exec)(queries, (90, "DAY"), None)
+    handler._questdb = fake_questdb(finalize_exec(queries, (90, "DAY"), None))
 
     assert asyncio.run(handler._finalize_questdb_downsampling("medium", profile)) is True
     assert not any('ALTER TABLE "fritzbox_AA1_metrics" SET TTL' in query for query in queries)
@@ -409,7 +416,7 @@ def test_managed_raw_ttl_is_shortened_on_profile_change():
     handler = make_handler()
     profile = QUESTDB_DOWNSAMPLING_PROFILES["medium"]
     queries = []
-    handler._questdb = fake_questdb(finalize_exec)(
+    handler._questdb = finalize_client(
         queries,
         (30, "DAY"),
         state_row(profile="low", raw_days=30, managed=True, table_id=42),
@@ -428,7 +435,7 @@ def test_failed_raw_ttl_change_publishes_no_active_state():
     handler = make_handler()
     profile = QUESTDB_DOWNSAMPLING_PROFILES["medium"]
     queries = []
-    handler._questdb = fake_questdb(finalize_exec)(queries, (0, None), None, alter_fails=True)
+    handler._questdb = fake_questdb(finalize_exec(queries, (0, None), None, alter_fails=True))
 
     assert asyncio.run(handler._finalize_questdb_downsampling("medium", profile)) is False
     assert not any('INSERT INTO "_fritzfluxdb_downsampling"' in query for query in queries)
@@ -517,8 +524,8 @@ def _state_with_table_id(stored_id, actual_id):
         queries.append(query)
         if "LATEST ON timestamp" in query:
             return {"dataset": [[*state_row(managed=True)[:7], stored_id]]}
-        if query.startswith("SELECT id FROM tables()"):
-            return {"dataset": [[actual_id]]}
+        if query.startswith("SELECT table_name, id FROM tables()"):
+            return {"dataset": [["fritzbox_AA1_metrics", actual_id]]}
         return {"ddl": "OK"}
 
     handler._questdb = fake_questdb(fake_exec)
@@ -654,7 +661,7 @@ def test_failed_schema_step_is_repaired_by_the_retry_without_reconnecting(monkey
         if outage["active"] and "ADD COLUMN IF NOT EXISTS \"cpu_temp\"" in query:
             outage["active"] = False
             raise RuntimeError("temporary failure")
-        return await inner(query, auth=auth)
+        return await inner(query)
 
     handler._questdb = fake_questdb(fake_exec)
 
@@ -794,12 +801,12 @@ def test_every_group_statement_stays_small_regardless_of_column_count(monkeypatc
     groups = questdb_rollup_groups(columns)
 
     sizes = [
-        len(questdb_exec_query_string(questdb_rollup_ddl("fritzbox_50E63634FEA8", profile, 365, group, columns)))
+        len(exec_query_string(questdb_rollup_ddl("fritzbox_50E63634FEA8", profile, 365, group, columns)))
         for group in groups
     ]
 
     assert sum(len(members) for members in groups.values()) == count
-    assert max(sizes) <= ROLLUP_URL_TARGET_BYTES < QUESTDB_MAX_QUERY_URL_BYTES
+    assert max(sizes) <= ROLLUP_URL_TARGET_BYTES < MAX_QUERY_URL_BYTES
 
 
 def test_real_columns_fit_far_below_the_hard_limit_and_a_long_measurement_name():
@@ -809,7 +816,7 @@ def test_real_columns_fit_far_below_the_hard_limit_and_a_long_measurement_name()
     for group in questdb_rollup_groups():
         ddl = questdb_rollup_ddl(table, profile, 365, group)
         assert "\n" not in ddl
-        assert len(questdb_exec_query_string(ddl)) < 2_500
+        assert len(exec_query_string(ddl)) < 2_500
 
 
 def test_group_assignment_is_stable_complete_and_without_duplicates():
@@ -872,38 +879,6 @@ def test_provisioning_creates_every_group_view_and_one_failure_does_not_block_th
     assert set(handler._rollup_failures) == {failing}
 
 
-def test_oversized_statement_is_rejected_before_sending():
-    with pytest.raises(QuestDBStatementTooLongError):
-        questdb_exec_query_string("SELECT " + "x" * QUESTDB_MAX_QUERY_URL_BYTES)
-
-
-def test_http_status_error_log_text_omits_url_and_statement():
-    request = httpx.Request("GET", "https://db.example/exec?query=CREATE+MATERIALIZED+VIEW+secret")
-    response = httpx.Response(431, request=request)
-    exc = httpx.HTTPStatusError("Client error '431' for url '" + str(request.url) + "'", request=request, response=response)
-
-    text = _format_exc(exc)
-
-    assert text == "HTTPStatusError: HTTP 431 Request Header Fields Too Large"
-    assert "query" not in text and "db.example" not in text
-
-
-def test_questdb_exec_sends_statement_with_bounded_query_string():
-    handler = make_handler()
-    seen = {}
-
-    async def fake_get(path, params=None, auth=None):
-        seen["path"], seen["params"] = path, params
-        return httpx.Response(200, json={"ddl": "OK"}, request=httpx.Request("GET", "http://q"))
-
-    handler.client = SimpleNamespace(get=fake_get)
-
-    asyncio.run(handler._questdb_exec("SELECT 'a b';"))
-
-    assert seen["path"] == "/exec"
-    assert seen["params"] == "query=SELECT+%27a+b%27%3B"
-
-
 def test_repeated_rollup_failure_logs_error_once_and_is_permanent_on_431(caplog):
     handler = make_handler()
     profile = QUESTDB_DOWNSAMPLING_PROFILES["medium"]
@@ -923,35 +898,22 @@ def test_repeated_rollup_failure_logs_error_once_and_is_permanent_on_431(caplog)
     assert handler._rollup_failure_permanent is True
 
 
-def test_questdb_exec_reports_sql_error_of_http_400():
-    handler = make_handler()
-
-    async def fake_get(path, params=None, auth=None):
-        return httpx.Response(400, json={"error": "table does not exist", "position": 7},
-                              request=httpx.Request("GET", "http://q/exec?query=secret"))
-
-    handler.client = SimpleNamespace(get=fake_get)
-
-    with pytest.raises(RuntimeError, match="table does not exist at position 7"):
-        asyncio.run(handler._questdb_exec("SELECT 1"))
-
-
 def test_oversized_rollup_logs_kind_length_and_view_without_url(caplog, monkeypatch):
     handler = make_handler()
     profile = QUESTDB_DOWNSAMPLING_PROFILES["medium"]
-    monkeypatch.setattr(handler_module, "QUESTDB_MAX_QUERY_URL_BYTES", 100)
+    monkeypatch.setattr(handler_module, "questdb_rollup_ddl", lambda *args: "CREATE MATERIALIZED VIEW " + "x" * 9_000)
 
-    async def fail(*args, **kwargs):
+    def fail(query):
         raise AssertionError("an oversized statement must not be sent")
 
-    handler.client = SimpleNamespace(get=fail)
+    handler._questdb = fake_questdb(fail)
     with caplog.at_level("DEBUG"):
         assert asyncio.run(handler._ensure_questdb_downsampling(profile)) is False
 
     message = next(r.getMessage() for r in caplog.records if r.levelname == "ERROR")
     view_name = questdb_rollup_view_name(handler._questdb_metrics_table, profile, next(iter(questdb_rollup_groups())))
     assert view_name in message and "CREATE MATERIALIZED VIEW" in message
-    assert "bytes URL-encoded, limit is 100" in message
+    assert f"limit is {MAX_QUERY_URL_BYTES}" in message
     assert "SELECT" not in message and "http" not in message
     assert handler._rollup_failure_permanent is True
 
@@ -971,23 +933,16 @@ def test_unfavorable_distribution_hits_the_hard_limit_with_a_clear_message(monke
     ddl = questdb_rollup_ddl("fritzbox_AA1_metrics", profile, 365, 0, columns)
 
     with pytest.raises(QuestDBStatementTooLongError, match="request is .* limit is 8000"):
-        questdb_exec_query_string(ddl)
-
-
-def test_request_target_counts_the_exec_path():
-    sql = "x" * (QUESTDB_MAX_QUERY_URL_BYTES - len("query=") - len("/exec?"))
-    assert questdb_exec_query_string(sql)
-    with pytest.raises(QuestDBStatementTooLongError):
-        questdb_exec_query_string(sql + "x")
+        exec_query_string(ddl)
 
 
 def test_group_reserve_against_the_limit_is_reported():
     profile = QUESTDB_DOWNSAMPLING_PROFILES["medium"]
     sizes = [
-        len("/exec?") + len(questdb_exec_query_string(questdb_rollup_ddl("fritzbox_" + "A" * 120, profile, 365, g)))
+        len("/exec?") + len(exec_query_string(questdb_rollup_ddl("fritzbox_" + "A" * 120, profile, 365, g)))
         for g in questdb_rollup_groups()
     ]
-    assert QUESTDB_MAX_QUERY_URL_BYTES - max(sizes) > 6_000
+    assert MAX_QUERY_URL_BYTES - max(sizes) > 6_000
 
 
 def test_only_missing_groups_are_retried_and_progress_is_logged(caplog):
@@ -1040,7 +995,7 @@ def test_view_missing_a_column_is_not_ready_keeps_raw_ttl_and_recovers(caplog):
             return {"dataset": [[c] for c in questdb_rollup_view_columns(groups[group]) if c != lacking]}
         if "min(timestamp)" in query:
             return {"dataset": [["2026-11-08T10:00:00.000000Z"]]}
-        return await inner(query, auth=auth)
+        return await inner(query)
 
     handler._questdb = fake_questdb(fake_exec)
     with caplog.at_level("INFO"):
@@ -1112,7 +1067,7 @@ def test_permanent_group_failure_keeps_raw_ttl_unchanged():
     async def fake_exec(query):
         if query.startswith("CREATE MATERIALIZED VIEW") and "_g00_v1" in query:
             raise httpx.HTTPStatusError("x", request=request, response=httpx.Response(431, request=request))
-        return await inner(query, auth=auth)
+        return await inner(query)
 
     handler._questdb = fake_questdb(fake_exec)
     assert asyncio.run(handler._finalize_questdb_downsampling("medium", profile)) is False
@@ -1125,10 +1080,11 @@ def _managed_check(state, table_id_result, *, id_query_fails=False):
     async def fake_exec(query):
         if "LATEST ON timestamp" in query:
             return {"dataset": [state] if state else []}
-        if query.startswith("SELECT id FROM tables()"):
+        if query.startswith("SELECT table_name, id FROM tables()"):
             if id_query_fails:
-                raise RuntimeError("unreadable")
-            return {"dataset": [[table_id_result]] if table_id_result is not None else []}
+                return RuntimeError("unreadable")
+            rows = [[handler._questdb_metrics_table, table_id_result]] if table_id_result is not None else []
+            return {"dataset": rows}
         return {"ddl": "OK"}
     handler._questdb = fake_questdb(fake_exec)
     return asyncio.run(handler._questdb_raw_ttl_is_managed())
@@ -1151,7 +1107,7 @@ def test_administrator_ttl_of_a_recreated_table_is_not_shortened():
     handler = make_handler()
     profile = QUESTDB_DOWNSAMPLING_PROFILES["medium"]
     queries = []
-    handler._questdb = fake_questdb(finalize_exec)(
+    handler._questdb = finalize_client(
         queries, (30, "DAY"), state_row(profile="low", raw_days=30, managed=True, table_id=10))
     assert asyncio.run(handler._finalize_questdb_downsampling("medium", profile)) is True
     assert not any("SET TTL" in q and "_rollup_" not in q and "_events" not in q for q in queries)
@@ -1183,25 +1139,22 @@ def test_all_downsampling_schema_versions_are_1():
     asyncio.run(handler._set_questdb_downsampling_state(enabled=False))
     insert = next(q for q in queries if q.startswith("INSERT INTO"))
     assert "'', 1, false" in insert
-def _http_handler(responses):
+def _http_handler(answer):
     handler = make_handler()
-    async def fake_get(path, params=None, auth=None):
-        status, body = responses(params)
-        return httpx.Response(status, json=body, request=httpx.Request("GET", "http://q"))
-    handler.client = SimpleNamespace(get=fake_get)
+    handler._questdb = fake_questdb(lambda query: answer)
     handler.name = "QuestDB"
     return handler
 
 
 @pytest.mark.parametrize("status", [401, 403])
 def test_ddl_rejected_with_401_or_403_is_a_permanent_config_error(status):
-    handler = _http_handler(lambda params: (status, {}))
+    handler = _http_handler(status_error(status))
     with pytest.raises(handler_module.DatabaseConfigError):
         asyncio.run(handler._questdb_exec("CREATE TABLE x (a INT);"))
 
 
 def test_permission_error_during_schema_setup_is_not_swallowed():
-    handler = _http_handler(lambda params: (403, {}))
+    handler = _http_handler(status_error(403))
     with pytest.raises(handler_module.DatabaseConfigError):
         asyncio.run(handler._ensure_questdb_schema())
     profile = QUESTDB_DOWNSAMPLING_PROFILES["medium"]
@@ -1222,11 +1175,11 @@ def test_rejected_credentials_in_background_retry_surface_on_next_write():
 
 
 def test_503_stays_retryable_and_400_reports_the_sql_error_without_config_error():
-    handler = _http_handler(lambda params: (503, {}))
+    handler = _http_handler(status_error(503))
     with pytest.raises(httpx.HTTPStatusError):
         asyncio.run(handler._questdb_exec("SELECT 1;"))
-    handler = _http_handler(lambda params: (400, {"error": "bad syntax", "position": 3}))
-    with pytest.raises(RuntimeError, match="bad syntax"):
+    handler = _http_handler(RuntimeError("bad syntax"))
+    with pytest.raises(QuestDBQueryError, match="bad syntax"):
         asyncio.run(handler._questdb_exec("SELEC 1;"))
 
 
