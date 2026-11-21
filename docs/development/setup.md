@@ -2,10 +2,10 @@
 
 ## Install dependencies
 
-Use Python 3.13 or newer. The runtime dependencies are pinned in `pyproject.toml`.
+Use Python 3.14 or newer. The runtime dependencies are pinned in `pyproject.toml`.
 
 ```bash
-python3.13 -m venv .venv
+python3.14 -m venv .venv
 . .venv/bin/activate
 python -m pip install --upgrade pip
 python -m pip install '.[dev]'

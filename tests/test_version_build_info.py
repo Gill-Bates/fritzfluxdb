@@ -72,7 +72,7 @@ def test_project_version_uses_app_home_for_container_layout(tmp_path, monkeypatc
 
 
 def test_startup_banner_uses_project_version(capsys, monkeypatch):
-    monkeypatch.setattr("app.fritzbox.banner.version_notice", lambda *_: None)
+    monkeypatch.setattr("gillbates_logging.banner.version_notice", lambda *_, **__: None)
     print_banner()
 
     assert f"v{version.read_project_version()}" in capsys.readouterr().out

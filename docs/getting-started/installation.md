@@ -4,7 +4,7 @@
 
 - A FRITZ!Box reachable from the host running fritzFluxDB.
 - A database endpoint: QuestDB, InfluxDB v1, or InfluxDB v2.
-- Docker Engine with Docker Compose for the container deployment, or Python 3.13+ for local runs.
+- Docker Engine with Docker Compose for the container deployment, or Python 3.14+ for local runs.
 - A Grafana instance if you want to use the supplied dashboards.
 
 The FRITZ!Box account must be allowed to access the TR-064 services used by the application. In the FRITZ!Box, enable **Home Network > Network > Network Settings > Allow access for applications**; without it fritzfluxdb stops at startup with exit code `78`.

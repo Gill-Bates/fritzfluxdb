@@ -18,6 +18,7 @@ import pytest
         "uvicorn[standard]==0.30.0",
         'tomli==2.0.1; python_version < "3.11"',
         "pytest-randomly==5.1.0",
+        "gillbates-logging @ git+https://github.com/Gill-Bates/python-libraries.git@gillbates-logging-v0.10.0#subdirectory=packages/logging",
     ],
 )
 def test_exact_pins_pass(requirement):
@@ -36,6 +37,9 @@ def test_exact_pins_pass(requirement):
         "httpx==0.27,<1",
         "httpx @ https://example.invalid/httpx.whl",
         "httpx===0.27",
+        "gillbates-logging @ git+https://github.com/Gill-Bates/python-libraries.git@main#subdirectory=packages/logging",
+        "gillbates-logging @ git+https://github.com/Gill-Bates/python-libraries.git@gillbates-logging-v0.10#subdirectory=packages/logging",
+        "gillbates-logging @ git+https://github.com/other/python-libraries.git@gillbates-logging-v0.10.0#subdirectory=packages/logging",
     ],
 )
 def test_loose_requirements_fail(requirement):

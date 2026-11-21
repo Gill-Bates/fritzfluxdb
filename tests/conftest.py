@@ -31,7 +31,12 @@ def _restore_project_loggers():
         (logger, logger.level, list(logger.handlers), logger.propagate, logger.disabled)
         for logger in map(logging.getLogger, _PROJECT_LOGGERS)
     ]
+    root = logging.getLogger()
+    root_level, root_handlers = root.level, list(root.handlers)
     yield
+    # LineLog.setup() configures the root logger once; keep its level from leaking into other tests.
+    root.setLevel(root_level)
+    root.handlers[:] = root_handlers
     for logger, level, handlers, propagate, disabled in saved:
         logger.setLevel(level)
         logger.handlers[:] = handlers

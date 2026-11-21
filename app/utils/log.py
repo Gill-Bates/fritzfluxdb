@@ -6,13 +6,18 @@
 
 import asyncio
 import logging
-import sys
 from logging.handlers import QueueHandler
+
+from gillbates_logging import LineLog
 
 from app.utils.common import do_error_exit
 
 # Log levels accepted by setup_logging() and the --log-level option.
 valid_log_levels = ["DEBUG", "INFO", "WARNING", "ERROR"]
+
+LOG_SOURCE = "fritzFlux"
+# Line format, stdout/stderr split and sanitising come from the shared logging package.
+LINE_LOG = LineLog(LOG_SOURCE)
 
 
 class DroppingQueueHandler(QueueHandler):
@@ -56,7 +61,7 @@ def get_logger():
     logging.Logger
     """
 
-    return logging.getLogger("fritzFlux")
+    return logging.getLogger(LOG_SOURCE)
 
 
 def setup_logging(log_level=None, log_queue=None):
@@ -85,23 +90,16 @@ def setup_logging(log_level=None, log_queue=None):
 
     numeric_log_level = getattr(logging, log_level.upper(), None)
 
-    # Always prefix a timestamp: `docker logs` does not add one on its own.
-    log_format = logging.Formatter(
-        '%(asctime)s - %(levelname)s: %(message)s',
-        datefmt='%Y-%m-%d %H:%M:%S',
-    )
+    # Console output is a root handler installed once by the package; the project logger propagates to it.
+    LINE_LOG.setup(log_level)
 
     logger = get_logger()
     logger.handlers.clear()
     logger.setLevel(numeric_log_level)
-    logger.propagate = False
+    logger.propagate = True
     # httpx logs full request URLs at INFO, and the Lua session id travels in the query string.
     for noisy in ("httpx", "httpcore"):
         logging.getLogger(noisy).setLevel(logging.WARNING)
-
-    log_stream = logging.StreamHandler(sys.stdout)
-    log_stream.setFormatter(log_format)
-    logger.addHandler(log_stream)
 
     if log_queue is not None:
         try:

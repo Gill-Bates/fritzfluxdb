@@ -33,9 +33,17 @@ PIN_RE = re.compile(
 )
 
 
+# Shared gillbates-* package pinned by the git tag of its own release in python-libraries.
+LIB_PIN_RE = re.compile(
+    r"(?P<name>gillbates-[a-z0-9-]+) @ git\+https://github\.com/Gill-Bates/python-libraries\.git"
+    r"@(?P=name)-v[0-9]+\.[0-9]+\.[0-9]+#subdirectory=packages/[a-z0-9-]+"
+)
+
+
 def is_pinned(requirement: str) -> bool:
-    """True when the requirement is `name==version`; a marker never counts as a pin."""
-    return PIN_RE.fullmatch(requirement.strip()) is not None
+    """True for `name==version` or a gillbates-* release tag; a marker never counts as a pin."""
+    requirement = requirement.strip()
+    return PIN_RE.fullmatch(requirement) is not None or LIB_PIN_RE.fullmatch(requirement) is not None
 
 
 def find_problems(project: dict) -> list[str]:

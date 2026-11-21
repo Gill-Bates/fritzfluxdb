@@ -1,6 +1,6 @@
 # Architecture
 
-fritzFluxDB is a Python 3.13 asynchronous daemon. The container image installs the `app` package
+fritzFluxDB is a Python 3.14 asynchronous daemon. The container image installs the `app` package
 with pip and starts it with `python -m app.main`.
 
 ```text

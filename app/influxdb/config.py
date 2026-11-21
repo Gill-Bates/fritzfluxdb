@@ -327,7 +327,7 @@ class InfluxDBConfig(ConfigModel):
         return _db_label(info.data.get("version"))
 
     @model_validator(mode="after")
-    def _check_consistency(self, info: ValidationInfo) -> "InfluxDBConfig":
+    def _check_consistency(self, info: ValidationInfo) -> InfluxDBConfig:
         if (info.context or {}).get("lenient"):
             return self
 

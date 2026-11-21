@@ -13,6 +13,8 @@ import sys
 from collections.abc import Callable
 from pathlib import Path
 
+from gillbates_shutdown_handler import install_loop_handlers
+
 from app.fritzbox.banner import print_banner
 from app.fritzbox.handler import FritzBoxHandler, FritzBoxLuaHandler
 from app.influxdb.handler import (
@@ -93,8 +95,8 @@ async def _connect_unless_stopped(connect: Callable[[], None], shutdown_event: a
 
 
 async def main_async() -> int:
-    if sys.version_info < (3, 13):  # noqa: UP036 -- guards against running on an older interpreter despite the declared target-version
-        print("Error: Python version 3.13 or higher required!", file=sys.stderr)
+    if sys.version_info < (3, 14):  # noqa: UP036 -- guards against running on an older interpreter despite the declared target-version
+        print("Error: Python version 3.14 or higher required!", file=sys.stderr)
         return 1
 
     args = parse_command_line(VERSION, DESCRIPTION, VERSION_DATE, URL, default_config)
@@ -139,17 +141,16 @@ async def main_async() -> int:
     loop = asyncio.get_running_loop()
     shutdown_event = asyncio.Event()
 
-    def signal_handler(sig):
-        log.info(f"Received exit signal {sig.name}...")
+    def signal_handler(signum):
+        log.info(f"Received exit signal {signal.Signals(signum).name}...")
         shutdown_event.set()
         # Login chains in worker threads stop at their next request, not after the whole fallback.
         fritzbox_connection.request_shutdown()
         fritzbox_lua_connection.request_shutdown()
 
     try:
-        for fb_signal in [signal.SIGHUP, signal.SIGTERM, signal.SIGINT]:
-            loop.add_signal_handler(fb_signal, lambda s=fb_signal: signal_handler(s))
-    except (NotImplementedError, RuntimeError) as exc:
+        install_loop_handlers(loop, signal_handler, (signal.SIGHUP, signal.SIGTERM, signal.SIGINT))
+    except (NotImplementedError, RuntimeError, OSError, ValueError) as exc:
         log.error("Unable to register POSIX signal handlers: %s", exc)
         return 1
 

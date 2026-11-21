@@ -1,4 +1,4 @@
-FROM python:3.13-slim AS base
+FROM python:3.14-slim AS base
 SHELL ["/bin/sh", "-eu", "-c"]
 
 # --- Runtime environment ---------------------------------------------------
@@ -13,7 +13,7 @@ WORKDIR ${APP_HOME}
 
 # upgrade first: picks up Debian security fixes already published for the
 # base image's packages (e.g. perl-base, libsqlite3, gzip, libpcre2) that
-# python:3.13-slim-trixie has not yet rebuilt with, so the Trivy release gate
+# python:3.14-slim-trixie has not yet rebuilt with, so the Trivy release gate
 # does not fail on CVEs Debian already fixed upstream.
 RUN apt-get update \
     && apt-get upgrade -y \

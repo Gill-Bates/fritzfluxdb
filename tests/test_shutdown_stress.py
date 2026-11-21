@@ -41,7 +41,7 @@ def test_shutdown_with_hung_box_full_queue_and_slow_database(monkeypatch, caplog
     async def scenario():
         loop = asyncio.get_running_loop()
         callbacks = {}
-        monkeypatch.setattr(loop, "add_signal_handler", lambda sig, callback: callbacks.__setitem__(sig, callback))
+        monkeypatch.setattr(loop, "add_signal_handler", lambda sig, callback, *args: callbacks.__setitem__(sig, lambda: callback(*args)))
         box_started, write_started, queue_full = asyncio.Event(), asyncio.Event(), asyncio.Event()
         box = FritzBoxHandler(config)
         box.config.fw_version = "6.90"

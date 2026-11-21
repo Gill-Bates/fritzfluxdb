@@ -127,7 +127,7 @@ class ForcedDisconnectWindow(BaseModel):
     tolerance_s: int = Field(default=LIFETIME_TOLERANCE_S, ge=0)
 
     @model_validator(mode="after")
-    def _hour_mode_complete(self) -> "ForcedDisconnectWindow":
+    def _hour_mode_complete(self) -> ForcedDisconnectWindow:
         if self.kind == "hour_of_day" and (self.hour is None or self.utc_offset_s is None):
             raise ValueError("hour_of_day needs hour 0..23 and utc_offset_s")
         if self.tolerance_s >= self.lifetime_s:
@@ -165,7 +165,7 @@ class WanCauseResult(BaseModel):
     evidence: tuple[EvidenceKind, ...] = ()
 
     @model_validator(mode="after")
-    def _conservative(self) -> "WanCauseResult":
+    def _conservative(self) -> WanCauseResult:
         # Guards the "never overclaim" rules even if the classifier is changed later.
         if self.cause is CauseClass.PLANNED_DISCONNECT and self.confidence is not Confidence.PROBABLE:
             raise ValueError("planned_disconnect is never more than probable")
