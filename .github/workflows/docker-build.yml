@@ -117,6 +117,8 @@ jobs:
     uses: ./.github/workflows/ci.yml
     permissions:
       contents: read
+    secrets:
+      RELEASE_TOKEN: ${{ secrets.RELEASE_TOKEN }}
 
   build:
     name: Build ${{ matrix.arch }} image
@@ -174,6 +176,9 @@ jobs:
           push: false
           cache-from: type=gha,scope=fritzfluxdb-${{ matrix.arch }}
           cache-to: type=gha,mode=max,scope=fritzfluxdb-${{ matrix.arch }}
+          # BuildKit secret for the private python-libraries install; not an ARG or ENV.
+          secrets: |
+            python_libraries_token=${{ secrets.RELEASE_TOKEN }}
           build-args: |
             APP_VERSION=${{ env.VERSION }}
             VCS_REF=${{ github.sha }}

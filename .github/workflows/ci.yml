@@ -19,6 +19,10 @@ on:
       - main
   workflow_dispatch:
   workflow_call:
+    secrets:
+      # Read access to the private Gill-Bates/python-libraries repository.
+      RELEASE_TOKEN:
+        required: true
 
 permissions:
   contents: read
@@ -201,14 +205,28 @@ jobs:
           cache-dependency-path: pyproject.toml
       # The requirement files are generated from pyproject.toml into the runner
       # temp directory; wheels only, so no dependency builds from source.
+      # The gillbates-* packages are tags of the private python-libraries repository: they
+      # install from git with the token handed over by a credential helper, so they are
+      # split off the wheels-only install. The token is missing for fork pull requests.
       - name: Install dependencies
+        env:
+          RELEASE_TOKEN: ${{ secrets.RELEASE_TOKEN }}
         run: |
           set -euo pipefail
+          : "${RELEASE_TOKEN:?Missing RELEASE_TOKEN secret (not available to pull requests from forks)}"
           python tools/pyproject-deps.py dev > "$RUNNER_TEMP/requirements-ci.txt"
-          python tools/pyproject-deps.py >> "$RUNNER_TEMP/requirements-ci.txt"
-          cat "$RUNNER_TEMP/requirements-ci.txt"
+          python tools/pyproject-deps.py > "$RUNNER_TEMP/requirements-all.txt"
+          grep -v '^gillbates-' "$RUNNER_TEMP/requirements-all.txt" >> "$RUNNER_TEMP/requirements-ci.txt"
+          grep '^gillbates-' "$RUNNER_TEMP/requirements-all.txt" > "$RUNNER_TEMP/requirements-libs.txt"
+          cat "$RUNNER_TEMP/requirements-ci.txt" "$RUNNER_TEMP/requirements-libs.txt"
           pip install --only-binary=:all: -r "$RUNNER_TEMP/requirements-ci.txt"
+          export GIT_TERMINAL_PROMPT=0 GIT_CONFIG_COUNT=2 GIT_CONFIG_KEY_0=credential.helper GIT_CONFIG_VALUE_0=
+          export GIT_CONFIG_KEY_1=credential.helper
+          # shellcheck disable=SC2016 # expanded by git's helper shell at call time, not here
+          export GIT_CONFIG_VALUE_1='!f() { echo username=x-access-token; echo "password=${RELEASE_TOKEN}"; }; f'
+          pip install -r "$RUNNER_TEMP/requirements-libs.txt"
           pip check
+          python -c "import gillbates_logging, gillbates_shutdown_handler"
       - name: Run ruff
         if: matrix.check == 'ruff'
         run: ruff check --output-format=github .

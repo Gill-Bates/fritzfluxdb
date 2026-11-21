@@ -11,6 +11,10 @@ python -m pip install --upgrade pip
 python -m pip install '.[dev]'
 ```
 
+The shared `gillbates-*` packages are installed from tags of the private `Gill-Bates/python-libraries`
+repository, so the install needs git and read access to it. For local work on a package, install it
+editable from a checkout (`pip install -e <checkout>/packages/<name>`) after the command above.
+
 Direct starts do not load `.env` automatically. Export the variables in your shell (for example
 `set -a; . ./.env; set +a` with a local `.env` holding your own values), or pass an INI file with
 `--config`. Never put credentials into tracked files.

@@ -30,10 +30,24 @@ RUN apt-get update \
 # the only source of CVE findings in this image. Dropping it also keeps the
 # runtime surface smaller. Dependency consistency is verified here, at build
 # time, while pip is still present.
+# The gillbates-* packages come from tags of the private Gill-Bates/python-libraries
+# repository: the token is a BuildKit secret (never ARG/ENV, so it stays out of layers
+# and image history) handed to git through a credential helper that exists only for this
+# command. git is installed and purged within this RUN, so the image carries neither git
+# nor the token.
 COPY pyproject.toml README.md ./
 COPY app ./app
-RUN pip install --no-cache-dir . \
+RUN --mount=type=secret,id=python_libraries_token,required=true \
+    apt-get update \
+    && apt-get install -y --no-install-recommends git \
+    && GIT_TERMINAL_PROMPT=0 GIT_CONFIG_COUNT=2 GIT_CONFIG_KEY_0=credential.helper GIT_CONFIG_VALUE_0= \
+       GIT_CONFIG_KEY_1=credential.helper \
+       GIT_CONFIG_VALUE_1='!f() { echo username=x-access-token; echo "password=$(cat /run/secrets/python_libraries_token)"; }; f' \
+       pip install --no-cache-dir . \
     && pip check \
+    && python -c "import gillbates_logging, gillbates_shutdown_handler" \
+    && apt-get purge -y --auto-remove git \
+    && rm -rf /var/lib/apt/lists/* \
     && python -m pip uninstall -y pip \
     && rm -rf ./app
 
