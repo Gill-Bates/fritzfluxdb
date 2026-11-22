@@ -482,3 +482,16 @@ def test_influx_events_get_a_deterministic_sub_second_offset_and_no_uid_tag():
     assert one == again and one != two
     assert "uid=" not in one[0] and one[0].startswith("fritzbox,box=b,log_type=x message=")
     assert int(one[0].rsplit(" ", 1)[1]) // 1_000_000_000 == TS
+
+
+@pytest.mark.parametrize("name", ['a\\"b', "\ttab"])
+def test_influx_field_names_the_package_cannot_encode_drop_only_that_measurement(name):
+    lines, valid = make_handler("influxdb").bundle_measurements([measurement(name, 1), measurement("ok", 2)])
+    assert lines == [f"fritzbox_metrics,box=fritz.box ok=2i {TS}"]
+    assert [m.name for m in valid] == ["ok"]
+
+
+def test_influx_field_names_equal_after_cleanup_go_to_separate_lines():
+    lines, valid = make_handler("influxdb").bundle_measurements([measurement("v\n", 1), measurement("v ", 2)])
+    assert len(lines) == 2
+    assert len(valid) == 2

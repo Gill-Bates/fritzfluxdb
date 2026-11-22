@@ -28,6 +28,7 @@ from gillbates_influxdb_client import (
     InfluxDBUnavailableError,
     InfluxDBVersion,
     InfluxDBWriteError,
+    escape_field_key,
     escape_measurement,
     escape_tag,
     format_field,
@@ -1369,7 +1370,8 @@ class InfluxHandler:
                 # Line breaks stay visible as the two characters \n and \r, as stored before.
                 value = value.replace("\r", "\\r").replace("\n", "\\n")
             try:
-                escape_tag(field_name)
+                # The same checks the final line gets: field key escaping, leading tab, backslash rules.
+                format_line("m", {}, {field_name: 0})
             except ValueError:
                 log.error("Dropping %s measurement '%s': the field name cannot be written", self.name, field_name)
                 continue
@@ -1396,8 +1398,10 @@ class InfluxHandler:
                          + (self._event_offset_ns(measurement) if event_uid else 0))
             key = (table_name, tuple(sorted(tags.items())), timestamp)
             line_indexes = open_lines.setdefault(key, [])
+            escaped_name = escape_field_key(field_name)
             for index in line_indexes:
-                if field_name not in lines[index][3]:
+                # Names equal after control-character cleanup are one field on the server.
+                if escaped_name not in {escape_field_key(name) for name in lines[index][3]}:
                     lines[index][3][field_name] = value
                     break
             else:
