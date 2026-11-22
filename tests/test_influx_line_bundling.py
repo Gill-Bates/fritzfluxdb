@@ -487,7 +487,7 @@ def test_influx_events_get_a_deterministic_sub_second_offset_and_no_uid_tag():
 @pytest.mark.parametrize("name", ['a\\"b', "\ttab"])
 def test_influx_field_names_the_package_cannot_encode_drop_only_that_measurement(name):
     lines, valid = make_handler("influxdb").bundle_measurements([measurement(name, 1), measurement("ok", 2)])
-    assert lines == [f"fritzbox_metrics,box=fritz.box ok=2i {TS}"]
+    assert lines == [f"fritzbox,box=fritz.box ok=2i {TS * 1_000_000_000}"]
     assert [m.name for m in valid] == ["ok"]
 
 
