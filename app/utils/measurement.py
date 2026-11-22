@@ -21,7 +21,7 @@ _unwritable_warned: set[tuple[str, str]] = set()
 _UNWRITABLE_WARNED_MAX = 1000
 
 
-def _warn_unwritable(name: str, reason: str) -> None:
+def warn_unwritable(name: str, reason: str) -> None:
     key = (name, reason)
     if key in _unwritable_warned or len(_unwritable_warned) >= _UNWRITABLE_WARNED_MAX:
         return
@@ -41,8 +41,8 @@ class WritePrecision:
 
 class FritzMeasurement:
     """
-        This class holds measurements which should be sanitized to this specification
-        https://docs.influxdata.com/influxdb/v2.1/reference/syntax/line-protocol/
+        This class holds measurements and renders them as QuestDB line protocol; InfluxDB lines are
+        built by the handler with gillbates-influxdb-client.
     """
 
     default_box_tag_key = "box"
@@ -187,26 +187,22 @@ class FritzMeasurement:
         return escaped
 
     @classmethod
-    def _escape_tag(cls, value: object, *, is_key: bool = False, escape_backslashes: bool = True) -> str:
-        """Escape a tag key or value; a line break (or a backslash in a key) is rejected."""
+    def _escape_tag(cls, value: object, *, is_key: bool = False) -> str:
+        """Escape a tag key or value for QuestDB; a line break (or a backslash or nothing in a key) is rejected."""
         text = str(value)
         if "\r" in text or "\n" in text or (is_key and ("\\" in text or not text)):
             raise ValueError(f"tag {'key' if is_key else 'value'} {text!r} cannot be written")
-        if not is_key and not escape_backslashes and text.endswith("\\"):
-            raise ValueError("InfluxDB cannot represent a tag value ending with a backslash")
-        # QuestDB decodes doubled backslashes; InfluxDB keeps backslashes before ordinary letters.
-        return cls._escape_line_token(text.replace("\\", "\\\\") if not is_key and escape_backslashes else text)
+        # QuestDB decodes doubled backslashes in tag values.
+        return cls._escape_line_token(text if is_key else text.replace("\\", "\\\\"))
 
     @staticmethod
     def _escape_field_string(value: str) -> str:
         normalized = value.replace("\r", "\\r").replace("\n", "\\n")
         return '"' + normalized.replace("\\", "\\\\").replace('"', '\\"') + '"'
 
-    def line_protocol_series(
-        self, measurement_name: str, exclude_tags: frozenset[str] = frozenset(), *, escape_tag_backslashes: bool = True,
-    ) -> str:
+    def line_protocol_series(self, measurement_name: str, exclude_tags: frozenset[str] = frozenset()) -> str:
         """
-            returns the escaped measurement name plus tag set, which identifies the series of this point
+            returns the escaped measurement name plus tag set (QuestDB flavor), which identifies the series
         """
 
         tags_str = ""
@@ -217,7 +213,7 @@ class FritzMeasurement:
         if tags:
             # Escaping rules: https://docs.influxdata.com/influxdb/v2/reference/syntax/line-protocol/#special-characters
             escaped_tags = [
-                f"{self._escape_tag(k, is_key=True)}={self._escape_tag(v, escape_backslashes=escape_tag_backslashes)}"
+                f"{self._escape_tag(k, is_key=True)}={self._escape_tag(v)}"
                 for k, v in sorted(tags.items())
             ]
             tags_str = "," + ",".join(escaped_tags)
@@ -241,12 +237,12 @@ class FritzMeasurement:
             fv = "true" if self.value else "false"
         elif isinstance(self.value, int):
             if not (self.INT64_MIN <= self.value <= self.INT64_MAX):
-                _warn_unwritable(self.name, "integer outside the 64-bit range")
+                warn_unwritable(self.name, "integer outside the 64-bit range")
                 return ""
             fv = f"{self.value}i"
         elif isinstance(self.value, float):
             if not isfinite(self.value):
-                _warn_unwritable(self.name, "non-finite float")
+                warn_unwritable(self.name, "non-finite float")
                 return ""
             fv = repr(self.value)
         elif isinstance(self.value, str):

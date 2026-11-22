@@ -43,7 +43,7 @@ from app.influxdb.handler import (
     questdb_rollup_view_name,
 )
 from app.utils.measurement import FritzMeasurement, WritePrecision
-from tests.questdb_fake import fake_questdb, status_error
+from tests.questdb_fake import fake_questdb, fake_write_client, status_error
 
 pytestmark = pytest.mark.usefixtures("no_database_env")
 
@@ -693,12 +693,11 @@ def make_writer():
     handler.current_measurements_per_write = 10
     handler.posts = []
 
-    class Client:
-        async def post(self, url, *, params, content, auth):
-            handler.posts.append((params, content))
-            return SimpleNamespace(status_code=204)
+    def respond(request):
+        handler.posts.append((dict(request.url.params), request.content.decode()))
+        return httpx.Response(204)
 
-    handler.client = Client()
+    handler.client = fake_write_client("questdb", respond)
     return handler
 
 

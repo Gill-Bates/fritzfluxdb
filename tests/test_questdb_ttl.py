@@ -235,4 +235,4 @@ def test_questdb_version_error_on_reconnect_closes_the_clients(monkeypatch):
         asyncio.run(handler._init_client())
     assert handler.client is None
     assert handler._questdb is None
-    assert len(closed) == 2
+    assert len(closed) == 1  # one client serves /exec and ILP writes

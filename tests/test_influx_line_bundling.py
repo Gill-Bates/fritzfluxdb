@@ -430,3 +430,55 @@ def test_unwritable_values_are_dropped_with_one_warning_per_metric(caplog, monke
     assert caplog.text.count("'cpu_temp'") == 1
     assert "non-finite float" in caplog.text
     assert "64-bit range" in caplog.text
+
+
+# InfluxDB lines are escaped and formatted by gillbates-influxdb-client; the QuestDB flavor stays local.
+
+@pytest.mark.parametrize("version", [1, 2])
+def test_influx_keeps_tag_backslashes_literal_where_questdb_doubles_them(version):
+    point = measurement("rate", 1, tags={"path": "C:\\dir\\file"})
+    influx_lines, _ = make_handler(version).bundle_measurements([point])
+    questdb_lines, _ = make_handler().bundle_measurements([point])
+    assert influx_lines == [f"fritzbox,box=fritz.box,path=C:\\dir\\file rate=1i {TS}000000000"]
+    assert questdb_lines == [f"fritzbox_metrics,box=fritz.box,path=C:\\\\dir\\\\file rate=1i {TS}"]
+
+
+@pytest.mark.parametrize("tags", [{"d": "a\\,b"}, {"d": "a\\ b"}, {"d": "a\nb"}, {"k\\": "v"}, {"": "v"}])
+def test_influx_unwritable_tags_drop_only_that_measurement(tags):
+    lines, valid = make_handler(2).bundle_measurements([measurement("bad", 1, tags=tags), measurement("ok", 2)])
+    assert lines == [f"fritzbox,box=fritz.box ok=2i {TS}000000000"]
+    assert [m.name for m in valid] == ["ok"]
+
+
+def test_influx_string_fields_escape_quotes_and_backslashes_and_show_line_breaks_as_text():
+    lines, _ = make_handler(2).bundle_measurements([measurement("message", 'a\r"b"\\\nc')])
+    assert lines == [r'fritzbox,box=fritz.box message="a\\r\"b\"\\\\nc" ' + f"{TS}000000000"]
+
+
+def test_influx_unwritable_values_are_dropped_and_reported_once_per_metric(caplog, monkeypatch):
+    import logging
+
+    from app.utils import measurement as measurement_module
+    monkeypatch.setattr(measurement_module, "_unwritable_warned", set())
+    handler = make_handler(2)
+    with caplog.at_level(logging.WARNING, logger="fritzFlux"):
+        for _ in range(3):
+            lines, valid = handler.bundle_measurements([
+                measurement("cpu_temp", float("nan")), measurement("big", 2 ** 70), measurement("ok", 1),
+            ])
+    assert lines == [f"fritzbox,box=fritz.box ok=1i {TS}000000000"]
+    assert [m.name for m in valid] == ["ok"]
+    assert caplog.text.count("'cpu_temp'") == 1 and caplog.text.count("'big'") == 1
+
+
+def test_influx_events_get_a_deterministic_sub_second_offset_and_no_uid_tag():
+    first = FritzMeasurement("message", "a", box_tag="b", timestamp=TIMESTAMP, is_event=True,
+                             additional_tags={"uid": "u1", "log_type": "x"})
+    other = FritzMeasurement("message", "a", box_tag="b", timestamp=TIMESTAMP, is_event=True,
+                             additional_tags={"uid": "u2", "log_type": "x"})
+    one, _ = make_handler(2).bundle_measurements([first])
+    again, _ = make_handler(2).bundle_measurements([first])
+    two, _ = make_handler(2).bundle_measurements([other])
+    assert one == again and one != two
+    assert "uid=" not in one[0] and one[0].startswith("fritzbox,box=b,log_type=x message=")
+    assert int(one[0].rsplit(" ", 1)[1]) // 1_000_000_000 == TS

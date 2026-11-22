@@ -19,9 +19,11 @@ import subprocess
 import time
 import uuid
 from datetime import datetime
+from urllib.parse import urlsplit
 
 import httpx
 import pytest
+from gillbates_questdb_client import AsyncQuestDBClient, QuestDBConfig
 
 from app.influxdb.handler import questdb_events_table_name
 from app.utils.measurement import FritzMeasurement
@@ -223,7 +225,8 @@ def _qdb_handler(url, measurement):
     handler = make_handler("questdb")
     handler.config.measurement_name = measurement
     handler.config.data_retention_days = 0
-    handler.client = httpx.AsyncClient(base_url=url)
+    parts = urlsplit(url)
+    handler._questdb = handler.client = AsyncQuestDBClient(QuestDBConfig(host=parts.hostname, port=parts.port))
     return handler
 
 

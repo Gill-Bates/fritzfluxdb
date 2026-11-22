@@ -2,6 +2,7 @@
 
 - ``Changed`` A single timeout or dropped connection on a FRITZ!Box request is no longer logged as an error. After 3 consecutive failures of a service a rate-limited warning is logged, and its recovery is logged once.
 - ``Changed`` Log lines now read `<UTC time> | LEVEL | fritzFlux | message`; warnings and errors go to stderr, everything else to stdout. The container image now runs on Python 3.14.
+- ``Fix`` An InfluxDB write answered with a success status other than `204` (for example a proxy page) is no longer counted as stored; the measurements stay buffered and are sent again.
 - ``Security`` An unexpected session ID in a FRITZ!Box login response is no longer written to the log, and an invalid or excessive login block time reported by the box can no longer stall logins indefinitely (waits are capped at one hour).
 
 

@@ -3,13 +3,19 @@
 # tests/questdb_fake.py
 # Copyright (C) 2026 Gill-Bates http://github.com/Gill-Bates
 #
-"""A QuestDB /exec endpoint behind httpx.MockTransport, so tests exercise the real package client."""
+"""Database endpoints behind httpx.MockTransport, so tests exercise the real package clients."""
 
 import inspect
 from collections.abc import Callable
 from urllib.parse import parse_qs, urlsplit
 
 import httpx
+from gillbates_influxdb_client import (
+    NO_RETRY,
+    AsyncInfluxDBClient,
+    InfluxDBConfig,
+    InfluxDBVersion,
+)
 from gillbates_questdb_client import AsyncQuestDBClient, QuestDBConfig
 
 
@@ -43,3 +49,25 @@ def status_error(code: int) -> httpx.HTTPStatusError:
     """An answer for `fake_questdb` that makes /exec reply with HTTP `code`."""
     request = httpx.Request("GET", "http://questdb:9000/exec")
     return httpx.HTTPStatusError(str(code), request=request, response=httpx.Response(code, request=request))
+
+
+def fake_write_client(version: int | str, respond: Callable[[httpx.Request], httpx.Response | BaseException]):
+    """The write client the handler builds for `version` (1, 2 or "questdb"), answered by `respond(request)`.
+
+    `respond` returns the HTTP answer, or an exception that the transport raises (connection lost).
+    """
+
+    def transport(request: httpx.Request) -> httpx.Response:
+        answer = respond(request)
+        if isinstance(answer, BaseException):
+            raise answer
+        return answer
+
+    mock = httpx.MockTransport(transport)
+    if version == "questdb":
+        return AsyncQuestDBClient(QuestDBConfig(), transport=mock)
+    config = InfluxDBConfig(
+        version=InfluxDBVersion.V1 if version == 1 else InfluxDBVersion.V2,
+        database="d", token="t", organization="o", bucket="b",
+    )
+    return AsyncInfluxDBClient(config, retry=NO_RETRY, transport=mock)

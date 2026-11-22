@@ -8,6 +8,7 @@ import asyncio
 from datetime import datetime
 from types import SimpleNamespace
 
+import httpx
 import pytest
 
 from app.fritzbox import service_definitions
@@ -19,6 +20,7 @@ from app.fritzbox.service_definitions.homeauto import (
 from app.fritzbox.service_definitions.telephone_list import CallLog
 from app.fritzbox.service_handler import FritzBoxLuaService
 from app.influxdb.handler import (
+    DatabaseConfigError,
     InfluxHandler,
     questdb_event_columns,
     questdb_events_ddl,
@@ -26,7 +28,7 @@ from app.influxdb.handler import (
     questdb_expected_columns,
 )
 from app.utils.measurement import FritzMeasurement
-from tests.questdb_fake import fake_questdb
+from tests.questdb_fake import fake_questdb, fake_write_client
 
 # Header of the FRITZ!Box call-list CSV export.
 CALL_LOG_HEADER = '"Typ";"Datum";"Name";"Rufnummer";"Nebenstelle";"Eigene Rufnummer";"Dauer"'
@@ -485,24 +487,21 @@ def test_questdb_upsert_line_carries_every_call_list_field():
 
 
 # Writer error handling
-class _Response:
-    def __init__(self, status_code, text=""):
-        self.status_code, self.text, self.headers = status_code, text, {}
+def _Response(status_code, text=""):
+    return httpx.Response(status_code, text=text)
 
 
-class _Client:
-    def __init__(self, outcomes):
-        self.outcomes, self.payloads = list(outcomes), []
+def _client(version, outcomes):
+    """Write client of the real package; `payloads` records each request body in line protocol order."""
+    outcomes, payloads = list(outcomes), []
 
-    async def post(self, url, params=None, content=None, auth=None):
-        self.payloads.append(content)
-        outcome = self.outcomes.pop(0)
-        if isinstance(outcome, Exception):
-            raise outcome
-        return outcome
+    def respond(request):
+        payloads.append(request.content.decode().rstrip("\n"))
+        return outcomes.pop(0)
 
-    async def aclose(self):
-        pass
+    client = fake_write_client(version, respond)
+    client.payloads = payloads
+    return client
 
 
 def _writer(version, outcomes, buffer):
@@ -511,7 +510,7 @@ def _writer(version, outcomes, buffer):
     handler.config = SimpleNamespace(
         measurement_name="fritzbox_AA1", data_retention_days=0, username=None, password=None,
         hostname="h", organization="o", bucket="b", database="d")
-    handler.client = _Client(outcomes)
+    handler.client = _client(version, outcomes)
     handler.buffer = list(buffer)
     handler._write_lock = asyncio.Lock()
     handler.connection_lost = False
@@ -548,15 +547,97 @@ def test_413_halves_the_batch_while_it_can_still_shrink():
     assert len(handler.buffer) == 8 and handler.current_measurements_per_write == 4
 
 
+def _metrics(count):
+    # One second apart, so every measurement is its own line.
+    return [
+        FritzMeasurement(f"m{i}", i, data_type=int, box_tag="b", timestamp=datetime(2026, 1, 1, 10, 0, i).astimezone())
+        for i in range(count)
+    ]
+
+
+@pytest.mark.parametrize("version", [1, 2])
+def test_influx_retention_drop_discards_the_batch_without_a_retry(version):
+    body = "partial write: points beyond retention policy dropped=2"
+    handler = _writer(version, [_Response(400, body)], _metrics(3))
+    asyncio.run(handler._write_data_unlocked(force=True))
+    assert handler.buffer == [] and handler.last_write_retry is None
+
+
+@pytest.mark.parametrize("version", [1, 2])
+def test_influx_payload_the_server_will_never_accept_is_dropped(version, caplog):
+    handler = _writer(version, [_Response(400, "field type conflict: input field is int")], _metrics(3))
+    asyncio.run(handler._write_data_unlocked(force=True))
+    assert handler.buffer == [] and "non-retryable" in caplog.text
+
+
+@pytest.mark.parametrize("version", ["questdb", 1, 2])
+def test_retryable_status_keeps_the_buffer_and_follows_retry_after(version):
+    handler = _writer(version, [httpx.Response(429, headers={"Retry-After": "17"})], _metrics(3))
+    asyncio.run(handler._write_data_unlocked(force=True))
+    assert len(handler.buffer) == 3 and handler.client is None and handler.connection_lost is True
+    assert handler.current_retry_interval == 17
+
+
+@pytest.mark.parametrize("retry_after", ["9" * 400, "3600", "Wed, 21 Oct 2015 07:28:00 GMT"])
+def test_retry_after_is_capped_at_the_maximum_interval(retry_after):
+    handler = _writer("questdb", [httpx.Response(503, headers={"Retry-After": retry_after})], _metrics(1))
+    asyncio.run(handler._write_data_unlocked(force=True))
+    expected = 0 if retry_after.endswith("GMT") else handler.max_retry_interval
+    assert handler.current_retry_interval == expected
+
+
+@pytest.mark.parametrize("version", ["questdb", 1, 2])
+def test_a_success_status_other_than_the_documented_one_is_no_confirmed_write(version):
+    handler = _writer(version, [_Response(202)], _metrics(2))
+    asyncio.run(handler._write_data_unlocked(force=True))
+    # QuestDB confirms a write with 200 or 204, InfluxDB with 204 only; anything else keeps the data.
+    assert len(handler.buffer) == 2
+
+
+@pytest.mark.parametrize("version", [1, 2])
+def test_influx_413_is_halved_by_the_package_and_the_next_batch_stays_small(version):
+    handler = _writer(version, [_Response(413), _Response(204), _Response(204)], _metrics(8))
+    handler.current_measurements_per_write = 8
+    asyncio.run(handler._write_data_unlocked(force=True))
+    assert handler.buffer == [] and len(handler.client.payloads) == 3
+    assert handler.current_measurements_per_write == 4
+
+
+@pytest.mark.parametrize("version", [1, 2])
+def test_influx_413_on_a_single_unsplittable_line_drops_it_whole_and_says_so(version, caplog):
+    handler = _writer(version, [_Response(413, "too big")], _metrics(1))
+    asyncio.run(handler._write_data_unlocked(force=True))
+    assert handler.buffer == [] and "cannot be split" in caplog.text
+
+
+@pytest.mark.parametrize(("version", "code"), [(1, 401), (2, 403), (1, 404), (2, 404), ("questdb", 401), ("questdb", 403)])
+def test_rejected_credentials_or_target_while_running_end_in_a_config_error(version, code):
+    handler = _writer(version, [_Response(code, "nope")], _metrics(2))
+    handler.name = "InfluxDB"
+    with pytest.raises(DatabaseConfigError):
+        asyncio.run(handler._write_data_unlocked(force=True))
+    assert len(handler.buffer) == 2
+
+
+@pytest.mark.parametrize("answer", [
+    httpx.ConnectError("down"), httpx.ReadTimeout("slow"), httpx.Response(500), httpx.Response(503),
+    httpx.Response(429), httpx.Response(408), httpx.Response(302), httpx.Response(418),
+])
+@pytest.mark.parametrize("version", ["questdb", 1, 2])
+def test_an_unreachable_or_misbehaving_server_is_never_a_config_error(version, answer):
+    handler = _writer(version, [answer], _metrics(2))
+    asyncio.run(handler._write_data_unlocked(force=True))
+    assert len(handler.buffer) == 2
+
+
 def test_retry_after_a_network_error_sends_the_identical_payload(monkeypatch):
-    import httpx
     events = _real_call_list_buffer(3)
     for version in ("questdb", 1, 2):
         handler = _writer(version, [httpx.ConnectError("down")], events)
         monkeypatch.setattr(handler, "_note_connection_lost", lambda exc, h=handler: setattr(h, "connection_lost", True))
         asyncio.run(handler._write_data_unlocked(force=True))
         assert len(handler.buffer) == 21 and handler.client is None
-        handler.client = _Client([_Response(204)])
+        handler.client = _client(version, [_Response(204)])
         asyncio.run(handler._write_data_unlocked(force=True))
         assert handler.buffer == []
         assert handler.client.payloads == ["\n".join(handler.bundle_measurements(events)[0])]

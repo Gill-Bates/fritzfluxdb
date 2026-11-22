@@ -108,6 +108,8 @@ def make_handler(monkeypatch, no_database_env):
         monkeypatch.setenv("INFLUXDB_ORGANIZATION", "org")
         monkeypatch.setenv("INFLUXDB_BUCKET", "bucket")
         monkeypatch.setenv("INFLUXDB_TOKEN", "token")
+        # db.invalid is a remote plain-HTTP host: the app's credential gate needs this opt-in.
+        monkeypatch.setenv("INFLUXDB_ALLOW_PLAINTEXT_CREDENTIALS", "true")
 
         def client(*args, **kwargs):
             return REAL_CLIENT(*args, **{**kwargs, "transport": httpx.MockTransport(respond)})
@@ -165,6 +167,28 @@ def test_preflight_passes_with_valid_settings(make_handler, db_type, ok, caplog)
     assert "preflight passed" in caplog.text
 
 
+@pytest.mark.parametrize(
+    ("plaintext_ok", "tls", "verify", "allow_insecure"),
+    [(True, False, True, True), (False, True, False, True), (False, True, True, False)],
+)
+def test_allow_insecure_follows_the_users_deliberate_options(make_handler, plaintext_ok, tls, verify, allow_insecure):
+    handler = make_handler("influxdb_v2", _status(204))
+    handler.config = handler.config.model_copy(
+        update={"allow_plaintext_credentials": plaintext_ok, "tls_enabled": tls, "verify_tls": verify}
+    )
+    client = handler._new_influx_client()
+    assert client.config.allow_insecure is allow_insecure
+    assert client.config.https is tls and client.config.verify_certificate is verify
+    assert client.config.token == "token" and client.config.timeout == handler.connection_timeout_v2
+
+
+def test_credentials_over_plain_http_without_the_opt_in_are_a_config_error(make_handler):
+    handler = make_handler("influxdb_v2", _status(204))
+    handler.config = handler.config.model_copy(update={"allow_plaintext_credentials": False})
+    with pytest.raises(DatabaseConfigError, match="plain HTTP"):
+        handler._new_influx_client()
+
+
 def test_influx_probe_sends_an_empty_write(make_handler):
     seen = []
 
@@ -178,7 +202,10 @@ def test_influx_probe_sends_an_empty_write(make_handler):
 
 async def _write_once(handler):
     # The client is created inside the loop and closed on every path, also when the write raises.
-    handler.client = httpx.AsyncClient(base_url=handler.base_url)
+    if handler.version == "questdb":
+        handler._questdb = handler.client = handler._new_questdb_client()
+    else:
+        handler.client = handler._new_influx_client()
     try:
         await handler.write_data(force=True)
     finally:

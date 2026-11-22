@@ -35,6 +35,7 @@ INFLUXDB_TLS_ENABLED=true
 | --- | --- |
 | `408`, `425`, `429`, `500`, `502`, `503`, `504` | Retried with exponential backoff; `Retry-After` is honoured, capped at the maximum retry interval. |
 | `413` | The batch is halved and retried. A single event that is still too large (for example a call-list entry) is dropped whole and logged. |
+| Any other `2xx` than `204` (for example a proxy page) | Not a confirmed write; the measurements stay buffered and are sent again. |
 | Buffer full | The oldest measurements are dropped. |
 
 Log and call entries are written with `precision=ns`, see
