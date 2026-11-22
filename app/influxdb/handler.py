@@ -1562,9 +1562,7 @@ class InfluxHandler:
                 await self.client.write("\n".join(data_lines), precision="s")
             else:
                 # One request per batch keeps an event whole; the package halves a 413 on its own.
-                result = await self.client.write(
-                    data_lines, precision=InfluxPrecision.NS, batch_size=max(len(data_lines), 1)
-                )
+                result = await self.client.write(data_lines, precision=InfluxPrecision.NS, batch_size=len(data_lines))
                 splits = result.splits
             write_successful = True
         except (QuestDBConfigError, InfluxDBConfigError) as exc:
@@ -1585,8 +1583,6 @@ class InfluxHandler:
         except httpx.HTTPError as exc:
             self._note_connection_lost(exc)
             await self._close_client()
-        except DatabaseConfigError:
-            raise
         except Exception:
             log.exception("Unexpected %s writer failure", self.name)
             raise

@@ -39,6 +39,7 @@ COPY pyproject.toml README.md ./
 COPY app ./app
 RUN --mount=type=secret,id=python_libraries_token,required=true \
     apt-get update \
+    && apt-get upgrade -y \
     && apt-get install -y --no-install-recommends git \
     && GIT_TERMINAL_PROMPT=0 GIT_CONFIG_COUNT=2 GIT_CONFIG_KEY_0=credential.helper GIT_CONFIG_VALUE_0= \
        GIT_CONFIG_KEY_1=credential.helper \
