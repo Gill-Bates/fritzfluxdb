@@ -46,7 +46,7 @@ RUN --mount=type=secret,id=python_libraries_token,required=true \
        GIT_CONFIG_VALUE_1='!f() { echo username=x-access-token; echo "password=$(cat /run/secrets/python_libraries_token)"; }; f' \
        pip install --no-cache-dir . \
     && pip check \
-    && python -c "import gillbates_logging, gillbates_questdb_client, gillbates_shutdown_handler" \
+    && python -c "import gillbates_influxdb_client, gillbates_logging, gillbates_questdb_client, gillbates_shutdown_handler" \
     && apt-get purge -y --auto-remove git \
     && rm -rf /var/lib/apt/lists/* \
     && python -m pip uninstall -y pip \

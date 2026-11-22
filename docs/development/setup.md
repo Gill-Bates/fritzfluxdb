@@ -12,7 +12,10 @@ python -m pip install '.[dev]'
 ```
 
 The shared `gillbates-*` packages are installed from tags of the private `Gill-Bates/python-libraries`
-repository, so the install needs git and read access to it. For local work on a package, install it
+repository, so the install needs git and read access to it. CI and the image build use the
+repository secret `RELEASE_TOKEN` for that read access (as credential helper in `ci.yml`, as BuildKit
+secret `python_libraries_token` in `docker-build.yml`); pull requests from forks have no secret and fail
+the install step by design. For local work on a package, install it
 editable from a checkout (`pip install -e <checkout>/packages/<name>`) after the command above.
 
 Direct starts do not load `.env` automatically. Export the variables in your shell (for example
